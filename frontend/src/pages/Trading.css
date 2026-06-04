@@ -1,0 +1,353 @@
+/* Light exchange terminal (~ #F0F4F8) */
+.trading-page {
+  --ex-bg: #f0f4f8;
+  --ex-panel: #ffffff;
+  --ex-border: #d8e0ea;
+  --ex-text: #0f172a;
+  --ex-muted: #64748b;
+  --ex-accent: #1e3a5f;
+  --ex-buy: #16a34a;
+  --ex-sell: #dc2626;
+  --ex-row-hover: #e8f0f8;
+  --ex-highlight: #dbeafe;
+
+  background: var(--ex-bg);
+  color: var(--ex-text);
+  margin: 0 -0.75rem;
+  padding: 0 0.5rem 1rem;
+  min-height: calc(100vh - 80px);
+}
+
+.trading-page label {
+  color: var(--ex-muted);
+  font-size: 0.75rem;
+}
+
+.trading-page .ex-input,
+.trading-page .ex-select {
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--ex-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ex-text);
+  font-size: 0.875rem;
+}
+
+.ex-ticker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1rem 1.75rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--ex-panel);
+  border: 1px solid var(--ex-border);
+  border-radius: 8px;
+  margin-bottom: 0.65rem;
+}
+
+.ex-ticker__pair {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ex-accent);
+}
+
+.ex-ticker__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ex-ticker__stat span:first-child {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--ex-muted);
+  letter-spacing: 0.04em;
+}
+
+.ex-ticker__stat span:last-child {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-ticker__stat--up span:last-child {
+  color: var(--ex-buy);
+}
+
+.ex-ticker__stat--down span:last-child {
+  color: var(--ex-sell);
+}
+
+.ex-portfolio {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--ex-accent);
+}
+
+.ex-grid {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 260px;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.ex-center {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@media (max-width: 1100px) {
+  .ex-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ex-panel {
+  background: var(--ex-panel);
+  border: 1px solid var(--ex-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ex-panel__head {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--ex-border);
+  color: var(--ex-accent);
+  background: linear-gradient(180deg, #fafbfd 0%, #fff 100%);
+}
+
+.ex-markets {
+  grid-row: span 3;
+  max-height: 720px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ex-markets__tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--ex-border);
+}
+
+.ex-markets__tabs button {
+  flex: 1;
+  padding: 0.25rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ex-muted);
+}
+
+.ex-markets__tabs button.is-active {
+  background: var(--ex-highlight);
+  color: var(--ex-accent);
+}
+
+.ex-markets__search {
+  padding: 0.35rem 0.5rem;
+}
+
+.ex-markets__list {
+  flex: 1;
+  overflow: auto;
+  font-size: 0.78rem;
+}
+
+.ex-markets__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem;
+  padding: 0.4rem 0.55rem;
+  cursor: pointer;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.ex-markets__row:hover {
+  background: var(--ex-row-hover);
+}
+
+.ex-markets__row.is-active {
+  background: var(--ex-highlight);
+}
+
+.ex-markets__pair {
+  font-weight: 600;
+}
+
+.ex-chart-area {
+  min-height: 380px;
+}
+
+.ex-chart-wrap {
+  height: 380px;
+  width: 100%;
+  border-radius: 0;
+  overflow: hidden;
+  border: none;
+  background: #fff;
+}
+
+.ex-orders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+@media (max-width: 700px) {
+  .ex-orders {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ex-order-card {
+  padding: 0.65rem 0.75rem;
+}
+
+.ex-order-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.ex-order-card--buy h3 {
+  color: var(--ex-buy);
+}
+
+.ex-order-card--sell h3 {
+  color: var(--ex-sell);
+}
+
+.ex-tabs-inline {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.ex-tabs-inline button {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--ex-border);
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.75rem;
+  color: var(--ex-muted);
+}
+
+.ex-tabs-inline button.is-active {
+  border-color: var(--ex-accent);
+  color: var(--ex-accent);
+  font-weight: 600;
+}
+
+.ex-btn-buy,
+.ex-btn-sell {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.55rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.ex-btn-buy {
+  background: var(--ex-buy);
+}
+
+.ex-btn-sell {
+  background: var(--ex-sell);
+}
+
+.ex-book {
+  font-size: 0.75rem;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.ex-book__side {
+  width: 100%;
+}
+
+.ex-book__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  padding: 0.15rem 0.45rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-book__row--ask {
+  color: var(--ex-sell);
+}
+
+.ex-book__row--bid {
+  color: var(--ex-buy);
+}
+
+.ex-book__mid {
+  text-align: center;
+  padding: 0.35rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: #f8fafc;
+  border-top: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border);
+  color: var(--ex-accent);
+}
+
+.ex-tape {
+  max-height: 220px;
+  overflow: auto;
+  font-size: 0.72rem;
+}
+
+.ex-tape__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  border-bottom: 1px solid #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-tape__row--buy {
+  color: var(--ex-buy);
+}
+
+.ex-tape__row--sell {
+  color: var(--ex-sell);
+}
+
+.ex-my-orders {
+  grid-column: 2;
+}
+
+.ex-my-orders table {
+  width: 100%;
+  font-size: 0.78rem;
+  border-collapse: collapse;
+}
+
+.ex-my-orders th,
+.ex-my-orders td {
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: left;
+}
+
+.ex-footnote {
+  font-size: 0.7rem;
+  color: var(--ex-muted);
+  margin-top: 0.35rem;
+}
+
+.ex-side-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
