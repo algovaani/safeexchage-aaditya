@@ -1,4 +1,4 @@
-# VenCrypto — Local Setup & Run
+# SafeX — Local Setup & Run
 
 ## Prerequisites
 
@@ -21,8 +21,8 @@ npm run seed   # optional: creates admin user
 npm run dev
 ```
 
-API: `http://localhost:5000`  
-Health: `GET http://localhost:5000/api/health`
+API: `http://localhost:5001` (default port avoids macOS AirPlay on **5000**)  
+Health: `GET http://localhost:5001/api/health`
 
 ## 3. Frontend
 
@@ -30,7 +30,7 @@ Health: `GET http://localhost:5000/api/health`
 cd frontend
 # Windows: copy .env.example .env
 cp .env.example .env
-# VITE_API_URL defaults to http://localhost:5000/api
+# VITE_API_URL defaults to http://localhost:5001/api (or use Vite proxy via `/api`)
 npm install
 npm run dev
 ```
@@ -39,7 +39,14 @@ App: `http://localhost:5173`
 
 ## 4. First login
 
-After `npm run seed` in backend, sign in with the admin credentials from `.env` (defaults in `.env.example`), or register a new user via **Sign up**.
+After `npm run seed` in backend, sign in at **http://localhost:5173/admin/login** with:
+
+- Email: `admin@safex.local` (from `ADMIN_EMAIL` in `backend/.env`)
+- Password: `ChangeMeAdmin123!` (from `ADMIN_PASSWORD`)
+
+Admin panel: **http://localhost:5173/admin/panel**
+
+Or register a new user via **Sign up** at http://localhost:5173/signup
 
 ## 5. Hybrid chart notes
 
@@ -51,6 +58,8 @@ After `npm run seed` in backend, sign in with the admin credentials from `.env` 
 
 | Issue | Fix |
 |--------|-----|
-| Mongo connection error | Check `MONGODB_URI`, firewall, Atlas IP whitelist |
+| Mongo connection error | In [Atlas](https://cloud.mongodb.com) → **Network Access** → add your current IP (or `0.0.0.0/0` for dev only). Verify `MONGODB_URI` user/password. |
+| `403` on `/api/*` with backend “down” | macOS **AirPlay Receiver** often binds port **5000**. Use `PORT=5001` in `backend/.env` and restart; or disable AirPlay in System Settings → General → AirDrop & Handoff. |
+| `500` on `/api/*` from Vite (`ECONNREFUSED` in frontend terminal) | Backend not listening — usually MongoDB failed on startup. Fix Atlas IP whitelist, run `npm run dev` in `backend` (no `sudo`), then check `GET http://localhost:5001/api/health`. |
 | CORS errors | Set `CORS_ORIGIN` in backend `.env` to your Vite URL |
 | Chart empty | Pick a liquid pair (e.g. `BTCUSDT`), check browser console & network |

@@ -1,12 +1,13 @@
 {
-  "name": "vancrypto-backend",
+  "name": "safex-backend",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/scripts/seed.js"
+    "seed": "node src/scripts/seed.js",
+    "db:check": "node src/scripts/check-db.js"
   },
   "dependencies": {
     "axios": "^1.7.7",

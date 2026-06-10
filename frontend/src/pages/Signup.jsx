@@ -19,7 +19,13 @@ export default function Signup() {
       await register({ name, email, password });
       nav('/account');
     } catch (ex) {
-      setErr(ex.response?.data?.error || 'Could not register');
+      if (!ex.response) {
+        setErr(
+          'Cannot reach the API. Start the backend (cd backend && npm run dev) and open http://127.0.0.1:5001/api/health'
+        );
+      } else {
+        setErr(ex.response?.data?.error || ex.response?.data?.hint || 'Could not register');
+      }
     } finally {
       setBusy(false);
     }

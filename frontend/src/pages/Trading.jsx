@@ -4,7 +4,7 @@ import { api } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
 import './Trading.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
 
 const WATCHLIST = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
 
@@ -15,8 +15,6 @@ export default function Trading() {
   const [marketTab, setMarketTab] = useState('USDT');
   const [search, setSearch] = useState('');
   const [candles, setCandles] = useState([]);
-  const [tick, setTick] = useState(null);
-  const [reset, setReset] = useState(null);
   const [orders, setOrders] = useState([]);
   const [ticker, setTicker] = useState(null);
   const [balances, setBalances] = useState(null);
@@ -83,8 +81,6 @@ export default function Trading() {
       });
       if (!active) return;
       setCandles(data.candles || []);
-      setTick(null);
-      setReset(null);
     })();
     return () => {
       active = false;
@@ -95,13 +91,29 @@ export default function Trading() {
     const socket = io(socketUrl, { transports: ['websocket'] });
     socket.emit('market:subscribe', { symbol, interval: INTERVAL });
 
+    const sym = symbol.toUpperCase();
+
     const onMerged = (payload) => {
-      if (!payload?.candle) return;
-      setTick(payload.candle);
+      if (!payload?.candle || payload.symbol !== sym) return;
+      const c = payload.candle;
+      setCandles((prev) => {
+        if (!prev.length) return [c];
+        const last = prev[prev.length - 1];
+        if (c.openTime === last.openTime) return [...prev.slice(0, -1), c];
+        if (c.openTime > last.openTime) return [...prev.slice(-399), c];
+        const idx = prev.findIndex((x) => x.openTime === c.openTime);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = c;
+          return next;
+        }
+        return prev;
+      });
     };
 
     const onManual = (payload) => {
-      if (payload?.candles?.length) setReset(payload.candles);
+      if (payload?.symbol && payload.symbol !== sym) return;
+      if (payload?.candles?.length) setCandles(payload.candles.slice(-400));
     };
 
     const onDepth = (payload) => {
@@ -165,43 +177,53 @@ export default function Trading() {
 
   const changePct = ticker?.priceChangePercent ?? 0;
   const up = changePct >= 0;
+  const base = symbol.replace('USDT', '');
 
   return (
     <div className="trading-page">
       <div className="ex-ticker">
-        <div className="ex-ticker__pair">
-          {symbol.replace('USDT', '')}/USDT
+        <div className="ex-ticker__pair-wrap">
+          <span className="ex-ticker__live">
+            <span className="ex-ticker__live-dot" aria-hidden />
+            Live
+          </span>
+          <span className="ex-ticker__pair">{base}/USDT</span>
         </div>
-        <div className="ex-ticker__stat">
-          <span>Last price</span>
-          <span>{ticker ? ticker.lastPrice.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}</span>
-        </div>
-        <div className={`ex-ticker__stat ${up ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
-          <span>24h change</span>
-          <span>
-            {ticker
-              ? `${ticker.priceChange >= 0 ? '+' : ''}${ticker.priceChange.toFixed(2)} (${changePct.toFixed(3)}%)`
-              : '—'}
+
+        <div className="ex-ticker__price-block">
+          <span className={`ex-ticker__price ${up ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
+            {ticker ? ticker.lastPrice.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}
           </span>
         </div>
-        <div className="ex-ticker__stat">
-          <span>24h high / low</span>
-          <span>
-            {ticker
-              ? `${ticker.highPrice.toFixed(2)} / ${ticker.lowPrice.toFixed(2)}`
-              : '—'}
-          </span>
+
+        <div className="ex-ticker__stats">
+          <div className={`ex-ticker__stat ${up ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
+            <span>24h change</span>
+            <span>
+              {ticker
+                ? `${ticker.priceChange >= 0 ? '+' : ''}${ticker.priceChange.toFixed(2)} (${changePct.toFixed(3)}%)`
+                : '—'}
+            </span>
+          </div>
+          <div className="ex-ticker__stat">
+            <span>24h high / low</span>
+            <span>
+              {ticker ? `${ticker.highPrice.toFixed(2)} / ${ticker.lowPrice.toFixed(2)}` : '—'}
+            </span>
+          </div>
+          <div className="ex-ticker__stat">
+            <span>24h volume</span>
+            <span>{ticker ? ticker.volume.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</span>
+          </div>
+          <div className="ex-ticker__stat">
+            <span>Interval</span>
+            <span>1s candles</span>
+          </div>
         </div>
-        <div className="ex-ticker__stat">
-          <span>24h volume (base)</span>
-          <span>{ticker ? ticker.volume.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</span>
-        </div>
-        <div className="ex-ticker__stat">
-          <span>Interval</span>
-          <span>1s (trade-aggregated)</span>
-        </div>
+
         <div className="ex-portfolio">
-          Portfolio: {balances != null ? `${Number(balances.balance).toFixed(2)} USDT` : '—'}
+          <small>Available balance</small>
+          {balances != null ? `${Number(balances.balance).toFixed(2)} USDT` : '—'}
         </div>
       </div>
 
@@ -223,9 +245,7 @@ export default function Trading() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="ex-panel__head" style={{ border: 'none' }}>
-            Pair / Price / 24h
-          </div>
+          <div className="ex-panel__head">Markets</div>
           <div className="ex-markets__list">
             {filteredList.map((p) => {
               const w = watchPrices[p];
@@ -249,27 +269,23 @@ export default function Trading() {
               );
             })}
           </div>
-          <div className="ex-panel__head">Spot balance</div>
-          <div style={{ padding: '0.5rem 0.65rem', fontSize: '0.8rem' }}>
-            {balances != null ? `${Number(balances.balance).toFixed(2)} USDT` : '—'}
+          <div className="ex-markets__balance">
+            <small style={{ color: 'var(--ex-muted)', fontSize: '0.72rem' }}>SPOT balance</small>
+            <div>
+              <strong>{balances != null ? `${Number(balances.balance).toFixed(2)}` : '—'}</strong> USDT
+            </div>
           </div>
         </aside>
 
         <section className="ex-center">
           <div className="ex-panel ex-chart-area">
-            <div className="ex-panel__head">{symbol} · 1s candles (live trades)</div>
-            <LiveChart
-              variant="light"
-              className="ex-chart-wrap"
-              candles={candles}
-              tick={tick}
-              reset={reset}
-            />
+            <div className="ex-panel__head">{symbol} · Live chart</div>
+            <LiveChart variant="dark" className="ex-chart-wrap" candles={candles} />
           </div>
 
           <div className="ex-orders">
             <div className="ex-panel ex-order-card ex-order-card--buy">
-              <h3>Buy {symbol.replace('USDT', '')}</h3>
+              <h3>Buy {base}</h3>
               <div className="ex-tabs-inline">
                 <button type="button" className={buyType === 'limit' ? 'is-active' : ''} onClick={() => setBuyType('limit')}>
                   Limit
@@ -293,12 +309,12 @@ export default function Trading() {
               </div>
               <p className="ex-footnote">Fee (simulated): 0.1%</p>
               <button type="button" className="ex-btn-buy" onClick={() => place('buy', buyType)}>
-                Buy {symbol.replace('USDT', '')}
+                Buy {base}
               </button>
             </div>
 
             <div className="ex-panel ex-order-card ex-order-card--sell">
-              <h3>Sell {symbol.replace('USDT', '')}</h3>
+              <h3>Sell {base}</h3>
               <div className="ex-tabs-inline">
                 <button type="button" className={sellType === 'limit' ? 'is-active' : ''} onClick={() => setSellType('limit')}>
                   Limit
@@ -326,7 +342,7 @@ export default function Trading() {
               </div>
               <p className="ex-footnote">Fee (simulated): 0.1%</p>
               <button type="button" className="ex-btn-sell" onClick={() => place('sell', sellType)}>
-                Sell {symbol.replace('USDT', '')}
+                Sell {base}
               </button>
             </div>
           </div>
@@ -348,23 +364,27 @@ export default function Trading() {
                 {orders.map((o) => (
                   <tr key={o._id}>
                     <td>{o.symbol}</td>
-                    <td>{o.side}</td>
+                    <td>
+                      <span className={`ex-side-badge ex-side-badge--${o.side}`}>{o.side}</span>
+                    </td>
                     <td>{o.orderType}</td>
                     <td>{o.quantity}</td>
                     <td>{o.price ?? '—'}</td>
-                    <td>{o.status}</td>
+                    <td>
+                      <span className="ex-status-badge">{o.status}</span>
+                    </td>
                   </tr>
                 ))}
                 {!orders.length && (
                   <tr>
-                    <td colSpan={6} style={{ color: 'var(--ex-muted)' }}>
+                    <td colSpan={6} className="ex-empty-row">
                       No orders yet.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
-            {note && <p className="ex-footnote">{note}</p>}
+            {note && <p className="ex-note">{note}</p>}
           </div>
         </section>
 
@@ -372,6 +392,11 @@ export default function Trading() {
           <div className="ex-panel">
             <div className="ex-panel__head">Order book</div>
             <div className="ex-book">
+              <div className="ex-book__header">
+                <span>Price</span>
+                <span>Qty</span>
+                <span>Total</span>
+              </div>
               <div className="ex-book__side">
                 {[...(depth.asks || [])].reverse().map((r, i) => (
                   <div key={`a-${i}`} className="ex-book__row ex-book__row--ask">
@@ -401,6 +426,11 @@ export default function Trading() {
           <div className="ex-panel">
             <div className="ex-panel__head">Recent trades</div>
             <div className="ex-tape">
+              <div className="ex-tape__header">
+                <span>Price</span>
+                <span>Qty</span>
+                <span>Time</span>
+              </div>
               {tape.map((t) => (
                 <div
                   key={t._id}
@@ -412,9 +442,7 @@ export default function Trading() {
                 </div>
               ))}
               {!tape.length && (
-                <div style={{ padding: '0.5rem', color: 'var(--ex-muted)', fontSize: '0.75rem' }}>
-                  Listening for trades…
-                </div>
+                <div className="ex-tape__empty">Listening for trades…</div>
               )}
             </div>
           </div>

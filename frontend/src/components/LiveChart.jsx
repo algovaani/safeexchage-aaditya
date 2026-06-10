@@ -1,14 +1,33 @@
 import { useEffect, useRef } from 'react';
 import { createChart } from 'lightweight-charts';
 
+/** @returns {import('lightweight-charts').UTCTimestamp | null} */
+function toChartTime(openTime) {
+  if (openTime == null) return null;
+  const n = typeof openTime === 'number' ? openTime : Number(openTime);
+  if (!Number.isFinite(n)) return null;
+  return (n > 1e12 ? Math.floor(n / 1000) : Math.floor(n));
+}
+
 function toBar(c) {
-  return {
-    time: Math.floor(c.openTime / 1000),
-    open: c.open,
-    high: c.high,
-    low: c.low,
-    close: c.close,
-  };
+  const time = toChartTime(c?.openTime ?? c?.time);
+  if (time == null) return null;
+  const open = Number(c.open);
+  const high = Number(c.high);
+  const low = Number(c.low);
+  const close = Number(c.close);
+  if (![open, high, low, close].every(Number.isFinite)) return null;
+  return { time, open, high, low, close };
+}
+
+function prepareBars(candles) {
+  if (!candles?.length) return [];
+  const byTime = new Map();
+  for (const c of candles) {
+    const bar = toBar(c);
+    if (bar) byTime.set(bar.time, bar);
+  }
+  return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
 
 const THEMES = {
@@ -27,17 +46,19 @@ const THEMES = {
 };
 
 /**
- * @param {{ candles: any[], tick?: any, reset?: any, variant?: 'dark' | 'light', className?: string }} props
+ * @param {{ candles: any[], variant?: 'dark' | 'light', className?: string }} props
  */
-export default function LiveChart({ candles, tick, reset, variant = 'dark', className = '' }) {
+export default function LiveChart({ candles, variant = 'dark', className = '' }) {
   const containerRef = useRef(null);
+  const chartRef = useRef(null);
   const seriesRef = useRef(null);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const theme = THEMES[variant] || THEMES.dark;
+    const el = containerRef.current;
+    if (!el) return;
 
-    const chart = createChart(containerRef.current, {
+    const theme = THEMES[variant] || THEMES.dark;
+    const chart = createChart(el, {
       layout: {
         background: { type: 'solid', color: theme.bg },
         textColor: theme.text,
@@ -58,44 +79,44 @@ export default function LiveChart({ candles, tick, reset, variant = 'dark', clas
       wickDownColor: '#dc2626',
     });
 
+    chartRef.current = chart;
     seriesRef.current = series;
 
-    const ro = new ResizeObserver(() => {
-      chart.applyOptions({
-        width: containerRef.current.clientWidth,
-        height: containerRef.current.clientHeight,
-      });
-    });
-    ro.observe(containerRef.current);
-    chart.applyOptions({
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-    });
+    const resize = () => {
+      if (!containerRef.current || !chartRef.current) return;
+      const { clientWidth, clientHeight } = containerRef.current;
+      if (clientWidth < 1 || clientHeight < 1) return;
+      chartRef.current.applyOptions({ width: clientWidth, height: clientHeight });
+    };
+
+    const ro = new ResizeObserver(resize);
+    ro.observe(el);
+    resize();
 
     return () => {
       ro.disconnect();
       chart.remove();
+      chartRef.current = null;
       seriesRef.current = null;
     };
   }, [variant]);
 
   useEffect(() => {
     const series = seriesRef.current;
-    if (!series || !candles?.length) return;
-    series.setData(candles.map(toBar));
+    if (!series) return;
+
+    const data = prepareBars(candles);
+    if (!data.length) {
+      series.setData([]);
+      return;
+    }
+
+    try {
+      series.setData(data);
+    } catch (err) {
+      console.warn('LiveChart setData:', err.message);
+    }
   }, [candles]);
-
-  useEffect(() => {
-    const series = seriesRef.current;
-    if (!series || !tick) return;
-    series.update(toBar(tick));
-  }, [tick]);
-
-  useEffect(() => {
-    const series = seriesRef.current;
-    if (!series || !reset?.length) return;
-    series.setData(reset.map(toBar));
-  }, [reset]);
 
   return <div className={`chart-wrap ${className}`.trim()} ref={containerRef} />;
 }

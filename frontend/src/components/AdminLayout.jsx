@@ -1,34 +1,117 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useAdminTheme } from '../hooks/useAdminTheme.js';
+import '../pages/Admin.css';
+
+const SECTIONS = [
+  { id: 'overview', label: 'Overview', icon: '◉' },
+  { id: 'users', label: 'Users', icon: '👤' },
+  { id: 'kyc', label: 'KYC', icon: '✓' },
+  { id: 'wallet', label: 'Wallet', icon: '💰' },
+  { id: 'orders', label: 'Orders', icon: '📋' },
+  { id: 'prices', label: 'Prices', icon: '📈' },
+];
+
+const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));
 
 export default function AdminLayout() {
+  useAdminTheme();
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const section = new URLSearchParams(location.search).get('section') || 'overview';
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    document.body.style.overflow = drawerOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [drawerOpen]);
 
   return (
-    <div className="admin-shell">
-      <aside className="admin-sidebar">
-        <h2 className="admin-sidebar__title">Admin Panel</h2>
+    <div className={`admin-shell admin-shell--dark${drawerOpen ? ' admin-shell--drawer-open' : ''}`}>
+      <button
+        type="button"
+        className="admin-drawer-backdrop"
+        aria-label="Close menu"
+        onClick={() => setDrawerOpen(false)}
+      />
+
+      <aside className={`admin-sidebar admin-sidebar--dark${drawerOpen ? ' is-open' : ''}`}>
+        <div className="admin-sidebar__top">
+          <div className="admin-brand">
+            <span className="admin-brand__mark" aria-hidden />
+            <div>
+              <p className="admin-brand__text">SAFEX</p>
+              <p className="admin-brand__sub">Admin Control</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="admin-drawer-close"
+            aria-label="Close sidebar"
+            onClick={() => setDrawerOpen(false)}
+          >
+            ✕
+          </button>
+        </div>
+
         <p className="admin-sidebar__meta">{user?.email}</p>
 
-        <nav className="admin-sidebar__nav">
-          <NavLink to="/admin/panel" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
-            Dashboard
-          </NavLink>
+        <nav className="admin-nav" aria-label="Admin sections">
+          {SECTIONS.map((s) => (
+            <Link
+              key={s.id}
+              to={`/admin/panel?section=${s.id}`}
+              className={`admin-nav__link${section === s.id ? ' is-active' : ''}`}
+              onClick={() => setDrawerOpen(false)}
+            >
+              <span className="admin-nav__icon" aria-hidden>
+                {s.icon}
+              </span>
+              {s.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="admin-sidebar__actions">
-          <NavLink to="/" className="btn btn-secondary" style={{ width: '100%' }}>
-            Back To Exchange
-          </NavLink>
-          <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={logout}>
+          <Link to="/" className="admin-btn admin-btn--ghost" onClick={() => setDrawerOpen(false)}>
+            ← Exchange
+          </Link>
+          <button type="button" className="admin-btn admin-btn--primary" onClick={logout}>
             Logout
           </button>
         </div>
       </aside>
 
-      <main className="admin-content">
-        <Outlet />
-      </main>
+      <div className="admin-main">
+        <header className="admin-mobile-bar">
+          <button
+            type="button"
+            className="admin-menu-btn"
+            aria-label="Open menu"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+          <div className="admin-mobile-bar__title">
+            <span className="admin-mobile-bar__brand">SAFEX</span>
+            <span className="admin-mobile-bar__section">{SECTION_LABELS[section] || 'Admin'}</span>
+          </div>
+        </header>
+
+        <main className="admin-content admin-content--dark">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

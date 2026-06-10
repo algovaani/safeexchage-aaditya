@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
+import { resolveMongoUri } from './resolveMongoUri.js';
 
 export async function connectDb(uri) {
   mongoose.set('strictQuery', true);
-  await mongoose.connect(uri);
+  const resolved = await resolveMongoUri(uri);
+  await mongoose.connect(resolved, { serverSelectionTimeoutMS: 10_000 });
   return mongoose.connection;
 }

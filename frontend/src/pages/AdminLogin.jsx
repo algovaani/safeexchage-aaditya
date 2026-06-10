@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useAdminTheme } from '../hooks/useAdminTheme.js';
+import './Admin.css';
 
 export default function AdminLogin() {
+  useAdminTheme();
   const { login, logout } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
@@ -21,7 +24,7 @@ export default function AdminLogin() {
         setErr('This account is not an admin account.');
         return;
       }
-      nav('/admin/panel');
+      nav('/admin/panel?section=overview');
     } catch {
       setErr('Invalid admin credentials');
     } finally {
@@ -30,29 +33,33 @@ export default function AdminLogin() {
   }
 
   return (
-    <div className="ex-page" style={{ maxWidth: 460, margin: '3rem auto' }}>
-      <div className="card">
-        <h1 className="h1">Admin Login</h1>
-        <p className="ex-muted">Only admin users can access this panel.</p>
+    <div className="admin-login-page">
+      <div className="admin-login-card">
+        <h1>Admin Login</h1>
+        <p className="admin-muted">Only admin users can access this panel.</p>
+        <p className="admin-muted" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
+          Dev default (after <code>npm run seed</code>):{' '}
+          <strong>admin@safex.local</strong> / <strong>ChangeMeAdmin123!</strong>
+        </p>
 
-        <form onSubmit={onSubmit}>
-          <div className="field">
+        <form onSubmit={onSubmit} style={{ marginTop: '1.25rem' }}>
+          <div className="admin-field" style={{ marginBottom: '0.85rem' }}>
             <label>Email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
-          <div className="field">
+          <div className="admin-field" style={{ marginBottom: '0.85rem' }}>
             <label>Password</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
 
-          {err && <p style={{ color: 'var(--sell)' }}>{err}</p>}
+          {err && <p className="admin-login-error">{err}</p>}
 
-          <button className="btn btn-primary" type="submit" disabled={busy}>
+          <button className="admin-btn admin-btn--primary" type="submit" disabled={busy} style={{ width: '100%' }}>
             {busy ? 'Signing in…' : 'Sign in as Admin'}
           </button>
         </form>
 
-        <p className="ex-muted" style={{ marginTop: '1rem' }}>
+        <p className="admin-muted" style={{ marginTop: '1rem' }}>
           User login? <Link to="/login">Go to user login</Link>
         </p>
       </div>

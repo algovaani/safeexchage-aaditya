@@ -3,10 +3,21 @@ import { api, setAuthToken } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = 'vencrypto_token';
+const STORAGE_KEY = 'safex_token';
+const LEGACY_STORAGE_KEY = 'vencrypto_token';
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem(STORAGE_KEY));
+  const [token, setToken] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return saved;
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) {
+      localStorage.setItem(STORAGE_KEY, legacy);
+      localStorage.removeItem(LEGACY_STORAGE_KEY);
+      return legacy;
+    }
+    return null;
+  });
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!token);
 

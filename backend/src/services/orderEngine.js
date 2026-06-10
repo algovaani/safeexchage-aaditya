@@ -10,7 +10,7 @@ let liquidityUserIdPromise = null;
 async function getLiquidityUserId() {
   if (!liquidityUserIdPromise) {
     liquidityUserIdPromise = User.findOne({
-      email: process.env.SYSTEM_LIQUIDITY_EMAIL || 'liquidity@internal.vencrypto',
+      email: process.env.SYSTEM_LIQUIDITY_EMAIL || 'liquidity@internal.safex',
     }).then((u) => u?._id || null);
   }
   return liquidityUserIdPromise;

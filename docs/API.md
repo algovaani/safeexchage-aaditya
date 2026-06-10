@@ -1,6 +1,6 @@
 # HTTP API (REST)
 
-Base URL: `http://localhost:5000/api` (dev)
+Base URL: `http://localhost:5001/api` (dev)
 
 ## Auth
 
@@ -58,7 +58,7 @@ All require `Authorization: Bearer <admin JWT>`.
 
 ## WebSocket (Socket.io)
 
-Connect to `http://localhost:5000` (same origin in prod behind reverse proxy).
+Connect to `http://localhost:5001` (same origin in prod behind reverse proxy).
 
 Client events:
 

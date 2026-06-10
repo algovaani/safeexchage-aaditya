@@ -71,7 +71,7 @@ const TESTIMONIALS = [
     initials: 'AK',
     name: 'Arjun K.',
     role: 'Retail Trader',
-    text: 'VenCrypto ka UI clean hai — signup se trading terminal tak sab smooth laga. Demo USDT se practice bhi easy thi.',
+    text: 'SafeX ka UI clean hai — signup se trading terminal tak sab smooth laga. Demo USDT se practice bhi easy thi.',
   },
   {
     initials: 'SM',
@@ -115,7 +115,7 @@ const PLANS = [
 ];
 
 const FAQ_ITEMS = [
-  { q: 'VenCrypto kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
+  { q: 'SafeX kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
   { q: 'Kya registration free hai?', a: 'Haan, account free hai aur demo balance milta hai.' },
   { q: 'Trading kaise shuru karein?', a: 'Signup → verify → wallet → /trade terminal open karein.' },
 ];
@@ -380,7 +380,7 @@ export default function Home() {
           <SectionLabel>WELCOME BACK</SectionLabel>
           <h1 className="lux-hero__title">
             <span>YOUR</span>
-            <span className="lux-outline">VENCRYPTO</span>
+            <span className="lux-outline">SAFEX</span>
             <span className="lux-gold">DASHBOARD</span>
           </h1>
           <p className="lux-hero__sub">Trading terminal ya account — jahan chaho jao.</p>
@@ -404,8 +404,8 @@ export default function Home() {
       <header className="lux-header">
         <div className="lux-header__inner lux-wrap">
           <Link to="/" className="lux-logo">
-            <span className="lux-logo__white">VEN</span>
-            <span className="lux-logo__gold">CRYPTO</span>
+            <span className="lux-logo__white">Safe</span>
+            <span className="lux-logo__gold">X</span>
           </Link>
           <nav className="lux-nav">
             <a href="#features">PLATFORM</a>
@@ -444,7 +444,7 @@ export default function Home() {
           </h1>
           <p className="lux-hero__sub">
             Institutional-grade crypto trading for everyone. Real-time charts, secure wallet,
-            zero confusion — signup se trade tak ek hi VenCrypto experience.
+            zero confusion — signup se trade tak ek hi SafeX experience.
           </p>
           <div className="lux-hero__btns">
             <Link to="/signup" className="lux-btn lux-btn--gold">
@@ -470,7 +470,7 @@ export default function Home() {
         <SectionLabel>PLATFORM FEATURES</SectionLabel>
         <h2 className="lux-h2">BUILT FOR THE SERIOUS TRADER</h2>
         <p className="lux-lead">
-          Pro infrastructure. Simple onboarding. Everything you need to trade on VenCrypto.
+          Pro infrastructure. Simple onboarding. Everything you need to trade on SafeX.
         </p>
         <div className="lux-features">
           {FEATURES.map((f) => (
@@ -593,7 +593,7 @@ export default function Home() {
           <SectionLabel>GET STARTED TODAY</SectionLabel>
           <h2 className="lux-h2 lux-h2--center">START EXCHANGING SMARTER</h2>
           <p className="lux-lead lux-lead--center">
-            Join VenCrypto — setup minutes mein. Demo balance ke sath turant explore karein.
+            Join SafeX — setup minutes mein. Demo balance ke sath turant explore karein.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
             <Link to="/signup" className="lux-btn lux-btn--gold">
@@ -615,8 +615,8 @@ export default function Home() {
       <footer className="lux-footer">
         <div className="lux-wrap lux-footer__row">
           <Link to="/" className="lux-logo">
-            <span className="lux-logo__white">VEN</span>
-            <span className="lux-logo__gold">CRYPTO</span>
+            <span className="lux-logo__white">Safe</span>
+            <span className="lux-logo__gold">X/</span>
           </Link>
           <nav className="lux-footer__nav">
             <a href="#features">PLATFORM</a>
@@ -628,7 +628,7 @@ export default function Home() {
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
         <p className="lux-footer__copy lux-wrap">
-          © {new Date().getFullYear()} VenCrypto Exchange. All rights reserved.
+          © {new Date().getFullYear()} SafeX Exchange. All rights reserved.
         </p>
       </footer>
     </div>

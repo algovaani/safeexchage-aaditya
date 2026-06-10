@@ -38,7 +38,7 @@ export default function Layout() {
         <div className="ex-topnav__row">
           <NavLink to="/" className="ex-logo">
             <span className="ex-logo__mark" aria-hidden />
-            <span className="ex-logo__text">VENCRYPTO</span>
+            <span className="ex-logo__text">SAFEX</span>
           </NavLink>
 
           {user && (
@@ -136,7 +136,7 @@ export default function Layout() {
               <NavLink to="/trade">Exchange</NavLink>
             </div>
           </div>
-          <p className="ex-footer__copy">© {new Date().getFullYear()} Vencrypto Exchange. All Rights Reserved</p>
+          <p className="ex-footer__copy">© {new Date().getFullYear()} SafeX Exchange. All Rights Reserved</p>
         </footer>
       )}
     </div>

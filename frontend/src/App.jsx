@@ -25,7 +25,7 @@ export default function App() {
           </AdminRoute>
         }
       >
-        <Route index element={<Navigate to="/admin/panel" replace />} />
+        <Route index element={<Navigate to="/admin/panel?section=overview" replace />} />
         <Route path="panel" element={<Admin />} />
       </Route>
 
