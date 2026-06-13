@@ -34,6 +34,7 @@ function clearAuthAndRedirect() {
 
   const path = window.location.pathname;
   const isPublicAuth =
+    path === '/' ||
     path === '/login' ||
     path === '/signup' ||
     path.startsWith('/admin/login');

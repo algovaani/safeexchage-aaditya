@@ -21,11 +21,11 @@
   color: var(--login-text);
 }
 
-.login-page a {
+.login-page a:not(.login-nav__signup) {
   color: var(--login-gold);
 }
 
-.login-page a:hover {
+.login-page a:not(.login-nav__signup):hover {
   color: var(--login-gold-hover);
 }
 
@@ -79,14 +79,14 @@
   padding: 0.45rem 1rem;
   border-radius: 8px;
   background: var(--login-gold);
-  color: #0d0f14;
+  color: #0d0f14 !important;
   text-decoration: none;
   transition: background 0.15s, filter 0.15s;
 }
 
 .login-nav__signup:hover {
   background: var(--login-gold-hover);
-  color: #0d0f14;
+  color: #0d0f14 !important;
   text-decoration: none;
   filter: brightness(1.05);
 }

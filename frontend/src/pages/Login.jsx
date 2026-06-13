@@ -241,8 +241,6 @@ export default function Login() {
               <p className="login-card__footer">
                 No account?{' '}
                 <Link to="/signup">Sign up</Link>
-                <span className="login-card__footer-sep">·</span>
-                <Link to="/admin/login">Admin Login</Link>
               </p>
             </div>
           </section>

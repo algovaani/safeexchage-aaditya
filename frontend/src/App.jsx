@@ -3,7 +3,7 @@ import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
-import AppHome from './pages/AppHome.jsx';
+import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
@@ -18,12 +18,13 @@ import Admin from './pages/Admin.jsx';
 export default function App() {
   return (
     <Routes>
+      {/* Public site — same domain: landing + auth (no app sidebar) */}
+      <Route path="/" element={<Landing />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
       <Route element={<Layout />}>
-        <Route path="/" element={<AppHome />} />
         <Route path="/exchange" element={<Navigate to="/markets" replace />} />
 
         <Route
@@ -77,7 +78,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
 
       <Route
