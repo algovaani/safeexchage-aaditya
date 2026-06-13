@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* SAFEX Design System — dark professional (default) */
+:root {
+  --bg-primary: #0d0f14;
+  --bg-secondary: #161a22;
+  --bg-tertiary: #1e2330;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --accent: #f5b731;
+  --accent-hover: #e0a820;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-muted: rgba(255, 255, 255, 0.3);
+  --green: #22c55e;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --amber: #f59e0b;
+  --input-bg: rgba(255, 255, 255, 0.05);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --sidebar-w: 240px;
+  --navbar-h: 60px;
+  --radius-card: 16px;
+  --radius-btn: 8px;
+  --radius-input: 8px;
+  --radius-badge: 6px;
+
+  /* Trading aliases */
+  --ex-bg: var(--bg-primary);
+  --ex-panel: var(--bg-secondary);
+  --ex-panel-2: var(--bg-tertiary);
+  --ex-input: var(--input-bg);
+  --ex-border: var(--border);
+  --ex-text: var(--text-primary);
+  --ex-muted: var(--text-secondary);
+  --ex-gold: var(--accent);
+  --ex-gold-bright: var(--accent);
+  --ex-buy: var(--green);
+  --ex-sell: var(--red);
+  --ex-accent: var(--accent);
+  --ex-border-gold: rgba(245, 183, 49, 0.35);
+  --ex-gold-soft: rgba(245, 183, 49, 0.12);
+  --ex-buy-soft: rgba(34, 197, 94, 0.15);
+  --ex-sell-soft: rgba(239, 68, 68, 0.15);
+  --ex-row-hover: rgba(255, 255, 255, 0.04);
+  --ex-highlight: rgba(245, 183, 49, 0.1);
+  --ex-gold-bright: var(--accent);
+  --ex-shadow: none;
+  --ex-ticker-bg: var(--bg-secondary);
+  --ex-input-bg: var(--input-bg);
+  --ex-strip-bg: var(--bg-tertiary);
+  --ex-chart-bg: var(--bg-primary);
+  --ex-portfolio-bg: rgba(245, 183, 49, 0.1);
+}
+
+/* Optional light mode */
+html.light {
+  --bg-primary: #f7f8fa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f2f5;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --text-primary: #181a20;
+  --text-secondary: rgba(24, 26, 32, 0.55);
+  --text-muted: rgba(24, 26, 32, 0.35);
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --input-border: rgba(0, 0, 0, 0.12);
+}
+
+@layer base {
+  body {
+    @apply bg-bg-primary text-text-primary font-sans antialiased;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4 {
+    font-weight: 500;
+  }
+
+  a {
+    @apply text-accent transition-colors duration-150;
+  }
+
+  a:hover {
+    @apply text-accent-hover;
+  }
+}
+
+@layer components {
+  .ui-card {
+    @apply bg-bg-secondary rounded-card p-6;
+    border: 0.5px solid var(--border);
+  }
+
+  .ui-label {
+    @apply block text-[11px] uppercase tracking-[0.06em] text-text-secondary mb-2;
+  }
+
+  .ui-input {
+    @apply w-full h-[42px] px-3 rounded-input text-sm text-text-primary transition-all duration-150;
+    background: var(--input-bg);
+    border: 0.5px solid var(--input-border);
+  }
+
+  .ui-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .ui-input:hover {
+    border-color: var(--border-strong);
+  }
+
+  .ui-input:focus {
+    outline: none;
+    border-color: rgba(245, 183, 49, 0.5);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 0 0 3px rgba(245, 183, 49, 0.1);
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 h-[42px] px-4 rounded-btn text-sm font-medium transition-all duration-150;
+    background: var(--accent);
+    color: #0d0f14;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 h-[42px] px-4 rounded-btn text-sm font-medium text-text-primary transition-all duration-150;
+    background: transparent;
+    border: 0.5px solid var(--border-strong);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 h-[42px] px-4 rounded-btn text-sm font-medium transition-all duration-150;
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+    border: 0.5px solid rgba(239, 68, 68, 0.25);
+  }
+
+  .btn-outline-accent {
+    @apply inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-btn text-xs font-medium transition-all duration-150;
+    background: transparent;
+    border: 0.5px solid rgba(245, 183, 49, 0.45);
+    color: var(--accent);
+  }
+
+  .btn-outline-accent:hover {
+    background: rgba(245, 183, 49, 0.1);
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-badge text-[11px] font-medium capitalize;
+  }
+
+  .badge-green {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--green);
+  }
+
+  .badge-red {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+  }
+
+  .badge-amber {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--amber);
+  }
+
+  .badge-blue {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--blue);
+  }
+
+  .badge-muted {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+  }
+
+  .data-table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .data-table thead th {
+    @apply text-left py-3 px-4 text-[11px] uppercase tracking-[0.06em] text-text-secondary font-medium;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .data-table tbody tr:nth-child(even) {
+    background: var(--bg-tertiary);
+  }
+
+  .data-table tbody td {
+    @apply py-3 px-4 text-text-primary;
+    border-bottom: 0.5px solid var(--border);
+  }
+
+  .data-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .skeleton {
+    @apply rounded-btn animate-pulse;
+    background: linear-gradient(
+      90deg,
+      var(--bg-tertiary) 25%,
+      rgba(255, 255, 255, 0.06) 50%,
+      var(--bg-tertiary) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease infinite;
+  }
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 text-center text-text-secondary text-sm;
+  }
+
+  .stat-card {
+    @apply ui-card p-5;
+  }
+
+  .stat-card__label {
+    @apply text-[11px] uppercase tracking-[0.06em] text-text-secondary mb-2;
+  }
+
+  .stat-card__value {
+    @apply text-xl text-text-primary tabular-nums;
+    font-weight: 500;
+  }
+
+  .tab-row {
+    @apply flex gap-1 p-1 rounded-btn;
+    background: var(--bg-tertiary);
+  }
+
+  .tab-row button {
+    @apply flex-1 py-2 px-3 rounded-btn text-xs font-medium text-text-secondary transition-all duration-200;
+  }
+
+  .tab-row button.is-active {
+    @apply text-text-primary;
+    background: var(--bg-secondary);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.chart-wrap {
+  height: 420px;
+  width: 100%;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  background: var(--bg-primary);
+}

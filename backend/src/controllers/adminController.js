@@ -1,5 +1,4 @@
 import { User } from '../models/User.js';
-import { KycDetail } from '../models/KycDetail.js';
 import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { ManualPriceData } from '../models/ManualPriceData.js';
@@ -7,56 +6,41 @@ import { Trade } from '../models/Trade.js';
 import { Order } from '../models/Order.js';
 import { mergeCandles } from '../services/mergeService.js';
 import { fetchKlines } from '../services/binanceService.js';
+import { error, success } from '../utils/response.js';
 
 export async function listUsers(_req, res, next) {
   try {
     const users = await User.find().select('-passwordHash').sort({ createdAt: -1 }).limit(500).lean();
-    res.json(users);
+    return success(res, users, 'Users fetched');
   } catch (e) {
-    next(e);
-  }
-}
-
-export async function updateKyc(req, res, next) {
-  try {
-    const { id } = req.params;
-    const { status, adminNote } = req.body;
-    const k = await KycDetail.findByIdAndUpdate(
-      id,
-      { status, adminNote, reviewedBy: req.userId },
-      { new: true }
-    );
-    if (!k) return res.status(404).json({ error: 'Not found' });
-    res.json(k);
-  } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function listPendingTransactions(_req, res, next) {
   try {
     const txs = await Transaction.find({ status: 'pending' }).sort({ createdAt: -1 }).lean();
-    res.json(txs);
+    return success(res, txs, 'Pending transactions fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function listAllTransactions(_req, res, next) {
   try {
     const txs = await Transaction.find().sort({ createdAt: -1 }).limit(1000).lean();
-    res.json(txs);
+    return success(res, txs, 'Transactions fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function listAllOrders(_req, res, next) {
   try {
     const orders = await Order.find().sort({ createdAt: -1 }).limit(1000).lean();
-    res.json(orders);
+    return success(res, orders, 'Orders fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
@@ -65,8 +49,8 @@ export async function approveTransaction(req, res, next) {
     const { id } = req.params;
     const { decision } = req.body;
     const tx = await Transaction.findById(id);
-    if (!tx) return res.status(404).json({ error: 'Not found' });
-    if (tx.status !== 'pending') return res.status(400).json({ error: 'Already processed' });
+    if (!tx) return error(res, 'Transaction not found', 404);
+    if (tx.status !== 'pending') return error(res, 'Transaction already processed', 400);
 
     if (decision === 'approve' && tx.type === 'deposit') {
       await Wallet.findOneAndUpdate(
@@ -77,20 +61,20 @@ export async function approveTransaction(req, res, next) {
       tx.status = 'completed';
     } else if (decision === 'approve' && tx.type === 'withdrawal') {
       const w = await Wallet.findOne({ userId: tx.userId });
-      if (!w || w.balance < tx.amount) return res.status(400).json({ error: 'Insufficient balance' });
+      if (!w || w.balance < tx.amount) return error(res, 'Insufficient balance', 400);
       w.balance -= tx.amount;
       await w.save();
       tx.status = 'completed';
     } else if (decision === 'reject') {
       tx.status = 'rejected';
     } else {
-      return res.status(400).json({ error: 'Invalid decision' });
+      return error(res, 'Invalid decision', 400);
     }
 
     await tx.save();
-    res.json(tx);
+    return success(res, tx, 'Transaction updated');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
@@ -141,9 +125,9 @@ export async function upsertManualPrice(req, res, next) {
       });
     }
 
-    res.status(201).json(doc);
+    return success(res, doc, 'Manual price saved', 201);
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
@@ -166,35 +150,26 @@ export async function listManualPrices(req, res, next) {
     if (symbol) q.symbol = String(symbol).toUpperCase();
     if (interval) q.interval = String(interval);
     const rows = await ManualPriceData.find(q).sort({ openTime: -1 }).limit(200).lean();
-    res.json(rows);
+    return success(res, rows, 'Manual prices fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function deleteManualPrice(req, res, next) {
   try {
     await ManualPriceData.findByIdAndDelete(req.params.id);
-    res.json({ ok: true });
+    return success(res, { deleted: true }, 'Manual price deleted');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function allTrades(_req, res, next) {
   try {
     const trades = await Trade.find().sort({ createdAt: -1 }).limit(500).lean();
-    res.json(trades);
+    return success(res, trades, 'Exchange trades fetched');
   } catch (e) {
-    next(e);
-  }
-}
-
-export async function listKyc(_req, res, next) {
-  try {
-    const rows = await KycDetail.find().sort({ createdAt: -1 }).limit(200).lean();
-    res.json(rows);
-  } catch (e) {
-    next(e);
+    return next(e);
   }
 }

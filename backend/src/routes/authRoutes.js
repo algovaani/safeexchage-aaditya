@@ -1,13 +1,21 @@
 import { Router } from 'express';
 import * as auth from '../controllers/authController.js';
-import { requireAuth } from '../middleware/auth.js';
-import { validateBody } from '../middleware/validate.js';
-import { registerSchema, loginSchema } from '../validators/schemas.js';
+import { authMiddleware } from '../middleware/authMiddleware.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import {
+  forgotPasswordValidators,
+  loginValidators,
+  registerValidators,
+  resetPasswordValidators,
+} from '../validators/authValidators.js';
 
 const r = Router();
 
-r.post('/register', validateBody(registerSchema), auth.register);
-r.post('/login', validateBody(loginSchema), auth.login);
-r.get('/me', requireAuth, auth.me);
+r.post('/register', registerValidators, validateRequest, auth.register);
+r.post('/login', loginValidators, validateRequest, auth.login);
+r.post('/forgot-password', forgotPasswordValidators, validateRequest, auth.forgotPassword);
+r.post('/reset-password', resetPasswordValidators, validateRequest, auth.resetPassword);
+r.post('/logout', authMiddleware, auth.logout);
+r.get('/me', authMiddleware, auth.me);
 
 export default r;

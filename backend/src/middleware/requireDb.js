@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
+import { error } from '../utils/response.js';
 
 export function requireDb(req, res, next) {
   if (req.path === '/health') return next();
   if (mongoose.connection.readyState === 1) return next();
-  return res.status(503).json({
-    error: 'Database unavailable',
-    hint: 'Allow your IP in MongoDB Atlas Network Access (or run local MongoDB), then restart the backend.',
-  });
+  return error(
+    res,
+    'Database unavailable. Allow your IP in MongoDB Atlas or run local MongoDB, then restart the backend.',
+    503
+  );
 }

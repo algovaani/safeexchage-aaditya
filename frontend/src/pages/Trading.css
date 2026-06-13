@@ -1,25 +1,6 @@
 /* SafeX Trading Terminal — black & gold */
 
 .trading-page {
-  --ex-bg: #000000;
-  --ex-panel: #0d0d0d;
-  --ex-panel-2: #141414;
-  --ex-border: #2a2a2a;
-  --ex-border-gold: rgba(234, 179, 8, 0.3);
-  --ex-text: #f5f5f5;
-  --ex-muted: #a3a3a3;
-  --ex-gold: #eab308;
-  --ex-gold-bright: #facc15;
-  --ex-gold-soft: rgba(234, 179, 8, 0.12);
-  --ex-accent: #facc15;
-  --ex-buy: #22c55e;
-  --ex-sell: #ef4444;
-  --ex-buy-soft: rgba(34, 197, 94, 0.12);
-  --ex-sell-soft: rgba(239, 68, 68, 0.12);
-  --ex-row-hover: rgba(234, 179, 8, 0.06);
-  --ex-highlight: rgba(234, 179, 8, 0.14);
-  --ex-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-
   background: var(--ex-bg);
   color: var(--ex-text);
   margin: 0 -0.75rem;
@@ -41,7 +22,7 @@
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--ex-border);
   border-radius: 8px;
-  background: #0a0a0a;
+  background: var(--ex-input-bg);
   color: var(--ex-text);
   font-size: 0.875rem;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -65,7 +46,7 @@
   align-items: center;
   gap: 1rem 1.5rem;
   padding: 0.85rem 1.1rem;
-  background: linear-gradient(135deg, #0a0a0a 0%, #111 50%, #1a1508 100%);
+  background: var(--ex-ticker-bg);
   border: 1px solid var(--ex-border-gold);
   border-radius: 12px;
   margin-bottom: 0.75rem;
@@ -161,7 +142,7 @@
 .ex-portfolio {
   padding: 0.5rem 0.85rem;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--ex-portfolio-bg);
   border: 1px solid var(--ex-border-gold);
   font-weight: 700;
   font-size: 0.85rem;
@@ -235,7 +216,7 @@
   gap: 0.35rem;
   padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--ex-border);
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
 }
 
 .ex-markets__tabs button {
@@ -302,7 +283,7 @@
   padding: 0.65rem 0.85rem;
   font-size: 0.82rem;
   border-top: 1px solid var(--ex-border);
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
 }
 
 .ex-markets__balance strong {
@@ -321,7 +302,7 @@
   border-radius: 0;
   overflow: hidden;
   border: none;
-  background: #0a0e13;
+  background: var(--ex-chart-bg);
 }
 
 /* —— Order forms —— */
@@ -370,7 +351,7 @@
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--ex-border);
   border-radius: 8px;
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--ex-muted);
@@ -413,7 +394,7 @@
 .ex-btn-buy:hover,
 .ex-btn-sell:hover {
   filter: brightness(1.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ex-shadow);
 }
 
 /* —— Order book —— */
@@ -433,7 +414,7 @@
   letter-spacing: 0.04em;
   color: var(--ex-muted);
   border-bottom: 1px solid var(--ex-border);
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
 }
 
 .ex-book__row {
@@ -475,7 +456,7 @@
   text-transform: uppercase;
   color: var(--ex-muted);
   border-bottom: 1px solid var(--ex-border);
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
 }
 
 .ex-tape__row {
@@ -512,7 +493,7 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ex-muted);
-  background: #0a0a0a;
+  background: var(--ex-strip-bg);
   border-bottom: 1px solid var(--ex-border);
 }
 

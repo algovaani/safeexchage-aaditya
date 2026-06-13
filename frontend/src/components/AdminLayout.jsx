@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useAdminTheme } from '../hooks/useAdminTheme.js';
+import { useTheme } from '../context/ThemeContext.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import '../pages/Admin.css';
 
 const SECTIONS = [
@@ -17,7 +19,9 @@ const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));
 
 export default function AdminLayout() {
   useAdminTheme();
+  const { isDark } = useTheme();
   const { user, logout } = useAuth();
+  const shellTheme = isDark ? 'dark' : 'light';
   const location = useLocation();
   const section = new URLSearchParams(location.search).get('section') || 'overview';
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -34,7 +38,7 @@ export default function AdminLayout() {
   }, [drawerOpen]);
 
   return (
-    <div className={`admin-shell admin-shell--dark${drawerOpen ? ' admin-shell--drawer-open' : ''}`}>
+    <div className={`admin-shell admin-shell--${shellTheme}${drawerOpen ? ' admin-shell--drawer-open' : ''}`}>
       <button
         type="button"
         className="admin-drawer-backdrop"
@@ -42,10 +46,10 @@ export default function AdminLayout() {
         onClick={() => setDrawerOpen(false)}
       />
 
-      <aside className={`admin-sidebar admin-sidebar--dark${drawerOpen ? ' is-open' : ''}`}>
+      <aside className={`admin-sidebar admin-sidebar--${shellTheme}${drawerOpen ? ' is-open' : ''}`}>
         <div className="admin-sidebar__top">
           <div className="admin-brand">
-            <span className="admin-brand__mark" aria-hidden />
+            <span className="admin-brand__mark bg-accent" aria-hidden />
             <div>
               <p className="admin-brand__text">SAFEX</p>
               <p className="admin-brand__sub">Admin Control</p>
@@ -80,6 +84,9 @@ export default function AdminLayout() {
         </nav>
 
         <div className="admin-sidebar__actions">
+          <div className="flex justify-center mb-2">
+            <ThemeToggle />
+          </div>
           <Link to="/" className="admin-btn admin-btn--ghost" onClick={() => setDrawerOpen(false)}>
             ← Exchange
           </Link>
@@ -108,7 +115,7 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        <main className="admin-content admin-content--dark">
+        <main className={`admin-content admin-content--${shellTheme}`}>
           <Outlet />
         </main>
       </div>

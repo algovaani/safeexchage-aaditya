@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { api, setAuthToken } from '../api/client.js';
+import { api, parseApiResponse, setAuthToken } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
@@ -31,7 +31,7 @@ export function AuthProvider({ children }) {
     (async () => {
       try {
         const { data } = await api.get('/auth/me');
-        setUser(data);
+        setUser(parseApiResponse(data));
       } catch {
         localStorage.removeItem(STORAGE_KEY);
         setToken(null);
@@ -42,23 +42,30 @@ export function AuthProvider({ children }) {
     })();
   }, [token]);
 
-  const login = async (email, password) => {
-    const { data } = await api.post('/auth/login', { email, password });
-    localStorage.setItem(STORAGE_KEY, data.token);
-    setToken(data.token);
-    setUser(data.user);
-    return data;
+  const login = async (identifier, password) => {
+    const { data } = await api.post('/auth/login', { identifier, password });
+    const payload = parseApiResponse(data);
+    localStorage.setItem(STORAGE_KEY, payload.token);
+    setToken(payload.token);
+    setUser(payload.user);
+    return payload;
   };
 
-  const register = async (payload) => {
-    const { data } = await api.post('/auth/register', payload);
-    localStorage.setItem(STORAGE_KEY, data.token);
-    setToken(data.token);
-    setUser(data.user);
-    return data;
+  const register = async (body) => {
+    const { data } = await api.post('/auth/register', body);
+    const payload = parseApiResponse(data);
+    localStorage.setItem(STORAGE_KEY, payload.token);
+    setToken(payload.token);
+    setUser(payload.user);
+    return payload;
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      /* ignore — clear local session anyway */
+    }
     localStorage.removeItem(STORAGE_KEY);
     setToken(null);
     setUser(null);

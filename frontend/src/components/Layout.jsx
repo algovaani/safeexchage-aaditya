@@ -1,20 +1,52 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import {
+  LayoutDashboard,
+  LineChart,
+  ArrowLeftRight,
+  PieChart,
+  ListOrdered,
+  Wallet,
+  FileText,
+  Settings,
+  Search,
+  Bell,
+  Menu,
+  X,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { api } from '../api/client.js';
+import { api, parseApiResponse } from '../api/client.js';
+import ThemeToggle from './ThemeToggle.jsx';
+import './AppShell.css';
+
+const NAV = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/markets', icon: LineChart, label: 'Markets' },
+  { to: '/trade', icon: ArrowLeftRight, label: 'Trade' },
+  { to: '/dashboard', icon: PieChart, label: 'Portfolio', match: '/dashboard' },
+  { to: '/trade', icon: ListOrdered, label: 'Orders', match: '/trade' },
+  { to: '/wallet', icon: Wallet, label: 'Wallet' },
+  { to: '/transactions', icon: FileText, label: 'Reports' },
+  { to: '/account/profile', icon: Settings, label: 'Settings' },
+];
+
+function isNavActive(pathname, item) {
+  if (item.label === 'Portfolio' || item.label === 'Orders') return false;
+  if (item.to === '/account/profile') return pathname.startsWith('/account/profile');
+  if (item.to === '/wallet') return pathname === '/wallet' || pathname === '/account';
+  return pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
+}
 
 export default function Layout() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout } = useAuth();
   const { pathname } = useLocation();
-  const wide = pathname === '/trade';
-  const isLanding = pathname === '/' && !user;
+  const fullWidth = pathname === '/trade';
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [portfolio, setPortfolio] = useState(null);
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('vc-theme') === 'dark');
 
   useEffect(() => {
-    document.body.classList.toggle('ex-dark-mode', darkMode);
-    localStorage.setItem('vc-theme', darkMode ? 'dark' : 'light');
-  }, [darkMode]);
+    setSidebarOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!user) {
@@ -23,122 +55,99 @@ export default function Layout() {
     }
     api
       .get('/wallet/balance')
-      .then((r) => setPortfolio(r.data?.balance ?? 0))
+      .then((r) => {
+        const wallet = parseApiResponse(r.data);
+        setPortfolio(wallet?.balance_usdt ?? wallet?.balance ?? 0);
+      })
       .catch(() => setPortfolio(null));
   }, [user, pathname]);
 
-  const accountActive = pathname === '/account' || pathname.startsWith('/account/');
+  const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'Trader';
+  const initial = displayName[0]?.toUpperCase() || 'S';
 
   return (
-    <div
-      className={`shell${wide ? ' shell--wide' : ''}${isLanding ? ' shell--landing' : ''}`}
-    >
-      {!isLanding && (
-      <header className="ex-topnav">
-        <div className="ex-topnav__row">
-          <NavLink to="/" className="ex-logo">
-            <span className="ex-logo__mark" aria-hidden />
-            <span className="ex-logo__text">SAFEX</span>
+    <div className={`app-shell${fullWidth ? ' app-shell--wide' : ''}`}>
+      <aside className={`app-sidebar${sidebarOpen ? ' is-open' : ''}`}>
+        <div className="app-sidebar__brand">
+          <span className="app-sidebar__dot" />
+          <span className="app-sidebar__logo">SAFEX</span>
+          <button type="button" className="app-sidebar__close lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+            <X size={18} />
+          </button>
+        </div>
+
+        <nav className="app-sidebar__nav">
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            const active = isNavActive(pathname, item);
+            return (
+              <NavLink
+                key={item.label}
+                to={item.to}
+                className={`app-sidebar__link${active ? ' is-active' : ''}`}
+              >
+                <Icon size={18} strokeWidth={1.75} />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        {user && (
+          <div className="app-sidebar__user">
+            <div className="app-sidebar__avatar">{initial}</div>
+            <div className="app-sidebar__user-info">
+              <span className="app-sidebar__user-name">{displayName}</span>
+              <span className="app-sidebar__user-email">{user.email}</span>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {sidebarOpen && (
+        <button type="button" className="app-sidebar-backdrop" aria-label="Close menu" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <div className="app-main">
+        <header className="app-navbar">
+          <button type="button" className="app-navbar__menu lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <Menu size={20} />
+          </button>
+
+          <NavLink to="/dashboard" className="app-navbar__logo-mobile lg:hidden">
+            <span className="app-sidebar__dot" />
+            SAFEX
           </NavLink>
 
-          {user && (
-            <nav className="ex-topnav__links">
-              <NavLink to="/" end className={({ isActive }) => (isActive ? 'is-active' : '')}>
-                Exchange
-              </NavLink>
-              <NavLink
-                to="/account"
-                className={({ isActive }) => (isActive || accountActive ? 'is-active' : '')}
-              >
-                Account
-              </NavLink>
-              <NavLink to="/transactions" className={({ isActive }) => (isActive ? 'is-active' : '')}>
-                Transactions
-              </NavLink>
-              <NavLink to="/trade" className={({ isActive }) => (isActive ? 'is-active' : '')}>
-                Trade
-              </NavLink>
-              {isAdmin && (
-                <NavLink to="/admin/panel" className={({ isActive }) => (isActive ? 'is-active' : '')}>
-                  Admin
-                </NavLink>
-              )}
-            </nav>
-          )}
+          <div className="app-navbar__search">
+            <Search size={16} className="app-navbar__search-icon" />
+            <input type="search" placeholder="Search markets, assets…" className="app-navbar__search-input" />
+          </div>
 
-          <div className="ex-topnav__right">
+          <div className="app-navbar__actions">
+            {portfolio != null && (
+              <div className="app-navbar__balance hidden sm:flex">
+                <span className="text-[11px] uppercase tracking-wider text-text-secondary">Balance</span>
+                <span className="text-sm font-medium tabular-nums">{Number(portfolio).toFixed(2)} USDT</span>
+              </div>
+            )}
+            <button type="button" className="app-navbar__icon-btn" aria-label="Notifications">
+              <Bell size={18} />
+            </button>
+            <ThemeToggle className="app-navbar__icon-btn" />
+            <div className="app-navbar__avatar">{initial}</div>
             {user && (
-              <>
-                <button
-                  type="button"
-                  className="ex-icon-btn"
-                  title={darkMode ? 'Light mode' : 'Dark mode'}
-                  aria-label="Toggle theme"
-                  onClick={() => setDarkMode((d) => !d)}
-                >
-                  {darkMode ? '☀' : '☾'}
-                </button>
-                <span className="ex-portfolio">
-                  Portfolio : {portfolio != null ? `${Number(portfolio).toFixed(2)} USDT` : '—'}
-                </span>
-                <button type="button" className="ex-link-btn" onClick={logout}>
-                  Logout
-                </button>
-              </>
-            )}
-            {!user && (
-              <>
-                <button
-                  type="button"
-                  className="ex-icon-btn"
-                  title="Theme"
-                  onClick={() => setDarkMode((d) => !d)}
-                >
-                  {darkMode ? '☀' : '☾'}
-                </button>
-                <NavLink to="/login" className="ex-link-btn">
-                  Login
-                </NavLink>
-                <NavLink to="/signup" className="ex-pill-btn">
-                  Sign up
-                </NavLink>
-              </>
+              <button type="button" className="btn-secondary hidden md:inline-flex !h-9 !text-xs" onClick={logout}>
+                Logout
+              </button>
             )}
           </div>
-        </div>
-      </header>
-      )}
+        </header>
 
-      <main className="ex-main">
-        <Outlet />
-      </main>
-
-      {!wide && !isLanding && (
-        <footer className="ex-footer">
-          <div className="ex-footer__cols">
-            <div>
-              <strong>About</strong>
-              <a href="#about">About Us</a>
-              <a href="#contact">Contact Us</a>
-            </div>
-            <div>
-              <strong>Services</strong>
-              <a href="#list">List Your Coin</a>
-              <a href="#privacy">Privacy &amp; Policy</a>
-            </div>
-            <div>
-              <strong>Support</strong>
-              <a href="#support">Support</a>
-              <a href="#faq">FAQ</a>
-            </div>
-            <div>
-              <strong>Product</strong>
-              <NavLink to="/trade">Exchange</NavLink>
-            </div>
-          </div>
-          <p className="ex-footer__copy">© {new Date().getFullYear()} SafeX Exchange. All Rights Reserved</p>
-        </footer>
-      )}
+        <main className={`app-content${fullWidth ? ' app-content--wide' : ''}`}>
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

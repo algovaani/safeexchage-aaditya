@@ -1,12 +1,14 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
-import Home from './pages/Home.jsx';
+import AppHome from './pages/AppHome.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import Markets from './pages/Markets.jsx';
 import Account from './pages/Account.jsx';
 import AccountProfile from './pages/AccountProfile.jsx';
 import Transactions from './pages/Transactions.jsx';
@@ -17,35 +19,47 @@ export default function App() {
   return (
     <Routes>
       <Route path="/admin/login" element={<AdminLogin />} />
-      <Route
-        path="/admin"
-        element={
-          <AdminRoute>
-            <AdminLayout />
-          </AdminRoute>
-        }
-      >
-        <Route index element={<Navigate to="/admin/panel?section=overview" replace />} />
-        <Route path="panel" element={<Admin />} />
-      </Route>
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
 
       <Route element={<Layout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/exchange" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<AppHome />} />
+        <Route path="/exchange" element={<Navigate to="/markets" replace />} />
 
         <Route
-          path="/account"
+          path="/dashboard"
           element={
             <ProtectedRoute>
-              <Outlet />
+              <Dashboard />
             </ProtectedRoute>
           }
-        >
-          <Route index element={<Account />} />
-          <Route path="profile/*" element={<AccountProfile />} />
-        </Route>
+        />
+        <Route
+          path="/markets"
+          element={
+            <ProtectedRoute>
+              <Markets />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/wallet"
+          element={
+            <ProtectedRoute>
+              <Account />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/account" element={<Navigate to="/wallet" replace />} />
+
+        <Route
+          path="/account/profile/*"
+          element={
+            <ProtectedRoute>
+              <AccountProfile />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/transactions"
@@ -63,9 +77,19 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/wallet" element={<Navigate to="/account" replace />} />
-        <Route path="/dashboard" element={<Navigate to="/account" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route index element={<Navigate to="/admin/panel?section=overview" replace />} />
+        <Route path="panel" element={<Admin />} />
       </Route>
     </Routes>
   );

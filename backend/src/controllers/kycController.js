@@ -1,34 +1,77 @@
-import { KycDetail } from '../models/KycDetail.js';
+import { KycSubmission } from '../models/KycSubmission.js';
+import { removeUploadedFiles } from '../middleware/kycUpload.js';
+import { formatSubmission, mapUploadedFiles } from '../services/kycService.js';
+import { error, success } from '../utils/response.js';
 
-const DOC_TYPES = new Set(['aadhar', 'pan', 'passport']);
+const REQUIRED_FILES = ['doc_front', 'selfie', 'address_proof'];
 
-export async function upload(req, res, next) {
+export async function submit(req, res, next) {
   try {
-    const documentType = req.body?.documentType;
-    if (!DOC_TYPES.has(documentType)) {
-      return res.status(400).json({ error: 'documentType must be aadhar, pan, or passport' });
-    }
-    if (!req.file) return res.status(400).json({ error: 'File required' });
+    const docType = req.body.doc_type;
 
-    const row = await KycDetail.create({
+    const existing = await KycSubmission.findOne({
       userId: req.userId,
-      documentType,
-      filePath: req.file.path,
-      originalName: req.file.originalname,
+      status: { $in: ['pending', 'approved'] },
+    });
+
+    if (existing) {
+      removeUploadedFiles(req.files);
+      return error(
+        res,
+        existing.status === 'approved'
+          ? 'KYC is already approved'
+          : 'A KYC submission is already pending review',
+        409
+      );
+    }
+
+    const missing = REQUIRED_FILES.filter((f) => !req.files?.[f]?.[0]);
+    if (missing.length) {
+      removeUploadedFiles(req.files);
+      return error(res, `Missing required files: ${missing.join(', ')}`, 400);
+    }
+
+    const files = mapUploadedFiles(req.files);
+
+    const submission = await KycSubmission.create({
+      userId: req.userId,
+      docType,
+      files,
       status: 'pending',
     });
 
-    res.status(201).json(row);
+    return success(res, formatSubmission(req, submission), 'KYC submitted successfully', 201);
   } catch (e) {
-    next(e);
+    removeUploadedFiles(req.files);
+    return next(e);
   }
 }
 
-export async function myStatus(req, res, next) {
+export async function status(req, res, next) {
   try {
-    const items = await KycDetail.find({ userId: req.userId }).sort({ createdAt: -1 }).lean();
-    res.json(items);
+    const submission = await KycSubmission.findOne({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!submission) {
+      return success(res, {
+        status: 'not_submitted',
+        submittedAt: null,
+        adminNote: null,
+      }, 'No KYC submission found');
+    }
+
+    const data = {
+      status: submission.status,
+      docType: submission.docType,
+      submittedAt: submission.createdAt,
+      reviewedAt: submission.reviewedAt,
+      adminNote: submission.status === 'rejected' ? submission.adminNote || '' : null,
+      files: formatSubmission(req, submission).files,
+    };
+
+    return success(res, data, 'KYC status fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }

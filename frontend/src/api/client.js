@@ -1,16 +1,13 @@
-import axios from 'axios';
-
-const baseURL = import.meta.env.VITE_API_URL || '/api';
-
-export const api = axios.create({
-  baseURL,
-  headers: { 'Content-Type': 'application/json' },
-});
-
-export function setAuthToken(token) {
-  if (token) {
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common.Authorization;
-  }
-}
+export {
+  api,
+  parseApiResponse,
+  setAuthToken,
+  authAPI,
+  kycAPI,
+  depositAPI,
+  marketAPI,
+  tradeAPI,
+  stakingAPI,
+  dashboardAPI,
+  walletAPI,
+} from '../services/api.js';

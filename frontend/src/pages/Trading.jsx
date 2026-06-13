@@ -1,14 +1,26 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
-import { api } from '../api/client.js';
+import { api, parseApiResponse } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
+import { useTheme } from '../context/ThemeContext.jsx';
 import './Trading.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
 
 const WATCHLIST = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'];
 
+function fmtNum(value, digits = 2) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : '—';
+}
+
+function fmtLocale(value, options) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, options) : '—';
+}
+
 export default function Trading() {
+  const { isDark } = useTheme();
   const INTERVAL = '1s';
 
   const [symbol, setSymbol] = useState('BTCUSDT');
@@ -40,9 +52,10 @@ export default function Trading() {
 
   const loadTicker = useCallback(async () => {
     const { data } = await api.get('/market/ticker', { params: { symbol } });
-    setTicker(data);
-    setBuyPrice((p) => p || String(data.lastPrice));
-    setSellPrice((p) => p || String(data.lastPrice));
+    const ticker = parseApiResponse(data);
+    setTicker(ticker);
+    setBuyPrice((p) => p || String(ticker?.lastPrice ?? ''));
+    setSellPrice((p) => p || String(ticker?.lastPrice ?? ''));
   }, [symbol]);
 
   useEffect(() => {
@@ -63,7 +76,7 @@ export default function Trading() {
         WATCHLIST.map(async (s) => {
           try {
             const { data } = await api.get('/market/ticker', { params: { symbol: s } });
-            out[s] = data;
+            out[s] = parseApiResponse(data);
           } catch {
             out[s] = null;
           }
@@ -80,7 +93,8 @@ export default function Trading() {
         params: { symbol, interval: INTERVAL, limit: 400 },
       });
       if (!active) return;
-      setCandles(data.candles || []);
+      const klines = parseApiResponse(data);
+      setCandles(klines?.candles || []);
     })();
     return () => {
       active = false;
@@ -151,8 +165,10 @@ export default function Trading() {
   useEffect(() => {
     (async () => {
       const [{ data: o }, { data: w }] = await Promise.all([api.get('/orders'), api.get('/wallet/balance')]);
-      setOrders(o);
-      setBalances(w);
+      const orders = parseApiResponse(o);
+      const wallet = parseApiResponse(w);
+      setOrders(Array.isArray(orders) ? orders : []);
+      setBalances(wallet);
     })();
   }, []);
 
@@ -172,7 +188,8 @@ export default function Trading() {
     await api.post('/orders', payload);
     setNote(`Order sent (${side} ${orderType}).`);
     const { data } = await api.get('/orders');
-    setOrders(data);
+    const orders = parseApiResponse(data);
+    setOrders(Array.isArray(orders) ? orders : []);
   }
 
   const changePct = ticker?.priceChangePercent ?? 0;
@@ -192,7 +209,7 @@ export default function Trading() {
 
         <div className="ex-ticker__price-block">
           <span className={`ex-ticker__price ${up ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
-            {ticker ? ticker.lastPrice.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '—'}
+            {ticker ? fmtLocale(ticker.lastPrice, { maximumFractionDigits: 6 }) : '—'}
           </span>
         </div>
 
@@ -201,19 +218,23 @@ export default function Trading() {
             <span>24h change</span>
             <span>
               {ticker
-                ? `${ticker.priceChange >= 0 ? '+' : ''}${ticker.priceChange.toFixed(2)} (${changePct.toFixed(3)}%)`
+                ? `${
+                    ticker.priceChange != null && Number.isFinite(Number(ticker.priceChange))
+                      ? `${Number(ticker.priceChange) >= 0 ? '+' : ''}${fmtNum(ticker.priceChange, 2)} `
+                      : ''
+                  }(${fmtNum(changePct, 3)}%)`
                 : '—'}
             </span>
           </div>
           <div className="ex-ticker__stat">
             <span>24h high / low</span>
             <span>
-              {ticker ? `${ticker.highPrice.toFixed(2)} / ${ticker.lowPrice.toFixed(2)}` : '—'}
+              {ticker ? `${fmtNum(ticker.highPrice, 2)} / ${fmtNum(ticker.lowPrice, 2)}` : '—'}
             </span>
           </div>
           <div className="ex-ticker__stat">
             <span>24h volume</span>
-            <span>{ticker ? ticker.volume.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—'}</span>
+            <span>{ticker ? fmtLocale(ticker.volume, { maximumFractionDigits: 2 }) : '—'}</span>
           </div>
           <div className="ex-ticker__stat">
             <span>Interval</span>
@@ -223,7 +244,7 @@ export default function Trading() {
 
         <div className="ex-portfolio">
           <small>Available balance</small>
-          {balances != null ? `${Number(balances.balance).toFixed(2)} USDT` : '—'}
+          {balances != null ? `${Number(balances.balance_usdt ?? balances.balance ?? 0).toFixed(2)} USDT` : '—'}
         </div>
       </div>
 
@@ -261,7 +282,11 @@ export default function Trading() {
                   onKeyDown={(e) => e.key === 'Enter' && setSymbol(p)}
                 >
                   <span className="ex-markets__pair">{p.replace('USDT', '')}/USDT</span>
-                  <span>{w ? w.lastPrice.toFixed(w.lastPrice < 1 ? 6 : 2) : '—'}</span>
+                  <span>
+                    {w?.lastPrice != null
+                      ? fmtNum(w.lastPrice, Number(w.lastPrice) < 1 ? 6 : 2)
+                      : '—'}
+                  </span>
                   <span style={{ color: pct >= 0 ? 'var(--ex-buy)' : 'var(--ex-sell)' }}>
                     {w ? `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%` : '—'}
                   </span>
@@ -272,7 +297,7 @@ export default function Trading() {
           <div className="ex-markets__balance">
             <small style={{ color: 'var(--ex-muted)', fontSize: '0.72rem' }}>SPOT balance</small>
             <div>
-              <strong>{balances != null ? `${Number(balances.balance).toFixed(2)}` : '—'}</strong> USDT
+              <strong>{balances != null ? `${Number(balances.balance_usdt ?? balances.balance ?? 0).toFixed(2)}` : '—'}</strong> USDT
             </div>
           </div>
         </aside>
@@ -280,7 +305,7 @@ export default function Trading() {
         <section className="ex-center">
           <div className="ex-panel ex-chart-area">
             <div className="ex-panel__head">{symbol} · Live chart</div>
-            <LiveChart variant="dark" className="ex-chart-wrap" candles={candles} />
+            <LiveChart variant={isDark ? 'dark' : 'light'} className="ex-chart-wrap" candles={candles} />
           </div>
 
           <div className="ex-orders">

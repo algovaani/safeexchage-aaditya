@@ -1,17 +1,25 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { useAdminTheme } from '../hooks/useAdminTheme.js';
-import './Admin.css';
+import './AdminLogin.css';
 
 export default function AdminLogin() {
-  useAdminTheme();
   const { login, logout } = useAuth();
   const nav = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  function handleOtpChange(i, val) {
+    if (!/^\d?$/.test(val)) return;
+    const next = [...otp];
+    next[i] = val;
+    setOtp(next);
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -20,13 +28,13 @@ export default function AdminLogin() {
     try {
       const data = await login(email, password);
       if (data.user?.role !== 'admin') {
-        logout();
+        await logout();
         setErr('This account is not an admin account.');
         return;
       }
       nav('/admin/panel?section=overview');
-    } catch {
-      setErr('Invalid admin credentials');
+    } catch (ex) {
+      setErr(ex.message || 'Invalid admin credentials');
     } finally {
       setBusy(false);
     }
@@ -34,35 +42,79 @@ export default function AdminLogin() {
 
   return (
     <div className="admin-login-page">
-      <div className="admin-login-card">
-        <h1>Admin Login</h1>
-        <p className="admin-muted">Only admin users can access this panel.</p>
-        <p className="admin-muted" style={{ fontSize: '0.85rem', marginTop: '0.5rem' }}>
-          Dev default (after <code>npm run seed</code>):{' '}
-          <strong>admin@safex.local</strong> / <strong>ChangeMeAdmin123!</strong>
-        </p>
+      <header className="admin-login-nav">
+        <Link to="/" className="admin-login-nav__brand">
+          <span className="admin-login-nav__dot" />
+          SAFEX
+        </Link>
+      </header>
 
-        <form onSubmit={onSubmit} style={{ marginTop: '1.25rem' }}>
-          <div className="admin-field" style={{ marginBottom: '0.85rem' }}>
-            <label>Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div className="admin-field" style={{ marginBottom: '0.85rem' }}>
-            <label>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
+      <main className="admin-login-main">
+        <div className="admin-login-card">
+          <span className="admin-login-badge">
+            <ShieldAlert size={14} />
+            Admin Access Only
+          </span>
 
-          {err && <p className="admin-login-error">{err}</p>}
+          <h1 className="admin-login-card__title">Admin Login</h1>
+          <p className="admin-login-card__subtitle">Restricted area — authorized personnel only</p>
 
-          <button className="admin-btn admin-btn--primary" type="submit" disabled={busy} style={{ width: '100%' }}>
-            {busy ? 'Signing in…' : 'Sign in as Admin'}
-          </button>
-        </form>
+          <form onSubmit={onSubmit}>
+            <div className="admin-login-field">
+              <label htmlFor="admin-email">Admin Email</label>
+              <input
+                id="admin-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-        <p className="admin-muted" style={{ marginTop: '1rem' }}>
-          User login? <Link to="/login">Go to user login</Link>
-        </p>
-      </div>
+            <div className="admin-login-field admin-login-field--pw">
+              <label htmlFor="admin-password">Password</label>
+              <input
+                id="admin-password"
+                type={showPw ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button type="button" className="admin-login-field__toggle" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password">
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+
+            <div className="admin-login-field">
+              <label>OTP (optional)</label>
+              <div className="admin-login-otp">
+                {otp.map((d, i) => (
+                  <input
+                    key={i}
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={1}
+                    value={d}
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    aria-label={`OTP digit ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {err && <p className="admin-login-error">{err}</p>}
+
+            <button type="submit" className="admin-login-submit" disabled={busy}>
+              {busy ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Login'}
+            </button>
+          </form>
+
+          <p className="admin-login-hint text-xs text-text-muted mt-4">
+            Dev: <strong className="text-text-secondary">admin@vencrypto.local</strong> /{' '}
+            <strong className="text-text-secondary">ChangeMeAdmin123!</strong>
+          </p>
+        </div>
+      </main>
     </div>
   );
 }

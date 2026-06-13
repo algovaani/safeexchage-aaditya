@@ -1,13 +1,65 @@
 import { getMergedKlines } from '../services/marketDataService.js';
-import { fetchTicker24h } from '../services/binanceService.js';
+import {
+  fetchAllPairPrices,
+  fetchTicker,
+  fetchTicker24h,
+  normalizeSymbol,
+} from '../services/binanceService.js';
+import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
+import { error, success } from '../utils/response.js';
+
+export async function allPrices(_req, res, next) {
+  try {
+    const result = await fetchAllPairPrices();
+    return success(res, result, 'Prices fetched');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function livePrices(_req, res, next) {
+  try {
+    const result = await fetchAllPairPrices({ force: true });
+    res.set('Cache-Control', 'no-store');
+    return success(
+      res,
+      {
+        ...result,
+        pollIntervalSeconds: 3,
+        hint: 'Poll this endpoint every 3 seconds for near-live updates',
+      },
+      'Live prices fetched'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function singlePrice(req, res, next) {
+  try {
+    const sym = normalizeSymbol(req.params.symbol);
+    if (!TRADING_PAIR_SYMBOLS.includes(sym)) {
+      return error(
+        res,
+        `Unsupported symbol. Allowed: ${TRADING_PAIR_SYMBOLS.join(', ')}`,
+        400
+      );
+    }
+    const ticker = await fetchTicker(sym);
+    return success(res, ticker, 'Price fetched');
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  }
+}
 
 export async function ticker24h(req, res, next) {
   try {
     const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase();
     const t = await fetchTicker24h(symbol);
-    res.json(t);
+    return success(res, t, '24h ticker fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
@@ -20,8 +72,8 @@ export async function klines(req, res, next) {
     const startTime = req.query.startTime ? parseInt(req.query.startTime, 10) : undefined;
 
     const candles = await getMergedKlines(symbol, interval, { startTime, endTime, limit });
-    res.json({ symbol, interval, candles });
+    return success(res, { symbol, interval, candles }, 'Klines fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }

@@ -881,15 +881,11 @@
   margin: 0;
 }
 
-/* Layout shell — landing full bleed */
-.shell--landing {
-  max-width: 100%;
+html,
+body {
+  margin: 0;
   padding: 0;
   overflow-x: clip;
-}
-
-.shell--landing .ex-main {
-  padding: 0;
 }
 
 @media (max-width: 960px) {

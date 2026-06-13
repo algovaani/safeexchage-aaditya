@@ -24,7 +24,7 @@ npm run dev
 API: `http://localhost:5001` (default port avoids macOS AirPlay on **5000**)  
 Health: `GET http://localhost:5001/api/health`
 
-## 3. Frontend
+## 3. Frontend (trading app)
 
 ```bash
 cd frontend
@@ -35,9 +35,30 @@ npm install
 npm run dev
 ```
 
-App: `http://localhost:5173`
+App: `http://localhost:5173` — login, signup, trade, account (no marketing landing here)
 
-## 4. First login
+## 4. Landing site (separate domain)
+
+Marketing landing page lives in **`landing/`** — deploy on its own domain (e.g. `safex.com`), while the app runs on another (e.g. `app.safex.com`).
+
+```bash
+cd landing
+cp .env.example .env
+# VITE_APP_URL = main app URL (signup/login links point here)
+npm install
+npm run dev
+```
+
+Landing: `http://localhost:5174`
+
+Production `.env` example:
+
+| Project | Variable | Example |
+|---------|----------|---------|
+| `landing/.env` | `VITE_APP_URL` | `https://app.safex.com` |
+| `backend/.env` | `CORS_ORIGIN` | `https://app.safex.com` |
+
+## 5. First login
 
 After `npm run seed` in backend, sign in at **http://localhost:5173/admin/login** with:
 
@@ -48,7 +69,7 @@ Admin panel: **http://localhost:5173/admin/panel**
 
 Or register a new user via **Sign up** at http://localhost:5173/signup
 
-## 5. Hybrid chart notes
+## 6. Hybrid chart notes
 
 - **Binance** public REST/WebSocket are used for market data (no API key required for klines).
 - **Manual candles** are stored in `manual_price_data` and merged server-side before WebSocket broadcast.

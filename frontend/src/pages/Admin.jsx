@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api } from '../api/client.js';
+import { api, parseApiResponse } from '../api/client.js';
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
 import './Admin.css';
 
 const SECTION_TITLES = {
@@ -23,6 +27,95 @@ function StatusBadge({ status }) {
   return <span className={`admin-badge ${cls}`}>{status}</span>;
 }
 
+const KYC_DOC_FIELDS = [
+  { key: 'docFront', label: 'Document Front' },
+  { key: 'docBack', label: 'Document Back' },
+  { key: 'selfie', label: 'Selfie' },
+  { key: 'addressProof', label: 'Address Proof' },
+];
+
+function kycDocuments(files = {}) {
+  return KYC_DOC_FIELDS.map(({ key, label }) => ({
+    key,
+    label,
+    url: files[key]?.url || null,
+    originalName: files[key]?.originalName || '',
+  })).filter((d) => d.url);
+}
+
+function KycDocsDrawer({ row, onClose, onReview }) {
+  if (!row) return null;
+  const docs = kycDocuments(row.files);
+  const userLabel = row.user?.email || row.user?.mobile || String(row.userId);
+
+  return (
+    <>
+      <button type="button" className="admin-kyc-backdrop" aria-label="Close" onClick={onClose} />
+      <aside className="admin-kyc-drawer">
+        <div className="admin-kyc-drawer__head">
+          <div>
+            <h2>KYC Documents</h2>
+            <p>{userLabel} · {row.docType?.replace(/_/g, ' ')}</p>
+          </div>
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="admin-kyc-drawer__meta">
+          <span>Status: <StatusBadge status={row.status} /></span>
+          {row.submittedAt && (
+            <span>Submitted: {new Date(row.submittedAt).toLocaleString()}</span>
+          )}
+        </div>
+
+        {row.status === 'rejected' && row.adminNote && (
+          <p className="admin-kyc-drawer__note">Rejection note: {row.adminNote}</p>
+        )}
+
+        <div className="admin-kyc-docs">
+          {docs.length ? docs.map((doc) => (
+            <div key={doc.key} className="admin-kyc-doc">
+              <p className="admin-kyc-doc__label">{doc.label}</p>
+              <a href={doc.url} target="_blank" rel="noreferrer" className="admin-kyc-doc__preview">
+                {/\.(pdf)(\?|$)/i.test(doc.url) ? (
+                  <div className="admin-kyc-doc__pdf">PDF — click to open</div>
+                ) : (
+                  <img src={doc.url} alt={doc.label} />
+                )}
+              </a>
+              <a href={doc.url} target="_blank" rel="noreferrer" className="admin-link">
+                {doc.originalName || 'Open full size'}
+              </a>
+            </div>
+          )) : (
+            <p className="admin-empty">No documents attached.</p>
+          )}
+        </div>
+
+        {row.status === 'pending' && (
+          <div className="admin-kyc-drawer__actions">
+            <button
+              type="button"
+              className="admin-btn admin-btn--primary"
+              onClick={() => onReview(row.id || row._id, 'approve')}
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              className="admin-btn admin-btn--danger"
+              onClick={() => onReview(row.id || row._id, 'reject')}
+            >
+              Reject
+            </button>
+          </div>
+        )}
+      </aside>
+    </>
+  );
+}
+
 export default function Admin() {
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('section') || 'overview';
@@ -36,6 +129,7 @@ export default function Admin() {
   const [manual, setManual] = useState([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [selectedKyc, setSelectedKyc] = useState(null);
 
   const [manualForm, setManualForm] = useState({
     symbol: 'BTCUSDT',
@@ -67,18 +161,18 @@ export default function Admin() {
           api.get('/admin/users'),
           api.get('/admin/kyc'),
           api.get('/admin/transactions'),
-          api.get('/admin/trades'),
+          api.get('/admin/exchange-trades'),
           api.get('/admin/manual-prices'),
           api.get('/admin/transactions/all'),
           api.get('/admin/orders'),
         ]);
-      setUsers(u);
-      setKyc(k);
-      setTxs(t);
-      setTrades(tr);
-      setManual(m);
-      setAllTxs(allT);
-      setOrders(allO);
+      setUsers(asArray(parseApiResponse(u)));
+      setKyc(asArray(parseApiResponse(k)));
+      setTxs(asArray(parseApiResponse(t)));
+      setTrades(asArray(parseApiResponse(tr)));
+      setManual(asArray(parseApiResponse(m)));
+      setAllTxs(asArray(parseApiResponse(allT)));
+      setOrders(asArray(parseApiResponse(allO)));
     } finally {
       setLoading(false);
     }
@@ -88,8 +182,14 @@ export default function Admin() {
     refresh().catch(() => setLoading(false));
   }, []);
 
-  async function approveKyc(id, status) {
-    await api.patch(`/admin/kyc/${id}`, { status, adminNote: '' });
+  async function reviewKyc(id, action) {
+    let note = '';
+    if (action === 'reject') {
+      note = window.prompt('Rejection reason (required):') || '';
+      if (!note.trim()) return;
+    }
+    await api.patch(`/admin/kyc/${id}/review`, { action, note });
+    setSelectedKyc(null);
     await refresh();
   }
 
@@ -228,15 +328,29 @@ export default function Admin() {
                 <tr>
                   <th>User</th>
                   <th>Type</th>
+                  <th>Documents</th>
                   <th>Status</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {kyc.map((row) => (
-                  <tr key={row._id}>
-                    <td style={{ color: 'var(--adm-muted)' }}>{String(row.userId)}</td>
-                    <td>{row.documentType}</td>
+                {kyc.map((row) => {
+                  const docCount = kycDocuments(row.files).length;
+                  return (
+                  <tr key={row.id || row._id}>
+                    <td style={{ color: 'var(--adm-muted)' }}>
+                      {row.user?.email || row.user?.mobile || String(row.userId)}
+                    </td>
+                    <td>{row.docType}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="admin-btn admin-btn--ghost admin-btn--sm"
+                        onClick={() => setSelectedKyc(row)}
+                      >
+                        View all ({docCount})
+                      </button>
+                    </td>
                     <td>
                       <StatusBadge status={row.status} />
                     </td>
@@ -246,14 +360,14 @@ export default function Admin() {
                           <button
                             type="button"
                             className="admin-btn admin-btn--primary admin-btn--sm"
-                            onClick={() => approveKyc(row._id, 'approved')}
+                            onClick={() => reviewKyc(row.id || row._id, 'approve')}
                           >
                             Approve
                           </button>
                           <button
                             type="button"
                             className="admin-btn admin-btn--danger admin-btn--sm"
-                            onClick={() => approveKyc(row._id, 'rejected')}
+                            onClick={() => reviewKyc(row.id || row._id, 'reject')}
                           >
                             Reject
                           </button>
@@ -261,10 +375,11 @@ export default function Admin() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {!kyc.length && (
                   <tr>
-                    <td colSpan={4} className="admin-empty">
+                    <td colSpan={5} className="admin-empty">
                       No KYC submissions.
                     </td>
                   </tr>
@@ -272,6 +387,11 @@ export default function Admin() {
               </tbody>
             </table>
           </div>
+          <KycDocsDrawer
+            row={selectedKyc}
+            onClose={() => setSelectedKyc(null)}
+            onReview={reviewKyc}
+          />
         </div>
       )}
 

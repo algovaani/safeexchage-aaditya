@@ -6,23 +6,101 @@ MongoDB is schemaless; the backend enforces the following shapes via Mongoose.
 
 | Field | Type | Notes |
 |--------|------|--------|
-| email | string | unique, required |
-| passwordHash | string | bcrypt |
+| email | string | unique sparse; email **or** mobile required |
+| mobile | string | unique sparse |
+| passwordHash | string | bcrypt (12 rounds) |
 | name | string | |
-| phone | string | optional |
+| status | string | `active` \| `blocked` |
 | role | enum | `user`, `admin`, `system` |
 | emailVerified | boolean | default false |
+| mobileVerified | boolean | default false |
 
-## kyc_details
+## password_otps
+
+| Field | Type | Notes |
+|--------|------|--------|
+| identifier | string | normalized email or mobile |
+| otpHash | string | bcrypt-hashed 6-digit OTP |
+| expiresAt | date | TTL index (10 min) |
+| used | boolean | |
+
+## token_blacklists
+
+| Field | Type | Notes |
+|--------|------|--------|
+| tokenHash | string | SHA-256 of JWT |
+| expiresAt | date | TTL = token expiry |
+
+## kyc_submissions
 
 | Field | Type |
 |--------|------|
 | userId | ObjectId → users |
-| documentType | `aadhar` \| `pan` \| `passport` |
-| filePath | string |
+| docType | `passport` \| `driving_license` \| `national_id` |
+| files.docFront | `{ path, originalName }` |
+| files.docBack | optional |
+| files.selfie | `{ path, originalName }` |
+| files.addressProof | `{ path, originalName }` |
 | status | `pending` \| `approved` \| `rejected` |
 | adminNote | string |
 | reviewedBy | ObjectId |
+| reviewedAt | date |
+
+## deposits
+
+| Field | Type |
+|--------|------|
+| userId | ObjectId → users |
+| type | `crypto` \| `fiat` |
+| amount | number (USDT) |
+| currency | string (default `USDT`) |
+| status | `pending` \| `approved` \| `rejected` |
+| txnHash | string (crypto) |
+| network | `TRC20` \| `ERC20` |
+| utrNumber | string (fiat, optional) |
+| paymentProof | `{ path, originalName }` (fiat) |
+| transactionId | ObjectId → transactions (set on approve) |
+| adminNote | string |
+| reviewedBy | ObjectId |
+| reviewedAt | date |
+
+## admin_trades
+
+| Field | Type |
+|--------|------|
+| pairId | ObjectId → trading_pairs |
+| entryPrice | number |
+| takeProfit | number |
+| stopLoss | number |
+| leverage | number (1–100) |
+| description | string |
+| status | `open` \| `closed` \| `cancelled` |
+| closePrice | number |
+| closedAt | date |
+| createdBy | ObjectId → users |
+
+## user_orders
+
+| Field | Type |
+|--------|------|
+| userId | ObjectId → users |
+| tradeId | ObjectId → admin_trades |
+| marginAmount | number |
+| entryPrice | number |
+| status | `open` \| `closed` \| `cancelled` |
+| pnl | number |
+| closedAt | date |
+
+## trading_pairs
+
+| Field | Type |
+|--------|------|
+| symbol | string (unique) e.g. `BTCUSDT` |
+| baseAsset | string e.g. `BTC` |
+| quoteAsset | string default `USDT` |
+| displayPair | string e.g. `BTC/USDT` |
+| isActive | boolean |
+| sortOrder | number |
 
 ## wallets
 
@@ -38,10 +116,14 @@ MongoDB is schemaless; the backend enforces the following shapes via Mongoose.
 | Field | Type |
 |--------|------|
 | userId | ObjectId |
-| type | `deposit` \| `withdrawal` |
+| type | `deposit` \| `withdrawal` \| `trade_margin_locked` \| `trade_profit` \| `trade_loss` \| `trade_margin_returned` |
+| balanceAfter | number (optional) |
+| orderId | ObjectId → user_orders |
+| tradeId | ObjectId → admin_trades |
+| depositId | ObjectId → deposits (optional) |
 | amount | number |
 | status | `pending` \| `approved` \| `rejected` \| `completed` |
-| method | `manual` \| `gateway` |
+| method | `manual` \| `gateway` \| `crypto` \| `fiat` |
 
 ## orders
 

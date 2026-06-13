@@ -1,12 +1,13 @@
 import { Order } from '../models/Order.js';
 import { Trade } from '../models/Trade.js';
+import { error, success } from '../utils/response.js';
 
 export async function createOrder(req, res, next) {
   try {
     const { symbol, side, orderType, quantity, price, stopLoss, takeProfit } = req.body;
 
     if (orderType === 'limit' && (price == null || price <= 0)) {
-      return res.status(400).json({ error: 'Limit orders require price' });
+      return error(res, 'Limit orders require price', 400);
     }
 
     const order = await Order.create({
@@ -20,18 +21,18 @@ export async function createOrder(req, res, next) {
       takeProfit: takeProfit ?? null,
     });
 
-    res.status(201).json(order);
+    return success(res, order, 'Order created', 201);
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
 export async function listOrders(req, res, next) {
   try {
     const orders = await Order.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(200).lean();
-    res.json(orders);
+    return success(res, orders, 'Orders fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }
 
@@ -43,8 +44,8 @@ export async function listTrades(req, res, next) {
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
-    res.json(trades);
+    return success(res, trades, 'Trades fetched');
   } catch (e) {
-    next(e);
+    return next(e);
   }
 }

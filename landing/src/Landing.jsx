@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext.jsx';
-import './Home.css';
+import { appUrl } from './config.js';
+import './Landing.css';
 
 const TICKER = [
   { pair: 'BTC/USDT', price: '67,234.50', chg: '+1.24%', up: true },
@@ -117,14 +116,13 @@ const PLANS = [
 const FAQ_ITEMS = [
   { q: 'SafeX kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
   { q: 'Kya registration free hai?', a: 'Haan, account free hai aur demo balance milta hai.' },
-  { q: 'Trading kaise shuru karein?', a: 'Signup → verify → wallet → /trade terminal open karein.' },
+  { q: 'Trading kaise shuru karein?', a: 'Signup → verify → wallet → trading terminal open karein.' },
 ];
 
 const HERO_VIDEO_LOCAL = '/videos/hero-3d.mp4';
 const HERO_VIDEO_CDN =
   'https://cdn.free-stock.video/1942022/futuristic-connect-science-network-geometric-shape-internet-abstract-153155-full.mp4';
 
-/** 3D particle network — plays when video is missing or behind video */
 function NetworkCanvasFallback({ dim = false }) {
   const ref = useRef(null);
 
@@ -290,7 +288,6 @@ function NetworkCanvasFallback({ dim = false }) {
   return <canvas ref={ref} className="lux-bg-canvas" aria-hidden />;
 }
 
-/** Full-page 3D-style video background */
 function LuxVideoBackground() {
   const videoRef = useRef(null);
   const [videoOk, setVideoOk] = useState(false);
@@ -332,7 +329,6 @@ function LuxVideoBackground() {
         loop
         playsInline
         preload="auto"
-        poster=""
       >
         <source src={HERO_VIDEO_CDN} type="video/mp4" />
         <source src={HERO_VIDEO_LOCAL} type="video/mp4" />
@@ -369,44 +365,17 @@ function FaqAccordion() {
   );
 }
 
-export default function Home() {
-  const { user } = useAuth();
-
-  if (user) {
-    return (
-      <div className="lux">
-        <LuxVideoBackground />
-        <div className="lux-wrap lux-hero lux-hero--solo">
-          <SectionLabel>WELCOME BACK</SectionLabel>
-          <h1 className="lux-hero__title">
-            <span>YOUR</span>
-            <span className="lux-outline">SAFEX</span>
-            <span className="lux-gold">DASHBOARD</span>
-          </h1>
-          <p className="lux-hero__sub">Trading terminal ya account — jahan chaho jao.</p>
-          <div className="lux-hero__btns">
-            <Link to="/trade" className="lux-btn lux-btn--gold">
-              LAUNCH APP →
-            </Link>
-            <Link to="/account" className="lux-btn lux-btn--ghost">
-              MY ACCOUNT
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+export default function Landing() {
   return (
     <div className="lux lux--fixed-header">
       <LuxVideoBackground />
 
       <header className="lux-header">
         <div className="lux-header__inner lux-wrap">
-          <Link to="/" className="lux-logo">
+          <a href="#home" className="lux-logo">
             <span className="lux-logo__white">Safe</span>
             <span className="lux-logo__gold">X</span>
-          </Link>
+          </a>
           <nav className="lux-nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
@@ -416,9 +385,9 @@ export default function Home() {
           </nav>
           <div className="lux-header__right">
             <span className="lux-tag">SECURE STACK</span>
-            <Link to="/signup" className="lux-btn lux-btn--gold lux-btn--sm">
+            <a href={appUrl('/signup')} className="lux-btn lux-btn--gold lux-btn--sm">
               LAUNCH APP
-            </Link>
+            </a>
           </div>
         </div>
       </header>
@@ -447,12 +416,12 @@ export default function Home() {
             zero confusion — signup se trade tak ek hi SafeX experience.
           </p>
           <div className="lux-hero__btns">
-            <Link to="/signup" className="lux-btn lux-btn--gold">
+            <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
               START TRADING →
-            </Link>
-            <Link to="/login" className="lux-btn lux-btn--ghost">
+            </a>
+            <a href={appUrl('/login')} className="lux-btn lux-btn--ghost">
               VIEW DEMO
-            </Link>
+            </a>
           </div>
         </div>
       </section>
@@ -596,12 +565,12 @@ export default function Home() {
             Join SafeX — setup minutes mein. Demo balance ke sath turant explore karein.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
-            <Link to="/signup" className="lux-btn lux-btn--gold">
+            <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
               CREATE FREE ACCOUNT →
-            </Link>
-            <Link to="/admin/login" className="lux-btn lux-btn--ghost">
+            </a>
+            <a href={appUrl('/admin/login')} className="lux-btn lux-btn--ghost">
               STAFF LOGIN
-            </Link>
+            </a>
           </div>
         </div>
       </section>
@@ -614,16 +583,16 @@ export default function Home() {
 
       <footer className="lux-footer">
         <div className="lux-wrap lux-footer__row">
-          <Link to="/" className="lux-logo">
+          <a href="#home" className="lux-logo">
             <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">X/</span>
-          </Link>
+            <span className="lux-logo__gold">X</span>
+          </a>
           <nav className="lux-footer__nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
             <a href="#rates">RATES</a>
             <a href="#pricing">PRICING</a>
-            <Link to="/login">LOGIN</Link>
+            <a href={appUrl('/login')}>LOGIN</a>
           </nav>
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
