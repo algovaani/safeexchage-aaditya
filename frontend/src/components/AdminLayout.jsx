@@ -51,7 +51,7 @@ export default function AdminLayout() {
           <div className="admin-brand">
             <span className="admin-brand__mark bg-accent" aria-hidden />
             <div>
-              <p className="admin-brand__text">SAFEX</p>
+              <p className="admin-brand__text">Safeexchange</p>
               <p className="admin-brand__sub">Admin Control</p>
             </div>
           </div>
@@ -110,7 +110,7 @@ export default function AdminLayout() {
             <span />
           </button>
           <div className="admin-mobile-bar__title">
-            <span className="admin-mobile-bar__brand">SAFEX</span>
+            <span className="admin-mobile-bar__brand">Safeexchange</span>
             <span className="admin-mobile-bar__section">{SECTION_LABELS[section] || 'Admin'}</span>
           </div>
         </header>

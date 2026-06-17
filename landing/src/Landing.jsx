@@ -70,7 +70,7 @@ const TESTIMONIALS = [
     initials: 'AK',
     name: 'Arjun K.',
     role: 'Retail Trader',
-    text: 'SafeX ka UI clean hai — signup se trading terminal tak sab smooth laga. Demo USDT se practice bhi easy thi.',
+    text: 'Safeexchange ka UI clean hai — signup se trading terminal tak sab smooth laga. Demo USDT se practice bhi easy thi.',
   },
   {
     initials: 'SM',
@@ -88,33 +88,41 @@ const TESTIMONIALS = [
 
 const PLANS = [
   {
-    name: 'STARTER',
-    price: '₹0',
-    period: '/month',
-    desc: 'Individuals aur learners ke liye perfect.',
-    features: ['Free signup', '10K demo USDT', 'Spot terminal access', 'Basic KYC flow'],
+    name: '12 MONTHS',
+    price: '5%–12%',
+    period: ' monthly',
+    desc: '12 months ke liye stake karein aur monthly returns earn karein.',
+    features: ['5%–12% monthly returns', '12 months ke baad: staked amount par up to 5×', 'Flexible min/max stake limits'],
     popular: false,
   },
   {
-    name: 'PRO',
-    price: 'Custom',
-    period: '',
-    desc: 'Active traders jo full features chahte hain.',
-    features: ['Priority support', 'Full wallet ops', 'Advanced charts', 'Unlimited practice'],
+    name: '18 MONTHS',
+    price: '10%–20%',
+    period: ' monthly',
+    desc: '18 months lock ke sath zyada monthly returns.',
+    features: ['10%–20% monthly returns', '18 months ke baad: staked amount par up to 10×', 'Medium-term growth ke liye best'],
     popular: true,
   },
   {
-    name: 'ENTERPRISE',
-    price: 'Custom',
-    period: '',
-    desc: 'Teams aur institutions ke liye.',
-    features: ['Admin panel', 'Manual price engine', 'User management', 'API-ready stack'],
+    name: '24 MONTHS',
+    price: '10%–25%',
+    period: ' monthly',
+    desc: '24 months mein maximum rewards unlock karein.',
+    features: ['10%–25% monthly returns', '24 months ke baad: staked amount par up to 20×', 'Strong long-term yield'],
+    popular: false,
+  },
+  {
+    name: '36 MONTHS',
+    price: '10%–30%',
+    period: ' monthly',
+    desc: 'Long-term stakers ke liye highest tier plan.',
+    features: ['10%–30% monthly returns', '36 months ke baad: staked amount par up to 30×', 'Maximum multiplier potential'],
     popular: false,
   },
 ];
 
 const FAQ_ITEMS = [
-  { q: 'SafeX kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
+  { q: 'Safeexchange kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
   { q: 'Kya registration free hai?', a: 'Haan, account free hai aur demo balance milta hai.' },
   { q: 'Trading kaise shuru karein?', a: 'Signup → verify → wallet → trading terminal open karein.' },
 ];
@@ -374,7 +382,7 @@ export default function Landing() {
         <div className="lux-header__inner lux-wrap">
           <a href="#home" className="lux-logo">
             <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">X</span>
+            <span className="lux-logo__gold">exchange</span>
           </a>
           <nav className="lux-nav">
             <a href="#features">PLATFORM</a>
@@ -413,7 +421,7 @@ export default function Landing() {
           </h1>
           <p className="lux-hero__sub">
             Institutional-grade crypto trading for everyone. Real-time charts, secure wallet,
-            zero confusion — signup se trade tak ek hi SafeX experience.
+            zero confusion — signup se trade tak ek hi Safeexchange experience.
           </p>
           <div className="lux-hero__btns">
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
@@ -439,7 +447,7 @@ export default function Landing() {
         <SectionLabel>PLATFORM FEATURES</SectionLabel>
         <h2 className="lux-h2">BUILT FOR THE SERIOUS TRADER</h2>
         <p className="lux-lead">
-          Pro infrastructure. Simple onboarding. Everything you need to trade on SafeX.
+          Pro infrastructure. Simple onboarding. Everything you need to trade on Safeexchange.
         </p>
         <div className="lux-features">
           {FEATURES.map((f) => (
@@ -534,9 +542,9 @@ export default function Landing() {
       </section>
 
       <section className="lux-section lux-wrap" id="pricing">
-        <SectionLabel>PRICING</SectionLabel>
-        <h2 className="lux-h2">SIMPLE, TRANSPARENT PRICING</h2>
-        <p className="lux-lead">No hidden charges. Start free, scale when you need.</p>
+        <SectionLabel>STAKING</SectionLabel>
+        <h2 className="lux-h2">STAKING PLANS</h2>
+        <p className="lux-lead">Lock period choose karein, monthly returns earn karein, aur maturity par multiplier unlock karein.</p>
         <div className="lux-pricing">
           {PLANS.map((p) => (
             <article key={p.name} className={`lux-plan${p.popular ? ' lux-plan--pop' : ''}`}>
@@ -562,14 +570,11 @@ export default function Landing() {
           <SectionLabel>GET STARTED TODAY</SectionLabel>
           <h2 className="lux-h2 lux-h2--center">START EXCHANGING SMARTER</h2>
           <p className="lux-lead lux-lead--center">
-            Join SafeX — setup minutes mein. Demo balance ke sath turant explore karein.
+            Join Safeexchange — setup minutes mein. Demo balance ke sath turant explore karein.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
               CREATE FREE ACCOUNT →
-            </a>
-            <a href={appUrl('/admin/login')} className="lux-btn lux-btn--ghost">
-              STAFF LOGIN
             </a>
           </div>
         </div>
@@ -585,7 +590,7 @@ export default function Landing() {
         <div className="lux-wrap lux-footer__row">
           <a href="#home" className="lux-logo">
             <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">X</span>
+            <span className="lux-logo__gold">exchange</span>
           </a>
           <nav className="lux-footer__nav">
             <a href="#features">PLATFORM</a>
@@ -597,7 +602,7 @@ export default function Landing() {
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
         <p className="lux-footer__copy lux-wrap">
-          © {new Date().getFullYear()} SafeX Exchange. All rights reserved.
+          © {new Date().getFullYear()} Safeexchange. All rights reserved.
         </p>
       </footer>
     </div>

@@ -45,7 +45,7 @@ export default function AdminLogin() {
       <header className="admin-login-nav">
         <Link to="/" className="admin-login-nav__brand">
           <span className="admin-login-nav__dot" />
-          SAFEX
+          Safeexchange
         </Link>
       </header>
 

@@ -1,33 +1,18 @@
-# SafeX Landing
+# Landing (deprecated)
 
-Standalone marketing site — **separate from** `frontend/` (trading app).
+The marketing landing page has been **merged into `frontend/`**.
 
-## Run locally
+- Source: `frontend/src/pages/Landing.jsx`
+- Styles: `frontend/src/pages/Landing.css`
+- URL: `https://yourdomain.com/` (same domain as `/login` and `/signup`)
+
+Run the main app only:
 
 ```bash
-npm install
-cp .env.example .env
+cd ../frontend
 npm run dev
 ```
 
-Open **http://localhost:5174**
+Open http://localhost:5173/ for landing, `/login`, `/signup`.
 
-Set `VITE_APP_URL=http://localhost:5173` so CTA buttons open the main app.
-
-## Production
-
-Deploy this folder to your landing domain. Set:
-
-```
-VITE_APP_URL=https://app.yourdomain.com
-```
-
-Build: `npm run build` → serve `dist/` (Netlify, Vercel, S3, etc.)
-
-## Structure
-
-| Path | Purpose |
-|------|---------|
-| `src/Landing.jsx` | Full landing page |
-| `src/Landing.css` | Styles + video background |
-| `public/videos/` | Optional local `hero-3d.mp4` |
+See [DEPLOY.md](../DEPLOY.md) for production (main domain + `api.` subdomain).

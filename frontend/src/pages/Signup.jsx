@@ -64,7 +64,7 @@ export default function Signup() {
       <header className="signup-nav">
         <Link to="/" className="signup-nav__brand">
           <span className="signup-nav__dot" />
-          <span>SAFEX</span>
+          <span>Safeexchange</span>
         </Link>
         <Link to="/login" className="signup-nav__link">Sign in</Link>
       </header>
@@ -72,7 +72,7 @@ export default function Signup() {
       <main className="signup-main">
         <div className="signup-card">
           <h1 className="signup-card__title">Create your account</h1>
-          <p className="signup-card__subtitle">Join millions of traders on SAFEX</p>
+          <p className="signup-card__subtitle">Join millions of traders on Safeexchange</p>
 
           <form onSubmit={onSubmit} className="signup-form">
             <div className="signup-field">

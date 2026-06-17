@@ -119,7 +119,7 @@ export default function Login() {
         <div className="login-nav__inner">
           <Link to="/" className="login-nav__brand">
             <span className="login-nav__dot" aria-hidden />
-            <span className="login-nav__logo">SAFEX</span>
+            <span className="login-nav__logo">Safeexchange</span>
           </Link>
           <Link to="/signup" className="login-nav__signup">
             Sign up
@@ -149,7 +149,7 @@ export default function Login() {
           <section className="login-card-wrap" aria-label="Sign in">
             <div className="login-card">
               <h2 className="login-card__title">Welcome back</h2>
-              <p className="login-card__subtitle">Sign in to your SAFEX account</p>
+              <p className="login-card__subtitle">Sign in to your Safeexchange account</p>
 
               <form onSubmit={onSubmit}>
                 <div className="login-field">

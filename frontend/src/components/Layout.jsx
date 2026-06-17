@@ -70,7 +70,7 @@ export default function Layout() {
       <aside className={`app-sidebar${sidebarOpen ? ' is-open' : ''}`}>
         <div className="app-sidebar__brand">
           <span className="app-sidebar__dot" />
-          <span className="app-sidebar__logo">SAFEX</span>
+          <span className="app-sidebar__logo">Safeexchange</span>
           <button type="button" className="app-sidebar__close lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
             <X size={18} />
           </button>
@@ -116,7 +116,7 @@ export default function Layout() {
 
           <NavLink to="/dashboard" className="app-navbar__logo-mobile lg:hidden">
             <span className="app-sidebar__dot" />
-            SAFEX
+            Safeexchange
           </NavLink>
 
           <div className="app-navbar__search">

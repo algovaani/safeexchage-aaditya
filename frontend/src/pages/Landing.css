@@ -1,4 +1,4 @@
-/* SafeX Landing — premium gold on black (reference-style) */
+/* Safeexchange Landing — premium gold on black (reference-style) */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
@@ -694,9 +694,21 @@
 /* Pricing */
 .lux-pricing {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.25rem;
   align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .lux-pricing {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .lux-pricing {
+    grid-template-columns: 1fr;
+  }
 }
 
 .lux-plan {

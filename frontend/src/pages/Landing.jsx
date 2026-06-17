@@ -13,7 +13,7 @@ const TICKER = [
 const STATS = [
   { value: '100%', label: 'RENEWABLE ENERGY' },
   { value: 'WC', label: 'WESTERN CANADA' },
-  { value: '1', label: 'ORIGINAL RIG — safexchange1' },
+  { value: '1', label: 'ORIGINAL RIG — Safeexchange' },
   { value: '24/7', label: 'NETWORK OPERATIONS' },
 ];
 
@@ -39,7 +39,7 @@ const STEPS = [
   {
     num: '01',
     title: 'CREATE ACCOUNT',
-    desc: 'Register on safexchange and verify your identity to access the platform.',
+    desc: 'Register on Safeexchange and verify your identity to access the platform.',
   },
   {
     num: '02',
@@ -88,43 +88,51 @@ const TESTIMONIALS = [
 
 const PLANS = [
   {
-    name: 'STARTER',
-    price: '₹0',
-    period: '/month',
-    desc: 'For individuals getting started on safexchange.',
-    features: ['Free signup', 'Demo balance', 'Spot terminal', 'Basic KYC'],
+    name: '12 MONTHS',
+    price: '5%–12%',
+    period: ' monthly',
+    desc: 'Lock your stake for 12 months and earn monthly returns.',
+    features: ['5%–12% monthly returns', 'After 12 months: up to 5× on staked amount', 'Flexible min/max stake limits'],
     popular: false,
   },
   {
-    name: 'PRO',
-    price: 'Custom',
-    period: '',
-    desc: 'For active traders who need the full platform.',
-    features: ['Priority support', 'Full wallet access', 'Advanced charts', 'Unlimited practice'],
+    name: '18 MONTHS',
+    price: '10%–20%',
+    period: ' monthly',
+    desc: 'Higher monthly returns with an 18-month lock period.',
+    features: ['10%–20% monthly returns', 'After 18 months: up to 10× on staked amount', 'Ideal for medium-term growth'],
     popular: true,
   },
   {
-    name: 'ENTERPRISE',
-    price: 'Custom',
-    period: '',
-    desc: 'For teams and institutions.',
-    features: ['Admin controls', 'User management', 'Reporting tools', 'Dedicated support'],
+    name: '24 MONTHS',
+    price: '10%–25%',
+    period: ' monthly',
+    desc: 'Maximize rewards over a 24-month staking term.',
+    features: ['10%–25% monthly returns', 'After 24 months: up to 20× on staked amount', 'Strong long-term yield'],
+    popular: false,
+  },
+  {
+    name: '36 MONTHS',
+    price: '10%–30%',
+    period: ' monthly',
+    desc: 'Our highest tier for committed long-term stakers.',
+    features: ['10%–30% monthly returns', 'After 36 months: up to 30× on staked amount', 'Maximum multiplier potential'],
     popular: false,
   },
 ];
 
 const FAQ_ITEMS = [
   {
-    q: 'What is safexchange?',
-    a: 'safexchange was built on the idea that Canada, with its abundant space and relatively cost-effective renewable energy, should be a leader in cryptocurrency infrastructure. We secure financial networks through a privately held platform in Western Canada.',
+    q: 'What is Safeexchange?',
+    a: 'Safeexchange was built on the idea that Canada, with its abundant space and relatively cost-effective renewable energy, should be a leader in cryptocurrency infrastructure. We secure financial networks through a privately held platform in Western Canada.',
   },
   {
-    q: 'Where does safexchange operate?',
+    q: 'Where does Safeexchange operate?',
     a: 'We are based in Western Canada and powered entirely by renewable energy. We believe Canada’s stable political climate and affordable green energy make it ideally positioned for next-generation global financial networks.',
   },
   {
-    q: 'What is safexchange1?',
-    a: 'Our founders saw the potential of cryptocurrency after building their first mining rig from graphics cards and a handful of computer parts. That machine is still running today and is affectionately named safexchange1.',
+    q: 'What is Safeexchange?',
+    a: 'Our founders saw the potential of cryptocurrency after building their first mining rig from graphics cards and a handful of computer parts. That machine is still running today and is affectionately named .',
   },
 ];
 
@@ -382,7 +390,7 @@ export default function Landing() {
       <header className="lux-header">
         <div className="lux-header__inner lux-wrap">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">safe</span>
+            <span className="lux-logo__white">Safe</span>
             <span className="lux-logo__gold">exchange</span>
           </a>
           <nav className="lux-nav">
@@ -424,7 +432,7 @@ export default function Landing() {
             <span className="lux-gold">NETWORKS</span>
           </h1>
           <p className="lux-hero__sub">
-            We secure financial networks. safexchange is a privately held cryptocurrency platform in
+            We secure financial networks. Safeexchange is a privately held cryptocurrency platform in
             Western Canada, powered entirely by renewable energy — built for traders who expect
             reliability, transparency, and next-generation market access.
           </p>
@@ -450,13 +458,13 @@ export default function Landing() {
 
       <section className="lux-section lux-wrap" id="features">
         <SectionLabel>ABOUT</SectionLabel>
-        <h2 className="lux-h2">safexchange</h2>
+        <h2 className="lux-h2">Safeexchange</h2>
         <p className="lux-lead">
-          safexchange was built on the idea that Canada, with its abundant space and relatively
+          Safeexchange was built on the idea that Canada, with its abundant space and relatively
           cost-effective renewable energy, should be a leader in cryptocurrency infrastructure.
           Our founders saw the potential of cryptocurrency after building their first mining rig
           using graphics cards and a handful of computer parts. That machine is still running today
-          and it is affectionately named safexchange1.
+          and it is affectionately named Safeexchange.
         </p>
         <div className="lux-features">
           {FEATURES.map((f) => (
@@ -487,7 +495,7 @@ export default function Landing() {
       <section className="lux-section lux-wrap" id="rates">
         <SectionLabel>LIVE MARKET RATES</SectionLabel>
         <h2 className="lux-h2">TODAY&apos;S SPOT PAIRS</h2>
-        <p className="lux-lead">Live spot pairs on the safexchange terminal — illustrative preview rates below.</p>
+        <p className="lux-lead">Live spot pairs on the Safeexchange terminal — illustrative preview rates below.</p>
         <div className="lux-table-wrap">
           <table className="lux-table">
             <thead>
@@ -551,9 +559,9 @@ export default function Landing() {
       </section>
 
       <section className="lux-section lux-wrap" id="pricing">
-        <SectionLabel>PRICING</SectionLabel>
-        <h2 className="lux-h2">SIMPLE, TRANSPARENT PRICING</h2>
-        <p className="lux-lead">No hidden charges. Start free, scale when you need.</p>
+        <SectionLabel>STAKING</SectionLabel>
+        <h2 className="lux-h2">STAKING PLANS</h2>
+        <p className="lux-lead">Choose a lock period, earn monthly returns, and unlock multiplier rewards at maturity.</p>
         <div className="lux-pricing">
           {PLANS.map((p) => (
             <article key={p.name} className={`lux-plan${p.popular ? ' lux-plan--pop' : ''}`}>
@@ -581,14 +589,11 @@ export default function Landing() {
           <p className="lux-lead lux-lead--center">
             We believe Canada, with its stable political climate and affordable green energy, is
             ideally positioned to be a key player in securing next-generation global financial
-            networks. Create your account and start trading on safexchange today.
+            networks. Create your account and start trading on Safeexchange today.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
             <Link to="/signup" className="lux-btn lux-btn--gold">
               CREATE FREE ACCOUNT →
-            </Link>
-            <Link to="/admin/login" className="lux-btn lux-btn--ghost">
-              STAFF LOGIN
             </Link>
           </div>
         </div>
@@ -603,7 +608,7 @@ export default function Landing() {
       <footer className="lux-footer">
         <div className="lux-wrap lux-footer__row">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">safe</span>
+            <span className="lux-logo__white">Safe</span>
             <span className="lux-logo__gold">exchange</span>
           </a>
           <nav className="lux-footer__nav">
@@ -616,7 +621,7 @@ export default function Landing() {
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
         <p className="lux-footer__copy lux-wrap">
-          © {new Date().getFullYear()} safexchange. All rights reserved.
+          © {new Date().getFullYear()} Safeexchange. All rights reserved.
         </p>
       </footer>
     </div>
