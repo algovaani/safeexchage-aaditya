@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import BrandLogo from '../components/BrandLogo.jsx';
 import './Signup.css';
 
 function passwordStrength(pw) {
@@ -63,8 +64,7 @@ export default function Signup() {
     <div className="signup-page">
       <header className="signup-nav">
         <Link to="/" className="signup-nav__brand">
-          <span className="signup-nav__dot" />
-          <span>Safeexchange</span>
+          <BrandLogo size="sm" />
         </Link>
         <Link to="/login" className="signup-nav__link">Sign in</Link>
       </header>
@@ -72,7 +72,7 @@ export default function Signup() {
       <main className="signup-main">
         <div className="signup-card">
           <h1 className="signup-card__title">Create your account</h1>
-          <p className="signup-card__subtitle">Join millions of traders on Safeexchange</p>
+          <p className="signup-card__subtitle">Join millions of traders on SafeXchange</p>
 
           <form onSubmit={onSubmit} className="signup-form">
             <div className="signup-field">

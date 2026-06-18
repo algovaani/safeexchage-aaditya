@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
+import BrandLogo from '../components/BrandLogo.jsx';
 import './Login.css';
 
 const PLATFORM_STATS = [
@@ -118,8 +119,7 @@ export default function Login() {
       <header className="login-nav">
         <div className="login-nav__inner">
           <Link to="/" className="login-nav__brand">
-            <span className="login-nav__dot" aria-hidden />
-            <span className="login-nav__logo">Safeexchange</span>
+            <BrandLogo size="sm" />
           </Link>
           <Link to="/signup" className="login-nav__signup">
             Sign up
@@ -149,7 +149,7 @@ export default function Login() {
           <section className="login-card-wrap" aria-label="Sign in">
             <div className="login-card">
               <h2 className="login-card__title">Welcome back</h2>
-              <p className="login-card__subtitle">Sign in to your Safeexchange account</p>
+              <p className="login-card__subtitle">Sign in to your SafeXchange account</p>
 
               <form onSubmit={onSubmit}>
                 <div className="login-field">

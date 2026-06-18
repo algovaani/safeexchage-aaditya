@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './Landing.css';
+import BrandLogo from '../components/BrandLogo.jsx';
 
 const TICKER = [
   { pair: 'BTC/USDT', price: '67,234.50', chg: '+1.24%', up: true },
@@ -11,27 +12,31 @@ const TICKER = [
 ];
 
 const STATS = [
-  { value: '100%', label: 'RENEWABLE ENERGY' },
-  { value: 'WC', label: 'WESTERN CANADA' },
-  { value: '1', label: 'ORIGINAL RIG — Safeexchange' },
+  { value: '100%', label: 'SECURED AND TRANSPARENT' },
+  { value: 'GM', label: 'GLOBAL MARKET' },
+  {
+    value: '1',
+    label: "INDIA'S 1ST FIU REGISTERED NON KYC CRYPTOCURRENCY EXCHANGE",
+    long: true,
+  },
   { value: '24/7', label: 'NETWORK OPERATIONS' },
 ];
 
 const FEATURES = [
   {
     icon: '🔒',
-    title: 'SECURE FINANCIAL NETWORKS',
-    desc: 'We secure financial networks and operate infrastructure built for the next generation of global markets.',
+    title: "INDIA'S 1ST NON KYC FIU REGISTERED CRYPTO EXCHANGE",
+    desc: 'Trade on India\'s first FIU-registered non-KYC cryptocurrency exchange platform.',
   },
   {
     icon: '⚡',
-    title: 'RENEWABLE-POWERED',
-    desc: 'We are a privately held cryptocurrency platform in Western Canada, powered entirely by renewable energy.',
+    title: 'HIGHLY SECURED',
+    desc: 'Trade in the global market which is highly reliable to trade — backed by highly secured infrastructure.',
   },
   {
-    icon: '🍁',
-    title: 'BUILT IN CANADA',
-    desc: 'Canada’s stable political climate and affordable green energy position us to be a key player in securing tomorrow’s financial networks.',
+    icon: '🇮🇳',
+    title: 'FIU REGISTERED NON KYC',
+    desc: 'India\'s 1st cryptocurrency exchange which facilitates users to trade without the KYC limitation.',
   },
 ];
 
@@ -39,22 +44,22 @@ const STEPS = [
   {
     num: '01',
     title: 'CREATE ACCOUNT',
-    desc: 'Register on Safeexchange and verify your identity to access the platform.',
+    desc: 'Verify your email/phone.',
   },
   {
     num: '02',
-    title: 'FUND WALLET',
-    desc: 'Submit a deposit request; once approved, your balance is ready for trading.',
+    title: 'DEPOSIT',
+    desc: 'Deposit the crypto or fiat in which you want to trade.',
   },
   {
     num: '03',
-    title: 'OPEN TERMINAL',
-    desc: 'Use charts, live prices, and order tools from a single trading dashboard.',
+    title: 'TRADE',
+    desc: 'You can now start buying/selling crypto currencies.',
   },
   {
     num: '04',
-    title: 'TRADE WITH CONFIDENCE',
-    desc: 'Practice with demo balance, then explore the full exchange experience.',
+    title: 'WITHDRAW',
+    desc: 'You can withdraw funds.',
   },
 ];
 
@@ -65,74 +70,61 @@ const RATES = [
   { code: 'SOL', name: 'Solana', buy: '178.4', sell: '179.4', chg: '+2.15%', up: true },
 ];
 
-const TESTIMONIALS = [
-  {
-    initials: 'AK',
-    name: 'Arjun K.',
-    role: 'Retail Trader',
-    text: 'A clean platform backed by serious infrastructure — onboarding through to the trading terminal felt straightforward.',
-  },
-  {
-    initials: 'SM',
-    name: 'Sana M.',
-    role: 'Crypto Learner',
-    text: 'Clear KYC and wallet flows. Good fit if you want a Canadian-built exchange with a professional feel.',
-  },
-  {
-    initials: 'RD',
-    name: 'Rohan D.',
-    role: 'Developer',
-    text: 'Solid stack for live markets and wallet operations — exactly what you expect from a modern exchange.',
-  },
-];
-
 const PLANS = [
   {
     name: '12 MONTHS',
     price: '5%–12%',
-    period: ' monthly',
-    desc: 'Lock your stake for 12 months and earn monthly returns.',
-    features: ['5%–12% monthly returns', 'After 12 months: up to 5× on staked amount', 'Flexible min/max stake limits'],
+    period: 'Monthly',
+    desc: 'Start from 12 months Stake. Earn Monthly returns.',
+    features: ['5%–12% Monthly returns', 'After 12 months: up to 5× on staked amount', 'Flexible min/max stake limits'],
     popular: false,
   },
   {
     name: '18 MONTHS',
     price: '10%–20%',
-    period: ' monthly',
-    desc: 'Higher monthly returns with an 18-month lock period.',
-    features: ['10%–20% monthly returns', 'After 18 months: up to 10× on staked amount', 'Ideal for medium-term growth'],
+    period: 'Monthly',
+    desc: 'Start from 18 months Stake. Earn Monthly returns.',
+    features: ['10%–20% Monthly returns', 'After 18 months: up to 10× on staked amount', 'Ideal for medium-term growth'],
     popular: true,
   },
   {
     name: '24 MONTHS',
     price: '10%–25%',
-    period: ' monthly',
-    desc: 'Maximize rewards over a 24-month staking term.',
-    features: ['10%–25% monthly returns', 'After 24 months: up to 20× on staked amount', 'Strong long-term yield'],
+    period: 'Monthly',
+    desc: 'Start from 24 months Stake. Earn Monthly returns.',
+    features: ['10%–25% Monthly returns', 'After 24 months: up to 20× on staked amount', 'Strong long-term yield'],
     popular: false,
   },
   {
     name: '36 MONTHS',
     price: '10%–30%',
-    period: ' monthly',
-    desc: 'Our highest tier for committed long-term stakers.',
-    features: ['10%–30% monthly returns', 'After 36 months: up to 30× on staked amount', 'Maximum multiplier potential'],
+    period: 'Monthly',
+    desc: 'Start from 36 months Stake. Earn Monthly returns.',
+    features: ['10%–30% Monthly returns', 'After 36 months: up to 30× on staked amount', 'Maximum multiplier potential'],
     popular: false,
   },
 ];
 
 const FAQ_ITEMS = [
   {
-    q: 'What is Safeexchange?',
-    a: 'Safeexchange was built on the idea that Canada, with its abundant space and relatively cost-effective renewable energy, should be a leader in cryptocurrency infrastructure. We secure financial networks through a privately held platform in Western Canada.',
+    q: 'What is SafeXchange?',
+    a: 'SafeXchange is India\'s first cryptocurrency exchange platform that enables users to trade digital assets without complicated KYC procedures. Designed for simplicity, speed, and security, SafeXchange makes crypto trading accessible to everyone while maintaining a seamless user experience.',
   },
   {
-    q: 'Where does Safeexchange operate?',
-    a: 'We are based in Western Canada and powered entirely by renewable energy. We believe Canada’s stable political climate and affordable green energy make it ideally positioned for next-generation global financial networks.',
+    q: 'Do I need to complete KYC to start trading on SafeXchange?',
+    a: 'No. One of the key advantages of SafeXchange is its hassle-free trading experience. Users can start trading cryptocurrencies without going through lengthy and complicated KYC processes, making onboarding faster and more convenient.',
   },
   {
-    q: 'What is Safeexchange?',
-    a: 'Our founders saw the potential of cryptocurrency after building their first mining rig from graphics cards and a handful of computer parts. That machine is still running today and is affectionately named .',
+    q: 'Is SafeXchange secure?',
+    a: 'Absolutely. SafeXchange is built with advanced security measures to protect user accounts, transactions, and digital assets. Our platform prioritizes security at every level, ensuring a safe and reliable trading environment for all users.',
+  },
+  {
+    q: 'Are there any fees to join SafeXchange?',
+    a: 'Creating an account on SafeXchange is completely free. Users can access the platform, explore trading opportunities, and manage their crypto assets without paying any registration or membership fees.',
+  },
+  {
+    q: 'Why choose SafeXchange over other cryptocurrency exchanges?',
+    a: 'SafeXchange stands out by offering a KYC-free, hassle-free, secure, and user-friendly trading experience. As India\'s first cryptocurrency exchange focused on simplified access, it enables users to buy, sell, and trade cryptocurrencies quickly while benefiting from robust security and a seamless platform experience.',
   },
 ];
 
@@ -390,18 +382,16 @@ export default function Landing() {
       <header className="lux-header">
         <div className="lux-header__inner lux-wrap">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">exchange</span>
+            <BrandLogo size="md" />
           </a>
           <nav className="lux-nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
             <a href="#rates">RATES</a>
-            <a href="#pricing">PRICING</a>
+            <a href="#pricing">STAKE</a>
             <a href="#faq">FAQ</a>
           </nav>
           <div className="lux-header__right">
-            <span className="lux-tag">SECURE STACK</span>
             <Link to="/login" className="lux-btn lux-btn--ghost lux-btn--sm">
               LOGIN
             </Link>
@@ -425,23 +415,19 @@ export default function Landing() {
 
       <section className="lux-hero lux-wrap" id="home">
         <div className="lux-hero__copy lux-hero__copy--on-video">
-          <SectionLabel>WESTERN CANADA · RENEWABLE ENERGY</SectionLabel>
           <h1 className="lux-hero__title">
-            <span>SECURE</span>
-            <span className="lux-outline">FINANCIAL</span>
-            <span className="lux-gold">NETWORKS</span>
+            <span>INDIA&apos;S 1ST</span>
+            <span className="lux-outline lux-hero__title-mid">NON-KYC-FIU-REGISTERED</span>
+            <span className="lux-gold">CRYPTO EXCHANGE</span>
           </h1>
           <p className="lux-hero__sub">
-            We secure financial networks. Safeexchange is a privately held cryptocurrency platform in
-            Western Canada, powered entirely by renewable energy — built for traders who expect
-            reliability, transparency, and next-generation market access.
+            We secure financial networks. SafeXchange is a privately held cryptocurrency platform in
+            India and the Western Countries — built for traders who expect reliability, transparency,
+            and next-generation market access.
           </p>
           <div className="lux-hero__btns">
             <Link to="/signup" className="lux-btn lux-btn--gold">
               START TRADING →
-            </Link>
-            <Link to="/login" className="lux-btn lux-btn--ghost">
-              VIEW DEMO
             </Link>
           </div>
         </div>
@@ -449,7 +435,7 @@ export default function Landing() {
 
       <section className="lux-stats lux-wrap">
         {STATS.map((s) => (
-          <div key={s.label} className="lux-stat">
+          <div key={s.label} className={`lux-stat${s.long ? ' lux-stat--long' : ''}`}>
             <strong>{s.value}</strong>
             <span>{s.label}</span>
           </div>
@@ -458,13 +444,24 @@ export default function Landing() {
 
       <section className="lux-section lux-wrap" id="features">
         <SectionLabel>ABOUT</SectionLabel>
-        <h2 className="lux-h2">Safeexchange</h2>
+        <h2 className="lux-h2">SafeXchange</h2>
         <p className="lux-lead">
-          Safeexchange was built on the idea that Canada, with its abundant space and relatively
-          cost-effective renewable energy, should be a leader in cryptocurrency infrastructure.
-          Our founders saw the potential of cryptocurrency after building their first mining rig
-          using graphics cards and a handful of computer parts. That machine is still running today
-          and it is affectionately named Safeexchange.
+          At SafeXchange, we are committed to providing our customers with a reliable and
+          user-friendly crypto exchange platform where every crypto enthusiast can participate in
+          the growing digital asset economy. Cryptocurrency continues to transform the financial
+          landscape, and SafeXchange aims to empower individuals with a seamless trading experience
+          that makes entering the world of digital currencies simple and accessible.
+        </p>
+        <p className="lux-lead">
+          With SafeXchange, you can buy, sell, and transfer a wide range of cryptocurrencies
+          securely and effortlessly. Whether you are a beginner exploring your first investment or an
+          experienced trader managing a diverse portfolio, our platform is designed to meet your
+          needs. Backed by advanced security, intuitive tools, and a commitment to customer
+          satisfaction, SafeXchange helps you trade with confidence and convenience.
+        </p>
+        <p className="lux-lead">
+          Start your crypto journey with SafeXchange today and unlock new opportunities in the
+          evolving world of digital assets.
         </p>
         <div className="lux-features">
           {FEATURES.map((f) => (
@@ -495,7 +492,7 @@ export default function Landing() {
       <section className="lux-section lux-wrap" id="rates">
         <SectionLabel>LIVE MARKET RATES</SectionLabel>
         <h2 className="lux-h2">TODAY&apos;S SPOT PAIRS</h2>
-        <p className="lux-lead">Live spot pairs on the Safeexchange terminal — illustrative preview rates below.</p>
+        <p className="lux-lead">Live spot pairs on SafeXchange — illustrative preview rates below.</p>
         <div className="lux-table-wrap">
           <table className="lux-table">
             <thead>
@@ -535,33 +532,10 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="lux-section lux-wrap">
-        <SectionLabel>CLIENT VOICES</SectionLabel>
-        <h2 className="lux-h2">TRUSTED BY TRADERS</h2>
-        <span className="lux-dot-deco" aria-hidden />
-        <div className="lux-testimonials">
-          {TESTIMONIALS.map((t) => (
-            <blockquote key={t.name} className="lux-quote">
-              <p>&ldquo;{t.text}&rdquo;</p>
-              <footer>
-                <span className="lux-quote__av">{t.initials}</span>
-                <span>
-                  <strong>{t.name}</strong>
-                  <small>{t.role}</small>
-                </span>
-                <span className="lux-stars" aria-hidden>
-                  ★★★★★
-                </span>
-              </footer>
-            </blockquote>
-          ))}
-        </div>
-      </section>
-
       <section className="lux-section lux-wrap" id="pricing">
         <SectionLabel>STAKING</SectionLabel>
         <h2 className="lux-h2">STAKING PLANS</h2>
-        <p className="lux-lead">Choose a lock period, earn monthly returns, and unlock multiplier rewards at maturity.</p>
+        <p className="lux-lead">Start from your chosen duration, Stake, and earn Monthly returns — unlock multiplier rewards at maturity.</p>
         <div className="lux-pricing">
           {PLANS.map((p) => (
             <article key={p.name} className={`lux-plan${p.popular ? ' lux-plan--pop' : ''}`}>
@@ -587,9 +561,9 @@ export default function Landing() {
           <SectionLabel>GET STARTED TODAY</SectionLabel>
           <h2 className="lux-h2 lux-h2--center">START EXCHANGING SMARTER</h2>
           <p className="lux-lead lux-lead--center">
-            We believe Canada, with its stable political climate and affordable green energy, is
-            ideally positioned to be a key player in securing next-generation global financial
-            networks. Create your account and start trading on Safeexchange today.
+            We believe Crypto is ideally positioned to be a key instrument in securing
+            next-generation global financial networks. Create your account and start trading on
+            SafeXchange today.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
             <Link to="/signup" className="lux-btn lux-btn--gold">
@@ -601,27 +575,26 @@ export default function Landing() {
 
       <section className="lux-section lux-wrap lux-section--faq" id="faq">
         <SectionLabel>FAQ</SectionLabel>
-        <h2 className="lux-h2">QUICK ANSWERS</h2>
+        <h2 className="lux-h2">FREQUENTLY ASKED QUESTIONS (FAQS)</h2>
         <FaqAccordion />
       </section>
 
       <footer className="lux-footer">
         <div className="lux-wrap lux-footer__row">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">exchange</span>
+            <BrandLogo size="md" />
           </a>
           <nav className="lux-footer__nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
             <a href="#rates">RATES</a>
-            <a href="#pricing">PRICING</a>
+            <a href="#pricing">STAKE</a>
             <Link to="/login">LOGIN</Link>
           </nav>
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
         <p className="lux-footer__copy lux-wrap">
-          © {new Date().getFullYear()} Safeexchange. All rights reserved.
+          © {new Date().getFullYear()} SafeXchange. All rights reserved.
         </p>
       </footer>
     </div>

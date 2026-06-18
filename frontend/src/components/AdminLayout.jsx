@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useAdminTheme } from '../hooks/useAdminTheme.js';
 import { useTheme } from '../context/ThemeContext.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
+import BrandLogo from './BrandLogo.jsx';
 import '../pages/Admin.css';
 
 const SECTIONS = [
@@ -49,9 +50,8 @@ export default function AdminLayout() {
       <aside className={`admin-sidebar admin-sidebar--${shellTheme}${drawerOpen ? ' is-open' : ''}`}>
         <div className="admin-sidebar__top">
           <div className="admin-brand">
-            <span className="admin-brand__mark bg-accent" aria-hidden />
+            <BrandLogo size="sm" />
             <div>
-              <p className="admin-brand__text">Safeexchange</p>
               <p className="admin-brand__sub">Admin Control</p>
             </div>
           </div>
@@ -110,7 +110,7 @@ export default function AdminLayout() {
             <span />
           </button>
           <div className="admin-mobile-bar__title">
-            <span className="admin-mobile-bar__brand">Safeexchange</span>
+            <BrandLogo size="sm" className="admin-mobile-bar__logo" />
             <span className="admin-mobile-bar__section">{SECTION_LABELS[section] || 'Admin'}</span>
           </div>
         </header>

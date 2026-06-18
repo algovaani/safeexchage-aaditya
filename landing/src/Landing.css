@@ -1,4 +1,4 @@
-/* Safeexchange Landing — premium gold on black (reference-style) */
+/* SafeXchange Landing — premium gold on black (reference-style) */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
@@ -118,18 +118,48 @@
 }
 
 .lux-logo {
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
-  font-weight: 900;
-  font-size: 1.35rem;
-  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  overflow: visible;
 }
 
-.lux-logo__white {
+.brand-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.brand-logo-wrap--sm {
+  gap: 0.35rem;
+}
+
+.brand-logo__icon {
+  width: auto;
+  max-width: none;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+}
+
+.brand-logo__text {
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-logo__safe,
+.brand-logo__change {
   color: #fff;
 }
 
-.lux-logo__gold {
-  color: var(--gold-bright);
+.brand-logo__x {
+  color: #f5c842;
 }
 
 .lux-nav {
@@ -305,6 +335,12 @@
   text-stroke: 1.5px var(--gold);
 }
 
+.lux-hero__title-mid {
+  white-space: nowrap;
+  font-size: clamp(1.35rem, 3.8vw, 2.75rem);
+  letter-spacing: 0.02em;
+}
+
 .lux-gold {
   color: var(--gold-bright);
 }
@@ -380,6 +416,15 @@
   font-weight: 600;
   letter-spacing: 0.12em;
   color: var(--muted);
+}
+
+.lux-stat--long span {
+  font-size: 0.52rem;
+  line-height: 1.45;
+  letter-spacing: 0.05em;
+  max-width: 240px;
+  margin-inline: auto;
+  display: block;
 }
 
 /* Sections */
@@ -751,8 +796,12 @@
 }
 
 .lux-plan__price small {
-  font-size: 0.9rem;
-  font-weight: 500;
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 

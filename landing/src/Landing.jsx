@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { appUrl } from './config.js';
+import BrandLogo from './BrandLogo.jsx';
 import './Landing.css';
 
 const TICKER = [
@@ -11,50 +12,54 @@ const TICKER = [
 ];
 
 const STATS = [
-  { value: '10K+', label: 'DEMO USDT ON SIGNUP' },
-  { value: '1s', label: 'CHART INTERVAL' },
-  { value: '24/7', label: 'MARKET SYNC' },
-  { value: '99.9%', label: 'UPTIME TARGET' },
+  { value: '100%', label: 'SECURED AND TRANSPARENT' },
+  { value: 'GM', label: 'GLOBAL MARKET' },
+  {
+    value: '1',
+    label: "INDIA'S 1ST FIU REGISTERED NON KYC CRYPTOCURRENCY EXCHANGE",
+    long: true,
+  },
+  { value: '24/7', label: 'NETWORK OPERATIONS' },
 ];
 
 const FEATURES = [
   {
-    icon: '⚡',
-    title: 'SUB-SECOND UPDATES',
-    desc: 'Trade stream aur chart candles seconds-level refresh — smooth terminal experience.',
-  },
-  {
-    icon: '📊',
-    title: 'HYBRID PRICE ENGINE',
-    desc: 'Live feed + admin manual overlay — flexible training aur production dono ke liye.',
-  },
-  {
     icon: '🔒',
-    title: 'SECURE BY DESIGN',
-    desc: 'JWT auth, bcrypt, KYC workflow, admin-approved wallet — compliance-friendly stack.',
+    title: "INDIA'S 1ST NON KYC FIU REGISTERED CRYPTO EXCHANGE",
+    desc: 'Trade on India\'s first FIU-registered non-KYC cryptocurrency exchange platform.',
+  },
+  {
+    icon: '⚡',
+    title: 'HIGHLY SECURED',
+    desc: 'Trade in the global market which is highly reliable to trade — backed by highly secured infrastructure.',
+  },
+  {
+    icon: '🇮🇳',
+    title: 'FIU REGISTERED NON KYC',
+    desc: 'India\'s 1st cryptocurrency exchange which facilitates users to trade without the KYC limitation.',
   },
 ];
 
 const STEPS = [
   {
     num: '01',
-    title: 'REGISTER & VERIFY',
-    desc: 'Free account banayein, email verify karein — minutes mein ready.',
+    title: 'CREATE ACCOUNT',
+    desc: 'Verify your email/phone.',
   },
   {
     num: '02',
-    title: 'FUND YOUR WALLET',
-    desc: 'Deposit request bhejein; admin approval ke baad balance active.',
+    title: 'DEPOSIT',
+    desc: 'Deposit the crypto or fiat in which you want to trade.',
   },
   {
     num: '03',
-    title: 'OPEN TERMINAL',
-    desc: 'Spot trading UI — charts, order book, buy/sell ek dashboard par.',
+    title: 'TRADE',
+    desc: 'You can now start buying/selling crypto currencies.',
   },
   {
     num: '04',
-    title: 'TRADE WITH CONFIDENCE',
-    desc: 'Demo balance se practice karein, phir real flow explore karein.',
+    title: 'WITHDRAW',
+    desc: 'You can withdraw funds.',
   },
 ];
 
@@ -65,66 +70,62 @@ const RATES = [
   { code: 'SOL', name: 'Solana', buy: '178.4', sell: '179.4', chg: '+2.15%', up: true },
 ];
 
-const TESTIMONIALS = [
-  {
-    initials: 'AK',
-    name: 'Arjun K.',
-    role: 'Retail Trader',
-    text: 'Safeexchange ka UI clean hai — signup se trading terminal tak sab smooth laga. Demo USDT se practice bhi easy thi.',
-  },
-  {
-    initials: 'SM',
-    name: 'Sana M.',
-    role: 'Crypto Learner',
-    text: 'KYC aur wallet flow clear hai. Admin panel se control ka idea achha hai training projects ke liye.',
-  },
-  {
-    initials: 'RD',
-    name: 'Rohan D.',
-    role: 'Developer',
-    text: 'Hybrid chart engine interesting hai — live data + manual candles same platform par test kar sakte ho.',
-  },
-];
-
 const PLANS = [
   {
     name: '12 MONTHS',
     price: '5%–12%',
-    period: ' monthly',
-    desc: '12 months ke liye stake karein aur monthly returns earn karein.',
-    features: ['5%–12% monthly returns', '12 months ke baad: staked amount par up to 5×', 'Flexible min/max stake limits'],
+    period: 'Monthly',
+    desc: 'Start from 12 months Stake. Earn Monthly returns.',
+    features: ['5%–12% Monthly returns', 'After 12 months: up to 5× on staked amount', 'Flexible min/max stake limits'],
     popular: false,
   },
   {
     name: '18 MONTHS',
     price: '10%–20%',
-    period: ' monthly',
-    desc: '18 months lock ke sath zyada monthly returns.',
-    features: ['10%–20% monthly returns', '18 months ke baad: staked amount par up to 10×', 'Medium-term growth ke liye best'],
+    period: 'Monthly',
+    desc: 'Start from 18 months Stake. Earn Monthly returns.',
+    features: ['10%–20% Monthly returns', 'After 18 months: up to 10× on staked amount', 'Ideal for medium-term growth'],
     popular: true,
   },
   {
     name: '24 MONTHS',
     price: '10%–25%',
-    period: ' monthly',
-    desc: '24 months mein maximum rewards unlock karein.',
-    features: ['10%–25% monthly returns', '24 months ke baad: staked amount par up to 20×', 'Strong long-term yield'],
+    period: 'Monthly',
+    desc: 'Start from 24 months Stake. Earn Monthly returns.',
+    features: ['10%–25% Monthly returns', 'After 24 months: up to 20× on staked amount', 'Strong long-term yield'],
     popular: false,
   },
   {
     name: '36 MONTHS',
     price: '10%–30%',
-    period: ' monthly',
-    desc: 'Long-term stakers ke liye highest tier plan.',
-    features: ['10%–30% monthly returns', '36 months ke baad: staked amount par up to 30×', 'Maximum multiplier potential'],
+    period: 'Monthly',
+    desc: 'Start from 36 months Stake. Earn Monthly returns.',
+    features: ['10%–30% Monthly returns', 'After 36 months: up to 30× on staked amount', 'Maximum multiplier potential'],
     popular: false,
   },
 ];
 
 const FAQ_ITEMS = [
-  { q: 'Safeexchange kya hai?', a: 'Ek full-stack crypto exchange platform — wallet, KYC, trading, admin.' },
-  { q: 'Kya registration free hai?', a: 'Haan, account free hai aur demo balance milta hai.' },
-  { q: 'Trading kaise shuru karein?', a: 'Signup → verify → wallet → trading terminal open karein.' },
+  {
+    q: 'What is SafeXchange?',
+    a: 'SafeXchange is India\'s first cryptocurrency exchange platform that enables users to trade digital assets without complicated KYC procedures. Designed for simplicity, speed, and security, SafeXchange makes crypto trading accessible to everyone while maintaining a seamless user experience.',
+  },
+  {
+    q: 'Do I need to complete KYC to start trading on SafeXchange?',
+    a: 'No. One of the key advantages of SafeXchange is its hassle-free trading experience. Users can start trading cryptocurrencies without going through lengthy and complicated KYC processes, making onboarding faster and more convenient.',
+  },
+  {
+    q: 'Is SafeXchange secure?',
+    a: 'Absolutely. SafeXchange is built with advanced security measures to protect user accounts, transactions, and digital assets. Our platform prioritizes security at every level, ensuring a safe and reliable trading environment for all users.',
+  },
+  {
+    q: 'Are there any fees to join SafeXchange?',
+    a: 'Creating an account on SafeXchange is completely free. Users can access the platform, explore trading opportunities, and manage their crypto assets without paying any registration or membership fees.',
+  },
+  {
+    q: 'Why choose SafeXchange over other cryptocurrency exchanges?',
+    a: 'SafeXchange stands out by offering a KYC-free, hassle-free, secure, and user-friendly trading experience. As India\'s first cryptocurrency exchange focused on simplified access, it enables users to buy, sell, and trade cryptocurrencies quickly while benefiting from robust security and a seamless platform experience.',
+  },
 ];
 
 const HERO_VIDEO_LOCAL = '/videos/hero-3d.mp4';
@@ -381,18 +382,16 @@ export default function Landing() {
       <header className="lux-header">
         <div className="lux-header__inner lux-wrap">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">exchange</span>
+            <BrandLogo size="md" />
           </a>
           <nav className="lux-nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
             <a href="#rates">RATES</a>
-            <a href="#pricing">PRICING</a>
+            <a href="#pricing">STAKE</a>
             <a href="#faq">FAQ</a>
           </nav>
           <div className="lux-header__right">
-            <span className="lux-tag">SECURE STACK</span>
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold lux-btn--sm">
               LAUNCH APP
             </a>
@@ -413,22 +412,19 @@ export default function Landing() {
 
       <section className="lux-hero lux-wrap" id="home">
         <div className="lux-hero__copy lux-hero__copy--on-video">
-          <SectionLabel>PREMIUM EXCHANGE PLATFORM</SectionLabel>
           <h1 className="lux-hero__title">
-            <span>EXCHANGE</span>
-            <span className="lux-outline">WITHOUT</span>
-            <span className="lux-gold">LIMITS</span>
+            <span>INDIA&apos;S 1ST</span>
+            <span className="lux-outline lux-hero__title-mid">NON-KYC-FIU-REGISTERED</span>
+            <span className="lux-gold">CRYPTO EXCHANGE</span>
           </h1>
           <p className="lux-hero__sub">
-            Institutional-grade crypto trading for everyone. Real-time charts, secure wallet,
-            zero confusion — signup se trade tak ek hi Safeexchange experience.
+            We secure financial networks. SafeXchange is a privately held cryptocurrency platform in
+            India and the Western Countries — built for traders who expect reliability, transparency,
+            and next-generation market access.
           </p>
           <div className="lux-hero__btns">
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
               START TRADING →
-            </a>
-            <a href={appUrl('/login')} className="lux-btn lux-btn--ghost">
-              VIEW DEMO
             </a>
           </div>
         </div>
@@ -436,7 +432,7 @@ export default function Landing() {
 
       <section className="lux-stats lux-wrap">
         {STATS.map((s) => (
-          <div key={s.label} className="lux-stat">
+          <div key={s.label} className={`lux-stat${s.long ? ' lux-stat--long' : ''}`}>
             <strong>{s.value}</strong>
             <span>{s.label}</span>
           </div>
@@ -444,10 +440,25 @@ export default function Landing() {
       </section>
 
       <section className="lux-section lux-wrap" id="features">
-        <SectionLabel>PLATFORM FEATURES</SectionLabel>
-        <h2 className="lux-h2">BUILT FOR THE SERIOUS TRADER</h2>
+        <SectionLabel>ABOUT</SectionLabel>
+        <h2 className="lux-h2">SafeXchange</h2>
         <p className="lux-lead">
-          Pro infrastructure. Simple onboarding. Everything you need to trade on Safeexchange.
+          At SafeXchange, we are committed to providing our customers with a reliable and
+          user-friendly crypto exchange platform where every crypto enthusiast can participate in
+          the growing digital asset economy. Cryptocurrency continues to transform the financial
+          landscape, and SafeXchange aims to empower individuals with a seamless trading experience
+          that makes entering the world of digital currencies simple and accessible.
+        </p>
+        <p className="lux-lead">
+          With SafeXchange, you can buy, sell, and transfer a wide range of cryptocurrencies
+          securely and effortlessly. Whether you are a beginner exploring your first investment or an
+          experienced trader managing a diverse portfolio, our platform is designed to meet your
+          needs. Backed by advanced security, intuitive tools, and a commitment to customer
+          satisfaction, SafeXchange helps you trade with confidence and convenience.
+        </p>
+        <p className="lux-lead">
+          Start your crypto journey with SafeXchange today and unlock new opportunities in the
+          evolving world of digital assets.
         </p>
         <div className="lux-features">
           {FEATURES.map((f) => (
@@ -478,7 +489,7 @@ export default function Landing() {
       <section className="lux-section lux-wrap" id="rates">
         <SectionLabel>LIVE MARKET RATES</SectionLabel>
         <h2 className="lux-h2">TODAY&apos;S SPOT PAIRS</h2>
-        <p className="lux-lead">Illustrative rates for landing preview — trade on app for live data.</p>
+        <p className="lux-lead">Live spot pairs on SafeXchange — illustrative preview rates below.</p>
         <div className="lux-table-wrap">
           <table className="lux-table">
             <thead>
@@ -518,33 +529,10 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="lux-section lux-wrap">
-        <SectionLabel>CLIENT VOICES</SectionLabel>
-        <h2 className="lux-h2">TRUSTED BY TRADERS</h2>
-        <span className="lux-dot-deco" aria-hidden />
-        <div className="lux-testimonials">
-          {TESTIMONIALS.map((t) => (
-            <blockquote key={t.name} className="lux-quote">
-              <p>&ldquo;{t.text}&rdquo;</p>
-              <footer>
-                <span className="lux-quote__av">{t.initials}</span>
-                <span>
-                  <strong>{t.name}</strong>
-                  <small>{t.role}</small>
-                </span>
-                <span className="lux-stars" aria-hidden>
-                  ★★★★★
-                </span>
-              </footer>
-            </blockquote>
-          ))}
-        </div>
-      </section>
-
       <section className="lux-section lux-wrap" id="pricing">
         <SectionLabel>STAKING</SectionLabel>
         <h2 className="lux-h2">STAKING PLANS</h2>
-        <p className="lux-lead">Lock period choose karein, monthly returns earn karein, aur maturity par multiplier unlock karein.</p>
+        <p className="lux-lead">Start from your chosen duration, Stake, and earn Monthly returns — unlock multiplier rewards at maturity.</p>
         <div className="lux-pricing">
           {PLANS.map((p) => (
             <article key={p.name} className={`lux-plan${p.popular ? ' lux-plan--pop' : ''}`}>
@@ -570,7 +558,9 @@ export default function Landing() {
           <SectionLabel>GET STARTED TODAY</SectionLabel>
           <h2 className="lux-h2 lux-h2--center">START EXCHANGING SMARTER</h2>
           <p className="lux-lead lux-lead--center">
-            Join Safeexchange — setup minutes mein. Demo balance ke sath turant explore karein.
+            We believe Crypto is ideally positioned to be a key instrument in securing
+            next-generation global financial networks. Create your account and start trading on
+            SafeXchange today.
           </p>
           <div className="lux-hero__btns lux-hero__btns--center">
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold">
@@ -582,27 +572,26 @@ export default function Landing() {
 
       <section className="lux-section lux-wrap lux-section--faq" id="faq">
         <SectionLabel>FAQ</SectionLabel>
-        <h2 className="lux-h2">QUICK ANSWERS</h2>
+        <h2 className="lux-h2">FREQUENTLY ASKED QUESTIONS (FAQS)</h2>
         <FaqAccordion />
       </section>
 
       <footer className="lux-footer">
         <div className="lux-wrap lux-footer__row">
           <a href="#home" className="lux-logo">
-            <span className="lux-logo__white">Safe</span>
-            <span className="lux-logo__gold">exchange</span>
+            <BrandLogo size="md" />
           </a>
           <nav className="lux-footer__nav">
             <a href="#features">PLATFORM</a>
             <a href="#process">PROCESS</a>
             <a href="#rates">RATES</a>
-            <a href="#pricing">PRICING</a>
+            <a href="#pricing">STAKE</a>
             <a href={appUrl('/login')}>LOGIN</a>
           </nav>
           <span className="lux-footer__badge">SECURE PLATFORM</span>
         </div>
         <p className="lux-footer__copy lux-wrap">
-          © {new Date().getFullYear()} Safeexchange. All rights reserved.
+          © {new Date().getFullYear()} SafeXchange. All rights reserved.
         </p>
       </footer>
     </div>

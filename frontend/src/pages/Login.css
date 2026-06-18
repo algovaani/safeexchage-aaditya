@@ -1,4 +1,4 @@
-/* Safeexchange Login — dark trading terminal */
+/* SafeXchange Login — dark trading terminal */
 
 .login-page {
   --login-bg: #0d0f14;
@@ -277,7 +277,7 @@
   background: var(--login-gold);
   color: #0d0f14;
   font-size: 0.875rem;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   transition: background 0.15s, filter 0.15s;
   display: inline-flex;

@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Safeexchange Design System — dark professional (default) */
+/* SafeXchange Design System — dark professional (default) */
 :root {
   --bg-primary: #0d0f14;
   --bg-secondary: #161a22;
@@ -135,6 +135,43 @@ html.light {
   .btn-primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .brand-logo-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    text-decoration: none;
+    flex-shrink: 0;
+    overflow: visible;
+  }
+
+  .brand-logo-wrap--sm {
+    gap: 0.35rem;
+  }
+
+  .brand-logo__icon {
+    width: auto;
+    max-width: none;
+    object-fit: contain;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  .brand-logo__text {
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .brand-logo__safe,
+  .brand-logo__change {
+    color: #fff;
+  }
+
+  .brand-logo__x {
+    color: #f5c842;
   }
 
   .btn-secondary {

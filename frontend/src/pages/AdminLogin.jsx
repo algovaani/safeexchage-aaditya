@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import BrandLogo from '../components/BrandLogo.jsx';
 import './AdminLogin.css';
 
 export default function AdminLogin() {
@@ -44,8 +45,7 @@ export default function AdminLogin() {
     <div className="admin-login-page">
       <header className="admin-login-nav">
         <Link to="/" className="admin-login-nav__brand">
-          <span className="admin-login-nav__dot" />
-          Safeexchange
+          <BrandLogo size="sm" />
         </Link>
       </header>
 

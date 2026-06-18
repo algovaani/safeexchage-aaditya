@@ -17,6 +17,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
 import ThemeToggle from './ThemeToggle.jsx';
+import BrandLogo from './BrandLogo.jsx';
 import './AppShell.css';
 
 const NAV = [
@@ -69,8 +70,7 @@ export default function Layout() {
     <div className={`app-shell${fullWidth ? ' app-shell--wide' : ''}`}>
       <aside className={`app-sidebar${sidebarOpen ? ' is-open' : ''}`}>
         <div className="app-sidebar__brand">
-          <span className="app-sidebar__dot" />
-          <span className="app-sidebar__logo">Safeexchange</span>
+          <BrandLogo size="sm" />
           <button type="button" className="app-sidebar__close lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
             <X size={18} />
           </button>
@@ -115,8 +115,7 @@ export default function Layout() {
           </button>
 
           <NavLink to="/dashboard" className="app-navbar__logo-mobile lg:hidden">
-            <span className="app-sidebar__dot" />
-            Safeexchange
+            <BrandLogo size="sm" />
           </NavLink>
 
           <div className="app-navbar__search">
