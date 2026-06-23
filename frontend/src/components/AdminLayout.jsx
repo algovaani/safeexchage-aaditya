@@ -11,6 +11,8 @@ const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: '◉' },
   { id: 'users', label: 'Users', icon: '👤' },
   { id: 'kyc', label: 'KYC', icon: '✓' },
+  { id: 'deposits', label: 'Deposits', icon: '💳' },
+  { id: 'withdrawals', label: 'Withdrawals', icon: '🏧' },
   { id: 'wallet', label: 'Wallet', icon: '💰' },
   { id: 'orders', label: 'Orders', icon: '📋' },
   { id: 'prices', label: 'Prices', icon: '📈' },

@@ -34,14 +34,14 @@ const NAV = [
 function isNavActive(pathname, item) {
   if (item.label === 'Portfolio' || item.label === 'Orders') return false;
   if (item.to === '/account/profile') return pathname.startsWith('/account/profile');
-  if (item.to === '/wallet') return pathname === '/wallet' || pathname === '/account';
+  if (item.to === '/wallet') return pathname === '/wallet' || pathname.startsWith('/wallet/') || pathname === '/account';
   return pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
 }
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
-  const fullWidth = pathname === '/trade';
+  const fullWidth = false;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [portfolio, setPortfolio] = useState(null);
 

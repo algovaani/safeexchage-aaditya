@@ -30,6 +30,7 @@ function handleFiatUpload(req, res, next) {
   });
 }
 
+depositRouter.get('/platform-info', authMiddleware, deposit.platformInfo);
 depositRouter.get('/crypto/address', authMiddleware, deposit.cryptoAddress);
 depositRouter.post(
   '/crypto/submit',

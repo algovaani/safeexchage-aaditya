@@ -11,6 +11,8 @@ const SECTION_TITLES = {
   overview: 'Overview',
   users: 'Users',
   kyc: 'KYC Review',
+  deposits: 'Deposits',
+  withdrawals: 'Withdrawals',
   wallet: 'Wallet & Transactions',
   orders: 'Orders',
   prices: 'Manual Prices',
@@ -127,6 +129,8 @@ export default function Admin() {
   const [orders, setOrders] = useState([]);
   const [trades, setTrades] = useState([]);
   const [manual, setManual] = useState([]);
+  const [deposits, setDeposits] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]);
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedKyc, setSelectedKyc] = useState(null);
@@ -147,16 +151,18 @@ export default function Admin() {
     () => ({
       users: users.length,
       pendingKyc: kyc.filter((x) => x.status === 'pending').length,
+      pendingDeposits: deposits.filter((x) => x.status === 'pending').length,
+      pendingWithdrawals: withdrawals.filter((x) => x.status === 'pending').length,
       pendingTx: txs.length,
       openOrders: orders.filter((x) => x.status === 'open').length,
     }),
-    [users, kyc, txs, orders]
+    [users, kyc, deposits, withdrawals, txs, orders]
   );
 
   async function refresh() {
     setLoading(true);
     try {
-      const [{ data: u }, { data: k }, { data: t }, { data: tr }, { data: m }, { data: allT }, { data: allO }] =
+      const [{ data: u }, { data: k }, { data: t }, { data: tr }, { data: m }, { data: allT }, { data: allO }, { data: dep }, { data: wdr }] =
         await Promise.all([
           api.get('/admin/users'),
           api.get('/admin/kyc'),
@@ -165,6 +171,8 @@ export default function Admin() {
           api.get('/admin/manual-prices'),
           api.get('/admin/transactions/all'),
           api.get('/admin/orders'),
+          api.get('/admin/deposits'),
+          api.get('/admin/withdrawals'),
         ]);
       setUsers(asArray(parseApiResponse(u)));
       setKyc(asArray(parseApiResponse(k)));
@@ -173,6 +181,8 @@ export default function Admin() {
       setManual(asArray(parseApiResponse(m)));
       setAllTxs(asArray(parseApiResponse(allT)));
       setOrders(asArray(parseApiResponse(allO)));
+      setDeposits(asArray(parseApiResponse(dep)));
+      setWithdrawals(asArray(parseApiResponse(wdr)));
     } finally {
       setLoading(false);
     }
@@ -190,6 +200,26 @@ export default function Admin() {
     }
     await api.patch(`/admin/kyc/${id}/review`, { action, note });
     setSelectedKyc(null);
+    await refresh();
+  }
+
+  async function verifyDeposit(id, action) {
+    let note = '';
+    if (action === 'reject') {
+      note = window.prompt('Rejection reason (required):') || '';
+      if (!note.trim()) return;
+    }
+    await api.patch(`/admin/deposits/${id}/verify`, { action, note });
+    await refresh();
+  }
+
+  async function verifyWithdrawal(id, action) {
+    let note = '';
+    if (action === 'reject') {
+      note = window.prompt('Rejection reason (required):') || '';
+      if (!note.trim()) return;
+    }
+    await api.patch(`/admin/withdrawals/${id}/verify`, { action, note });
     await refresh();
   }
 
@@ -238,6 +268,14 @@ export default function Admin() {
             <div className="admin-stat">
               <p className="admin-stat__label">Pending KYC</p>
               <p className="admin-stat__value admin-stat__value--warn">{stats.pendingKyc}</p>
+            </div>
+            <div className="admin-stat">
+              <p className="admin-stat__label">Pending Deposits</p>
+              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingDeposits}</p>
+            </div>
+            <div className="admin-stat">
+              <p className="admin-stat__label">Pending Withdrawals</p>
+              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingWithdrawals}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Pending Tx</p>
@@ -392,6 +430,166 @@ export default function Admin() {
             onClose={() => setSelectedKyc(null)}
             onReview={reviewKyc}
           />
+        </div>
+      )}
+
+      {activeTab === 'deposits' && (
+        <div className="admin-card">
+          <h2>Deposit verification</h2>
+          <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+            Approve crypto (txn hash) and fiat (bank transfer + proof) deposits.
+          </p>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Reference</th>
+                  <th>Proof</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deposits.map((row) => {
+                  const userLabel = row.user?.email || row.user?.mobile || String(row.userId);
+                  const ref =
+                    row.type === 'crypto'
+                      ? `${row.network || ''} ${row.txnHash || '—'}`.trim()
+                      : row.utrNumber || '—';
+                  return (
+                    <tr key={row.id}>
+                      <td style={{ color: 'var(--adm-muted)' }}>{userLabel}</td>
+                      <td className="capitalize">{row.type}</td>
+                      <td>{row.amount} {row.currency || 'USDT'}</td>
+                      <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ref}>{ref}</td>
+                      <td>
+                        {row.paymentProof?.url ? (
+                          <a href={row.paymentProof.url} target="_blank" rel="noreferrer" className="admin-link">
+                            View proof
+                          </a>
+                        ) : row.type === 'crypto' && row.txnHash ? (
+                          <span className="text-xs text-text-muted">On-chain</span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td>
+                        {row.status === 'pending' ? (
+                          <div className="admin-actions">
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--primary admin-btn--sm"
+                              onClick={() => verifyDeposit(row.id, 'approve')}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--danger admin-btn--sm"
+                              onClick={() => verifyDeposit(row.id, 'reject')}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-text-muted">
+                            {row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString() : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!deposits.length && (
+                  <tr>
+                    <td colSpan={7} className="admin-empty">
+                      No deposit requests.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'withdrawals' && (
+        <div className="admin-card">
+          <h2>Withdrawal verification</h2>
+          <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+            Approve crypto (wallet address) and fiat (bank transfer) withdrawal requests.
+          </p>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Destination</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {withdrawals.map((row) => {
+                  const userLabel = row.user?.email || row.user?.mobile || String(row.userId);
+                  const dest =
+                    row.type === 'crypto'
+                      ? `${row.network || ''} ${row.walletAddress || '—'}`.trim()
+                      : `${row.bankName || ''} · ${row.accountNumber || '—'} (${row.ifsc || ''})`.trim();
+                  return (
+                    <tr key={row.id}>
+                      <td style={{ color: 'var(--adm-muted)' }}>{userLabel}</td>
+                      <td className="capitalize">{row.type}</td>
+                      <td>{row.amount} {row.currency || 'USDT'}</td>
+                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={dest}>{dest}</td>
+                      <td>
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td>
+                        {row.status === 'pending' ? (
+                          <div className="admin-actions">
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--primary admin-btn--sm"
+                              onClick={() => verifyWithdrawal(row.id, 'approve')}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="admin-btn admin-btn--danger admin-btn--sm"
+                              onClick={() => verifyWithdrawal(row.id, 'reject')}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-text-muted">
+                            {row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString() : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!withdrawals.length && (
+                  <tr>
+                    <td colSpan={6} className="admin-empty">
+                      No withdrawal requests.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

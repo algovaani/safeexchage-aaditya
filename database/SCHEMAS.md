@@ -1,4 +1,4 @@
-# MongoDB Collections (SafeX)
+# MongoDB Collections (SafeXchange)
 
 MongoDB is schemaless; the backend enforces the following shapes via Mongoose.
 

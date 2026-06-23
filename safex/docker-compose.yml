@@ -1,0 +1,24 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: safex
+      POSTGRES_PASSWORD: safex
+      POSTGRES_DB: safex
+    ports:
+      - '5432:5432'
+    volumes:
+      - safex_pg:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - safex_redis:/data
+
+volumes:
+  safex_pg:
+  safex_redis:

@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
+import ExchangeLayout from './components/ExchangeLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
@@ -10,6 +11,7 @@ import AdminLogin from './pages/AdminLogin.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Markets from './pages/Markets.jsx';
 import Account from './pages/Account.jsx';
+import Deposit from './pages/Deposit.jsx';
 import AccountProfile from './pages/AccountProfile.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Trading from './pages/Trading.jsx';
@@ -24,9 +26,14 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
 
-      <Route element={<Layout />}>
-        <Route path="/exchange" element={<Navigate to="/markets" replace />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<ExchangeLayout />}>
+          <Route path="/trade" element={<Trading />} />
+          <Route path="/exchange" element={<Navigate to="/trade" replace />} />
+        </Route>
+      </Route>
 
+      <Route element={<Layout />}>
         <Route
           path="/dashboard"
           element={
@@ -40,6 +47,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Markets />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/wallet/deposit"
+          element={
+            <ProtectedRoute>
+              <Deposit />
             </ProtectedRoute>
           }
         />
@@ -67,14 +82,6 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Transactions />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/trade"
-          element={
-            <ProtectedRoute>
-              <Trading />
             </ProtectedRoute>
           }
         />

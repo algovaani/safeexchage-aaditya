@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
+import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
+import { MARKET_POLL_MS } from '../config/marketPoll.js';
 import { fmtINR, fmtPct, inrFromUsdt } from '../utils/format.js';
 
 const CATEGORIES = ['All', 'Crypto', 'Stocks', 'Forex', 'Commodities'];
-const CRYPTO_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'DOTUSDT'];
+const CRYPTO_SYMBOLS = TRADING_PAIR_SYMBOLS;
 
 const STOCK_MOCK = [
   { symbol: 'NIFTY', name: 'Nifty 50', price: 24850.3, change: 0.42, volume: '12.4B', cap: '—' },
@@ -37,34 +39,45 @@ export default function Markets() {
   const perPage = 8;
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
+    let active = true;
+
+    async function loadCryptoPrices() {
       try {
-        const crypto = await Promise.all(
-          CRYPTO_SYMBOLS.map(async (sym) => {
-            try {
-              const { data } = await api.get('/market/ticker', { params: { symbol: sym } });
-              const t = parseApiResponse(data);
-              return {
-                symbol: sym.replace('USDT', ''),
-                name: sym.replace('USDT', ''),
-                price: Number(t?.lastPrice ?? 0),
-                change: Number(t?.priceChangePercent ?? 0),
-                volume: t?.volume ? `${(Number(t.volume) / 1e6).toFixed(1)}M` : '—',
-                cap: '—',
-                type: 'crypto',
-              };
-            } catch {
-              return null;
-            }
-          })
-        );
-        const list = [...crypto.filter(Boolean), ...STOCK_MOCK.map((s) => ({ ...s, type: 'stock' }))];
-        setRows(list);
+        const { data } = await api.get('/market/prices/live');
+        if (!active) return;
+        const payload = parseApiResponse(data);
+        const pairs = payload?.pairs || [];
+        const bySymbol = new Map(pairs.map((p) => [p.symbol, p]));
+
+        const crypto = CRYPTO_SYMBOLS.map((sym) => {
+          const row = bySymbol.get(sym);
+          if (!row) return null;
+          return {
+            symbol: sym.replace('USDT', ''),
+            name: sym.replace('USDT', ''),
+            price: Number(row.price ?? 0),
+            change: Number(row.change_24h ?? 0),
+            volume: row.volume ? `${(Number(row.volume) / 1e6).toFixed(1)}M` : '—',
+            cap: '—',
+            type: 'crypto',
+          };
+        }).filter(Boolean);
+
+        setRows([...crypto, ...STOCK_MOCK.map((s) => ({ ...s, type: 'stock' }))]);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
-    })();
+    }
+
+    loadCryptoPrices().catch(() => {
+      if (active) setLoading(false);
+    });
+    const id = setInterval(() => loadCryptoPrices().catch(() => {}), MARKET_POLL_MS);
+
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
   }, []);
 
   const filtered = useMemo(() => {

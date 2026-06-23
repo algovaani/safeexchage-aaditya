@@ -61,8 +61,8 @@ async function run() {
   const resolved = await resolveMongoUri(uri);
   await mongoose.connect(resolved, { serverSelectionTimeoutMS: 20_000 });
 
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@safex.local';
-  const adminPass = process.env.ADMIN_PASSWORD || 'ChangeMeAdmin123!';
+  const adminEmail = process.env.ADMIN_EMAIL || 'admin@safexchange.io';
+  const adminPass = process.env.ADMIN_PASSWORD || 'Admin123!';
   const liqEmail = process.env.SYSTEM_LIQUIDITY_EMAIL || 'liquidity@internal.safex';
   const liqPass = process.env.SYSTEM_LIQUIDITY_PASSWORD || 'LiquidityInternal123!';
 

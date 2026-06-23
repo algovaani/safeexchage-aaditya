@@ -1,0 +1,161 @@
+/* Binance-style exchange shell — matches professional trading terminal UI */
+
+.exchange-shell {
+  --ex-bg: #0b121e;
+  --ex-panel: #161a1e;
+  --ex-panel-2: #1e2329;
+  --ex-input-bg: #2b3139;
+  --ex-border: #2b3139;
+  --ex-text: #eaecef;
+  --ex-muted: #848e9c;
+  --ex-buy: #2ebd85;
+  --ex-sell: #f6465d;
+  --ex-buy-soft: rgba(46, 189, 133, 0.12);
+  --ex-sell-soft: rgba(246, 70, 93, 0.12);
+  --ex-row-hover: rgba(255, 255, 255, 0.04);
+  --ex-highlight: rgba(46, 189, 133, 0.08);
+  --ex-ticker-bg: #161a1e;
+  --ex-strip-bg: #1e2329;
+  --ex-chart-bg: #0b121e;
+  --ex-portfolio-bg: #1e2329;
+  --ex-gold: #f0b90b;
+  --ex-gold-bright: #f0b90b;
+  --ex-gold-soft: rgba(240, 185, 11, 0.1);
+  --ex-border-gold: #2b3139;
+  --ex-shadow: none;
+
+  min-height: 100vh;
+  background: var(--ex-bg);
+  color: var(--ex-text);
+  display: flex;
+  flex-direction: column;
+}
+
+.exchange-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.25rem;
+  height: 56px;
+  background: #161a1e;
+  border-bottom: 1px solid var(--ex-border);
+  flex-shrink: 0;
+}
+
+.exchange-header__left {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  min-width: 0;
+}
+
+.exchange-header__brand {
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.exchange-header__nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.exchange-header__link {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ex-muted);
+  text-decoration: none;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.exchange-header__link:hover {
+  color: var(--ex-text);
+}
+
+.exchange-header__link.is-active {
+  color: var(--ex-text);
+  background: var(--ex-panel-2);
+}
+
+.exchange-header__right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+}
+
+.exchange-header__portfolio {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.exchange-header__portfolio-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ex-muted);
+}
+
+.exchange-header__portfolio-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ex-text);
+}
+
+.exchange-header__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f0b90b, #d4a008);
+  color: #0b121e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.exchange-header__logout {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ex-muted);
+  background: transparent;
+  border: 1px solid var(--ex-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.exchange-header__logout:hover {
+  color: var(--ex-text);
+  border-color: var(--ex-muted);
+}
+
+.exchange-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .exchange-header__nav {
+    display: none;
+  }
+
+  .exchange-header__portfolio-label {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .exchange-header__logout {
+    display: none;
+  }
+}

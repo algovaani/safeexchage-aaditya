@@ -36,12 +36,24 @@ const THEMES = {
     text: '#c8d0da',
     grid: '#1f2937',
     border: '#243041',
+    up: '#16a34a',
+    down: '#dc2626',
+  },
+  exchange: {
+    bg: '#0b121e',
+    text: '#848e9c',
+    grid: '#1e2329',
+    border: '#2b3139',
+    up: '#2ebd85',
+    down: '#f6465d',
   },
   light: {
     bg: '#ffffff',
     text: '#334155',
     grid: '#e2e8f0',
     border: '#e2e8f0',
+    up: '#16a34a',
+    down: '#dc2626',
   },
 };
 
@@ -72,11 +84,11 @@ export default function LiveChart({ candles, variant = 'dark', className = '' })
     });
 
     const series = chart.addCandlestickSeries({
-      upColor: '#16a34a',
-      downColor: '#dc2626',
+      upColor: theme.up || '#16a34a',
+      downColor: theme.down || '#dc2626',
       borderVisible: false,
-      wickUpColor: '#16a34a',
-      wickDownColor: '#dc2626',
+      wickUpColor: theme.up || '#16a34a',
+      wickDownColor: theme.down || '#dc2626',
     });
 
     chartRef.current = chart;

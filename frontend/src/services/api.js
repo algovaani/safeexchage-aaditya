@@ -6,7 +6,14 @@ const LEGACY_TOKEN_KEY = 'vencrypto_token';
 function resolveBaseUrl() {
   const vite = import.meta.env.VITE_API_URL;
   const cra = typeof process !== 'undefined' ? process.env?.REACT_APP_API_URL : undefined;
-  return vite || cra || '/api';
+  let url = String(vite || cra || '/api').trim().replace(/\/+$/, '');
+
+  // https://api.safexchange.io → https://api.safexchange.io/api
+  if (/^https?:\/\//i.test(url) && !url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+
+  return url;
 }
 
 export const api = axios.create({
@@ -78,7 +85,14 @@ function formatApiError(error) {
   if (payload?.error) return payload.error;
 
   if (!error.response) {
-    return 'Cannot reach API. Ensure backend is running on port 5000, then refresh and try again.';
+    const base = resolveBaseUrl();
+    const isLocal =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    if (isLocal) {
+      return `Cannot reach API (${base}). Ensure the backend is running, then refresh and try again.`;
+    }
+    return 'Cannot reach API. Check your internet connection and try again.';
   }
 
   return error.message || 'Request failed';
@@ -141,7 +155,14 @@ export const kycAPI = {
     ),
 };
 
+export const withdrawalAPI = {
+  submitCrypto: (body) => unwrap(api.post('/withdrawal/crypto/submit', body)),
+  submitFiat: (body) => unwrap(api.post('/withdrawal/fiat/submit', body)),
+  getHistory: () => unwrap(api.get('/withdrawals/history')),
+};
+
 export const depositAPI = {
+  getPlatformInfo: () => unwrap(api.get('/deposit/platform-info')),
   getCryptoAddress: () => unwrap(api.get('/deposit/crypto/address')),
   submitCrypto: (body) => unwrap(api.post('/deposit/crypto/submit', body)),
   submitFiat: (formData) =>

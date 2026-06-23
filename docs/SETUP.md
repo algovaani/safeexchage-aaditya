@@ -1,4 +1,4 @@
-# SafeX — Local Setup & Run
+# SafeXchange — Local Setup & Run
 
 ## Prerequisites
 

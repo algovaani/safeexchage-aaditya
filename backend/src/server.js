@@ -20,6 +20,7 @@ import orderRoutes from './routes/orderRoutes.js';
 import marketRoutes from './routes/marketRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import { depositRouter, depositsRouter } from './routes/depositRoutes.js';
+import { withdrawalRouter, withdrawalsRouter } from './routes/withdrawalRoutes.js';
 import tradeRoutes from './routes/tradeRoutes.js';
 import stakingRoutes from './routes/stakingRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
@@ -56,6 +57,15 @@ app.use(
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'safex-backend',
+    health: '/api/health',
+    market: '/api/market/prices/live',
+    hint: 'All API routes are under /api — e.g. /api/auth/login, /api/market/ticker',
+  });
+});
+
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use(
@@ -89,6 +99,8 @@ app.use('/api/kyc', kycRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/deposit', depositRouter);
 app.use('/api/deposits', depositsRouter);
+app.use('/api/withdrawal', withdrawalRouter);
+app.use('/api/withdrawals', withdrawalsRouter);
 app.use('/api/orders', orderRoutes);
 app.use('/api/trades', tradeRoutes);
 app.use('/api/staking', stakingRoutes);

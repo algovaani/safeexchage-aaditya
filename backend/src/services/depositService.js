@@ -30,6 +30,8 @@ export function formatDeposit(req, doc, { includeUser = false } = {}) {
     txnHash: doc.txnHash || null,
     network: doc.network || null,
     utrNumber: doc.utrNumber || null,
+    bankName: doc.bankName || null,
+    accountNumber: doc.accountNumber || null,
     paymentProof,
     adminNote: doc.adminNote || '',
     transactionId: doc.transactionId || null,

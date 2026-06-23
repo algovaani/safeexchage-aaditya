@@ -8,8 +8,8 @@ import './AdminLogin.css';
 export default function AdminLogin() {
   const { login, logout } = useAuth();
   const nav = useNavigate();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('admin@safexchange.io');
+  const [password, setPassword] = useState('Admin123!');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
@@ -108,11 +108,6 @@ export default function AdminLogin() {
               {busy ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Login'}
             </button>
           </form>
-
-          <p className="admin-login-hint text-xs text-text-muted mt-4">
-            Dev: <strong className="text-text-secondary">admin@vencrypto.local</strong> /{' '}
-            <strong className="text-text-secondary">ChangeMeAdmin123!</strong>
-          </p>
         </div>
       </main>
     </div>

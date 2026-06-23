@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 
 export default function ProtectedRoute({ children, adminOnly }) {
@@ -8,5 +8,5 @@ export default function ProtectedRoute({ children, adminOnly }) {
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && !isAdmin) return <Navigate to="/account" replace />;
 
-  return children;
+  return children ?? <Outlet />;
 }

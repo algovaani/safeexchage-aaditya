@@ -5,6 +5,7 @@ export {
   authAPI,
   kycAPI,
   depositAPI,
+  withdrawalAPI,
   marketAPI,
   tradeAPI,
   stakingAPI,

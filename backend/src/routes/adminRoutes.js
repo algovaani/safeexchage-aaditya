@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as a from '../controllers/adminController.js';
 import * as kycAdmin from '../controllers/kycAdminController.js';
 import * as depositAdmin from '../controllers/depositAdminController.js';
+import * as withdrawalAdmin from '../controllers/withdrawalAdminController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { validateBody } from '../middleware/validate.js';
@@ -10,6 +11,10 @@ import {
   adminDepositListValidators,
   verifyDepositValidators,
 } from '../validators/depositValidators.js';
+import {
+  adminWithdrawalListValidators,
+  verifyWithdrawalValidators,
+} from '../validators/withdrawalValidators.js';
 import { manualPriceSchema } from '../validators/schemas.js';
 import tradeRoutes from './admin/tradeRoutes.js';
 import stakingAdminRoutes from './admin/stakingRoutes.js';
@@ -27,6 +32,19 @@ r.patch('/kyc/:id/review', reviewKycValidators, validateRequest, kycAdmin.review
 r.get('/deposits', adminDepositListValidators, validateRequest, depositAdmin.listDeposits);
 r.get('/deposits/:id', depositAdmin.getDeposit);
 r.patch('/deposits/:id/verify', verifyDepositValidators, validateRequest, depositAdmin.verifyDeposit);
+r.get(
+  '/withdrawals',
+  adminWithdrawalListValidators,
+  validateRequest,
+  withdrawalAdmin.listWithdrawals
+);
+r.get('/withdrawals/:id', withdrawalAdmin.getWithdrawal);
+r.patch(
+  '/withdrawals/:id/verify',
+  verifyWithdrawalValidators,
+  validateRequest,
+  withdrawalAdmin.verifyWithdrawal
+);
 r.get('/transactions', a.listPendingTransactions);
 r.get('/transactions/all', a.listAllTransactions);
 r.patch('/transactions/:id', a.approveTransaction);

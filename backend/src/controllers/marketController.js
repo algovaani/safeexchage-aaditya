@@ -19,14 +19,14 @@ export async function allPrices(_req, res, next) {
 
 export async function livePrices(_req, res, next) {
   try {
-    const result = await fetchAllPairPrices({ force: true });
+    const result = await fetchAllPairPrices();
     res.set('Cache-Control', 'no-store');
     return success(
       res,
       {
         ...result,
-        pollIntervalSeconds: 3,
-        hint: 'Poll this endpoint every 3 seconds for near-live updates',
+        pollIntervalSeconds: 0.5,
+        hint: 'Poll this endpoint every 500ms for near-live updates',
       },
       'Live prices fetched'
     );

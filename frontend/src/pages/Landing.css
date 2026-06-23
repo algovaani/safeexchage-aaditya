@@ -372,6 +372,29 @@
   font-weight: 800;
   color: var(--gold-bright);
   margin-bottom: 0.35rem;
+  line-height: 1;
+}
+
+.ordinal-sup {
+  font-size: 0.52em;
+  font-weight: 800;
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 0.04em;
+  letter-spacing: 0;
+  text-transform: lowercase;
+}
+
+.ordinal--lg .ordinal-sup {
+  font-size: 0.48em;
+}
+
+.lux-hero__title .ordinal--lg {
+  display: inline-block;
+}
+
+.lux-feature h3 .ordinal-sup {
+  font-size: 0.58em;
 }
 
 .lux-stat span {

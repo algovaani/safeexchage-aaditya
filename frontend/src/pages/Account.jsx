@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, parseApiResponse } from '../api/client.js';
+import { api, depositAPI, parseApiResponse } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { WALLET_ASSETS } from '../theme/assets.js';
-import Input from '../components/ui/Input.jsx';
+import DepositModal from '../components/DepositModal.jsx';
+import WithdrawModal from '../components/WithdrawModal.jsx';
 import { fmtINR, fmtUSD, inrFromUsdt } from '../utils/format.js';
+
 export default function Account() {
   const { user } = useAuth();
   const [spotUsdt, setSpotUsdt] = useState(null);
+  const [lockedUsdt, setLockedUsdt] = useState(0);
   const [hideZero, setHideZero] = useState(false);
   const [search, setSearch] = useState('');
-  const [amount, setAmount] = useState('');
-  const [ref, setRef] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [depositCoin, setDepositCoin] = useState(null);
+  const [withdrawCoin, setWithdrawCoin] = useState(null);
+  const [platformInfo, setPlatformInfo] = useState(null);
 
   async function refresh() {
     setLoading(true);
@@ -20,6 +24,7 @@ export default function Account() {
       const { data } = await api.get('/wallet/balance');
       const wallet = parseApiResponse(data);
       setSpotUsdt(wallet?.balance_usdt ?? wallet?.balance ?? 0);
+      setLockedUsdt(wallet?.locked_balance ?? 0);
     } finally {
       setLoading(false);
     }
@@ -27,6 +32,10 @@ export default function Account() {
 
   useEffect(() => {
     refresh().catch(() => setLoading(false));
+    depositAPI
+      .getPlatformInfo()
+      .then(setPlatformInfo)
+      .catch(() => setPlatformInfo(null));
   }, []);
 
   const rows = useMemo(() => {
@@ -46,44 +55,19 @@ export default function Account() {
     return list;
   }, [rows, hideZero, search]);
 
-  async function deposit(e) {
-    e.preventDefault();
-    setMsg('');
-    const a = parseFloat(amount);
-    if (!(a > 0)) return;
-    await api.post('/wallet/deposit', { amount: a, reference: ref });
-    setAmount('');
-    setRef('');
-    setMsg('Deposit request submitted (pending admin approval).');
-    await refresh();
+  function onDeposit(symbol) {
+    setDepositCoin(symbol);
   }
 
-  async function withdraw(e) {
-    e.preventDefault();
-    setMsg('');
-    const a = parseFloat(amount);
-    if (!(a > 0)) return;
-    await api.post('/wallet/withdraw', { amount: a });
-    setAmount('');
-    setMsg('Withdrawal request submitted (pending admin approval).');
-    await refresh();
-  }
-
-  function scrollToUsdt() {
-    document.getElementById('account-usdt-actions')?.scrollIntoView({ behavior: 'smooth' });
-  }
-
-  function onAction(asset, action) {
-    if (asset !== 'USDT') {
-      setMsg(`${action} for ${asset} is not enabled in this demo (USDT only).`);
-      return;
-    }
-    scrollToUsdt();
+  function onWithdraw(symbol) {
+    setWithdrawCoin(symbol);
   }
 
   const portfolio = spotUsdt != null ? Number(spotUsdt) : null;
+  const available = Math.max(0, (portfolio ?? 0) - Number(lockedUsdt || 0));
 
-  return (    <div className="space-y-8">
+  return (
+    <div className="space-y-8">
       <div>
         <h1 className="text-xl font-medium text-text-primary mb-1">Wallet</h1>
         <p className="text-sm text-text-secondary">Manage funds, deposits, and withdrawals</p>
@@ -98,10 +82,19 @@ export default function Account() {
           <p className="text-sm text-text-muted mt-1">
             ≈ {portfolio != null ? fmtUSD(portfolio) : '—'} USD
           </p>
+          {!loading && lockedUsdt > 0 && (
+            <p className="text-xs text-text-secondary mt-1">
+              Available: {available.toFixed(2)} USDT · Locked: {Number(lockedUsdt).toFixed(2)} USDT
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
-          <button type="button" className="btn-primary" onClick={scrollToUsdt}>Deposit</button>
-          <button type="button" className="btn-secondary" onClick={scrollToUsdt}>Withdraw</button>
+          <button type="button" className="btn-primary" onClick={() => onDeposit('USDT')}>
+            Deposit
+          </button>
+          <button type="button" className="btn-secondary" onClick={() => onWithdraw('USDT')}>
+            Withdraw
+          </button>
         </div>
       </div>
       <div className="ui-card p-0 overflow-hidden">
@@ -176,8 +169,8 @@ export default function Account() {
                   </td>
                   <td>
                     <div className="flex flex-wrap gap-3">
-                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onAction(r.symbol, 'Deposit')}>Deposit</button>
-                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onAction(r.symbol, 'Withdrawal')}>Withdraw</button>
+                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onDeposit(r.symbol)}>Deposit</button>
+                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onWithdraw(r.symbol)}>Withdraw</button>
                     </div>
                   </td>
                 </tr>
@@ -194,59 +187,27 @@ export default function Account() {
         </div>
       </div>
 
-      <div id="account-usdt-actions" className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="ui-card">
-          <h3 className="text-base font-semibold text-text-primary mb-1">Deposit USDT</h3>
-          <p className="text-sm text-text-secondary mb-5">Add funds to your SPOT wallet. Admin approval may apply.</p>
-          <form onSubmit={deposit} className="space-y-4">
-            <Input
-              label="Amount (USDT)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              type="number"
-              step="any"
-              placeholder="0.00"
-            />
-            <Input
-              label="Reference (optional)"
-              value={ref}
-              onChange={(e) => setRef(e.target.value)}
-              placeholder="Bank ref / note"
-            />
-            <button type="submit" className="btn-primary w-full">Submit deposit</button>
-          </form>
-        </div>
-
-        <div className="ui-card">
-          <h3 className="text-sm font-medium text-text-primary mb-1">Withdraw USDT</h3>
-          <p className="text-sm text-text-secondary mb-5">Request a withdrawal from your available SPOT balance.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              withdraw(e);
-            }}
-            className="space-y-4"
-          >
-            <Input
-              label="Amount (USDT)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              type="number"
-              step="any"
-              placeholder="0.00"
-            />
-            <Input
-              label="Available"
-              readOnly
-              value={portfolio != null ? `${portfolio.toFixed(2)} USDT` : '—'}
-            />
-            <button type="submit" className="btn-danger w-full">Submit withdrawal</button>
-          </form>
-        </div>
-      </div>
-
       {msg && (
         <p className="text-sm text-profit bg-profit/10 border border-profit/20 rounded-xl px-4 py-3">{msg}</p>
+      )}
+
+      {depositCoin && (
+        <DepositModal
+          coin={depositCoin}
+          platformInfo={platformInfo}
+          onClose={() => setDepositCoin(null)}
+          onSuccess={refresh}
+        />
+      )}
+
+      {withdrawCoin && (
+        <WithdrawModal
+          coin={withdrawCoin}
+          platformInfo={platformInfo}
+          availableBalance={available}
+          onClose={() => setWithdrawCoin(null)}
+          onSuccess={refresh}
+        />
       )}
     </div>
   );

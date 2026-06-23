@@ -25,6 +25,7 @@ const transactionSchema = new mongoose.Schema(
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
     method: { type: String, enum: ['manual', 'gateway', 'crypto', 'fiat'], default: 'manual' },
     depositId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deposit', default: null },
+    withdrawalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Withdrawal', default: null },
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserOrder', default: null },
     tradeId: { type: mongoose.Schema.Types.ObjectId, ref: 'AdminTrade', default: null },
     reference: { type: String, default: '' },

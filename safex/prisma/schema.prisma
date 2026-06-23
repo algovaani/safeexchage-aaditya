@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  SUSPENDED
+}
+
+enum KYCStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DocType {
+  PASSPORT
+  DRIVING_LICENSE
+  NATIONAL_ID
+}
+
+enum DepositType {
+  CRYPTO
+  FIAT
+}
+
+enum DepositStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TradeType {
+  LONG
+  SHORT
+}
+
+enum TradeStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum OrderStatus {
+  ACTIVE
+  CLOSED_PROFIT
+  CLOSED_LOSS
+  CANCELLED
+}
+
+enum StakeStatus {
+  ACTIVE
+  MATURED
+  WITHDRAWN
+  EARLY_EXIT
+}
+
+enum TxType {
+  DEPOSIT
+  TRADE_LOCK
+  TRADE_UNLOCK
+  TRADE_PNL
+  STAKE
+  STAKE_REWARD
+  STAKE_WITHDRAW
+  ADMIN_ADJUST
+}
+
+model User {
+  id             String     @id @default(uuid())
+  name           String?
+  email          String     @unique
+  mobile         String?    @unique
+  passwordHash   String
+  role           Role       @default(USER)
+  status         UserStatus @default(ACTIVE)
+  emailVerified  Boolean    @default(false)
+  mobileVerified Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  kyc              KYC?
+  wallet           Wallet?
+  trades           Trade[]
+  orders           Order[]
+  stakes           Stake[]
+  deposits         Deposit[]
+  sessions         Session[]
+  walletTxs        WalletTransaction[]
+  emailOtps        EmailOtp[]
+}
+
+model EmailOtp {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code      String
+  purpose   String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, purpose])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceInfo   String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model KYC {
+  id              String    @id @default(uuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status          KYCStatus @default(NOT_SUBMITTED)
+  documentType    DocType?
+  documentFront   String?
+  documentBack    String?
+  selfieUrl       String?
+  addressProofUrl String?
+  rejectionReason String?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedBy      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Wallet {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance       Decimal  @default(0) @db.Decimal(18, 8)
+  lockedBalance Decimal  @default(0) @db.Decimal(18, 8)
+  updatedAt     DateTime @updatedAt
+}
+
+model WalletTransaction {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          TxType
+  amount        Decimal  @db.Decimal(18, 8)
+  balanceBefore Decimal  @db.Decimal(18, 8)
+  balanceAfter  Decimal  @db.Decimal(18, 8)
+  reason        String?
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Deposit {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            DepositType
+  amount          Decimal       @db.Decimal(18, 8)
+  currency        String        @default("USDT")
+  status          DepositStatus @default(PENDING)
+  txHash          String?
+  walletAddress   String?
+  utrNumber       String?
+  paymentProofUrl String?
+  bankName        String?
+  accountNumber   String?
+  adminNote       String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId, status])
+}
+
+model TradingPair {
+  id         String  @id @default(uuid())
+  symbol     String  @unique
+  baseAsset  String
+  quoteAsset String
+  isActive   Boolean @default(true)
+  trades     Trade[]
+}
+
+model Trade {
+  id         String      @id @default(uuid())
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id])
+  pairId     String
+  pair       TradingPair @relation(fields: [pairId], references: [id])
+  type       TradeType
+  entryPrice Decimal     @db.Decimal(18, 8)
+  takeProfit Decimal     @db.Decimal(18, 8)
+  stopLoss   Decimal     @db.Decimal(18, 8)
+  leverage   Int         @default(1)
+  status     TradeStatus @default(OPEN)
+  createdBy  String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  orders     Order[]
+
+  @@index([status])
+}
+
+model Order {
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tradeId    String
+  trade      Trade       @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  margin     Decimal     @db.Decimal(18, 8)
+  entryPrice Decimal     @db.Decimal(18, 8)
+  closePrice Decimal?    @db.Decimal(18, 8)
+  pnl        Decimal?    @db.Decimal(18, 8)
+  status     OrderStatus @default(ACTIVE)
+  closedAt   DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([userId, status])
+}
+
+model StakingPlan {
+  id               String  @id @default(uuid())
+  name             String
+  apy              Decimal @db.Decimal(5, 2)
+  lockDays         Int
+  minAmount        Decimal @db.Decimal(18, 8)
+  maxAmount        Decimal @db.Decimal(18, 8)
+  isActive         Boolean @default(true)
+  allowEarlyExit   Boolean @default(false)
+  earlyExitPenalty Decimal @default(0) @db.Decimal(5, 2)
+  stakes           Stake[]
+}
+
+model Stake {
+  id           String      @id @default(uuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId       String
+  plan         StakingPlan @relation(fields: [planId], references: [id])
+  amount       Decimal     @db.Decimal(18, 8)
+  reward       Decimal     @default(0) @db.Decimal(18, 8)
+  status       StakeStatus @default(ACTIVE)
+  startDate    DateTime    @default(now())
+  maturityDate DateTime
+  endDate      DateTime?
+  createdAt    DateTime    @default(now())
+
+  @@index([userId, status])
+}
+
+model PlatformSettings {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}

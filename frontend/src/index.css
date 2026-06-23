@@ -152,26 +152,12 @@ html.light {
 
   .brand-logo__icon {
     width: auto;
-    max-width: none;
+    height: var(--brand-logo-h, 72px);
+    max-height: var(--brand-logo-h, 72px);
     object-fit: contain;
+    object-position: center;
     display: block;
     flex-shrink: 0;
-  }
-
-  .brand-logo__text {
-    font-weight: 900;
-    letter-spacing: 0.04em;
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .brand-logo__safe,
-  .brand-logo__change {
-    color: #fff;
-  }
-
-  .brand-logo__x {
-    color: #f5c842;
   }
 
   .btn-secondary {

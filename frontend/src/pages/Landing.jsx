@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './Landing.css';
 import BrandLogo from '../components/BrandLogo.jsx';
+import { Ordinal, OrdinalLg, OrdText } from '../components/Ordinal.jsx';
 
 const TICKER = [
   { pair: 'BTC/USDT', price: '67,234.50', chg: '+1.24%', up: true },
@@ -9,14 +10,17 @@ const TICKER = [
   { pair: 'BNB/USDT', price: '612.40', chg: '-0.32%', up: false },
   { pair: 'SOL/USDT', price: '178.92', chg: '+2.15%', up: true },
   { pair: 'XRP/USDT', price: '0.6241', chg: '-0.11%', up: false },
+  { pair: 'DOGE/USDT', price: '0.1824', chg: '+0.54%', up: true },
+  { pair: 'ADA/USDT', price: '0.4512', chg: '-0.22%', up: false },
+  { pair: 'TRX/USDT', price: '0.1187', chg: '+0.31%', up: true },
 ];
 
 const STATS = [
   { value: '100%', label: 'SECURED AND TRANSPARENT' },
   { value: 'GM', label: 'GLOBAL MARKET' },
   {
-    value: '1',
-    label: "INDIA'S 1ST FIU REGISTERED NON KYC CRYPTOCURRENCY EXCHANGE",
+    value: 'ordinal-1st',
+    label: "INDIA'S FIU REGISTERED NON KYC CRYPTOCURRENCY EXCHANGE",
     long: true,
   },
   { value: '24/7', label: 'NETWORK OPERATIONS' },
@@ -25,8 +29,8 @@ const STATS = [
 const FEATURES = [
   {
     icon: '🔒',
-    title: "INDIA'S 1ST NON KYC FIU REGISTERED CRYPTO EXCHANGE",
-    desc: 'Trade on India\'s first FIU-registered non-KYC cryptocurrency exchange platform.',
+    title: "INDIA'S 1st NON KYC FIU REGISTERED CRYPTO EXCHANGE",
+    desc: 'Trade on India\'s 1st FIU-registered non-KYC cryptocurrency exchange platform.',
   },
   {
     icon: '⚡',
@@ -108,7 +112,7 @@ const PLANS = [
 const FAQ_ITEMS = [
   {
     q: 'What is SafeXchange?',
-    a: 'SafeXchange is India\'s first cryptocurrency exchange platform that enables users to trade digital assets without complicated KYC procedures. Designed for simplicity, speed, and security, SafeXchange makes crypto trading accessible to everyone while maintaining a seamless user experience.',
+    a: 'SafeXchange is India\'s 1st cryptocurrency exchange platform that enables users to trade digital assets without complicated KYC procedures. Designed for simplicity, speed, and security, SafeXchange makes crypto trading accessible to everyone while maintaining a seamless user experience.',
   },
   {
     q: 'Do I need to complete KYC to start trading on SafeXchange?',
@@ -124,7 +128,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Why choose SafeXchange over other cryptocurrency exchanges?',
-    a: 'SafeXchange stands out by offering a KYC-free, hassle-free, secure, and user-friendly trading experience. As India\'s first cryptocurrency exchange focused on simplified access, it enables users to buy, sell, and trade cryptocurrencies quickly while benefiting from robust security and a seamless platform experience.',
+    a: 'SafeXchange stands out by offering a KYC-free, hassle-free, secure, and user-friendly trading experience. As India\'s 1st cryptocurrency exchange focused on simplified access, it enables users to buy, sell, and trade cryptocurrencies quickly while benefiting from robust security and a seamless platform experience.',
   },
 ];
 
@@ -357,6 +361,11 @@ function SectionLabel({ children }) {
   );
 }
 
+function StatValue({ value }) {
+  if (value === 'ordinal-1st') return <OrdinalLg n={1} suffix="st" />;
+  return value;
+}
+
 function FaqAccordion() {
   const [open, setOpen] = useState(0);
   return (
@@ -367,7 +376,7 @@ function FaqAccordion() {
             {item.q}
             <span>{open === i ? '−' : '+'}</span>
           </button>
-          {open === i && <p>{item.a}</p>}
+          {open === i && <p><OrdText>{item.a}</OrdText></p>}
         </div>
       ))}
     </div>
@@ -416,7 +425,7 @@ export default function Landing() {
       <section className="lux-hero lux-wrap" id="home">
         <div className="lux-hero__copy lux-hero__copy--on-video">
           <h1 className="lux-hero__title">
-            <span>INDIA&apos;S 1ST</span>
+            <span>INDIA&apos;S <OrdinalLg n={1} suffix="st" /></span>
             <span className="lux-outline lux-hero__title-mid">NON-KYC-FIU-REGISTERED</span>
             <span className="lux-gold">CRYPTO EXCHANGE</span>
           </h1>
@@ -436,7 +445,7 @@ export default function Landing() {
       <section className="lux-stats lux-wrap">
         {STATS.map((s) => (
           <div key={s.label} className={`lux-stat${s.long ? ' lux-stat--long' : ''}`}>
-            <strong>{s.value}</strong>
+            <strong><StatValue value={s.value} /></strong>
             <span>{s.label}</span>
           </div>
         ))}
@@ -467,8 +476,8 @@ export default function Landing() {
           {FEATURES.map((f) => (
             <article key={f.title} className="lux-feature lux-tilt-card">
               <div className="lux-feature__icon">{f.icon}</div>
-              <h3>{f.title}</h3>
-              <p>{f.desc}</p>
+              <h3><OrdText>{f.title}</OrdText></h3>
+              <p><OrdText>{f.desc}</OrdText></p>
             </article>
           ))}
         </div>

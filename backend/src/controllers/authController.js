@@ -9,6 +9,7 @@ import {
   normalizeMobile,
 } from '../utils/identifier.js';
 import { error, success } from '../utils/response.js';
+import { sendSmsOtp } from '../services/sms.service.js';
 import { blacklistToken, signToken } from '../utils/token.js';
 
 const DEMO_BALANCE = 10_000;
@@ -127,9 +128,19 @@ export async function forgotPassword(req, res, next) {
     await PasswordOtp.create({ identifier: normalized, otpHash, expiresAt });
 
     const channel = normalized.includes('@') ? 'email' : 'mobile';
-    console.log(
-      `[auth] Password reset OTP for ${channel} ${normalized}: ${otp} (expires in 10 minutes)`
-    );
+
+    if (channel === 'mobile' && user.mobile) {
+      try {
+        await sendSmsOtp(user.mobile, otp);
+      } catch (smsErr) {
+        console.error('[auth] NinzaSMS send failed:', smsErr.message);
+        return error(res, 'Could not send OTP SMS. Try again later.', 503);
+      }
+    } else {
+      console.log(
+        `[auth] Password reset OTP for ${channel} ${normalized}: ${otp} (expires in 10 minutes)`
+      );
+    }
 
     return success(res, {
       identifier: normalized,

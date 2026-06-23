@@ -7,7 +7,7 @@ async function run() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI missing');
 
-  const email = (process.env.ADMIN_EMAIL || 'admin@platform.com').toLowerCase().trim();
+  const email = (process.env.ADMIN_EMAIL || 'admin@safexchange.io').toLowerCase().trim();
 
   await mongoose.connect(await resolveMongoUri(uri), { serverSelectionTimeoutMS: 20_000 });
 

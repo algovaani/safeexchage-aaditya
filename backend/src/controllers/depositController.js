@@ -3,6 +3,28 @@ import { removeFiatProof } from '../middleware/fiatDepositUpload.js';
 import { formatDeposit, mapFiatProof } from '../services/depositService.js';
 import { error, success } from '../utils/response.js';
 
+export async function platformInfo(_req, res) {
+  const address = process.env.PLATFORM_USDT_ADDRESS || '';
+  const networks = (process.env.PLATFORM_USDT_NETWORKS || 'TRC20,ERC20')
+    .split(',')
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+  return success(res, {
+    usdt: {
+      currency: 'USDT',
+      address,
+      networks,
+    },
+    bank: {
+      name: process.env.PLATFORM_BANK_NAME || '',
+      account: process.env.PLATFORM_BANK_ACCOUNT || '',
+      ifsc: process.env.PLATFORM_BANK_IFSC || '',
+      holder: process.env.PLATFORM_BANK_HOLDER || '',
+    },
+  }, 'Platform deposit info fetched');
+}
+
 export async function cryptoAddress(_req, res) {
   const address = process.env.PLATFORM_USDT_ADDRESS;
   if (!address) {
@@ -23,7 +45,7 @@ export async function cryptoAddress(_req, res) {
 
 export async function submitCrypto(req, res, next) {
   try {
-    const { amount, txn_hash, network } = req.body;
+    const { amount, txn_hash, network, currency } = req.body;
 
     const duplicate = await Deposit.findOne({
       txnHash: txn_hash.trim(),
@@ -37,9 +59,9 @@ export async function submitCrypto(req, res, next) {
       userId: req.userId,
       type: 'crypto',
       amount,
-      currency: 'USDT',
+      currency: String(currency || 'USDT').toUpperCase(),
       txnHash: txn_hash.trim(),
-      network,
+      network: String(network).trim(),
       status: 'pending',
     });
 
@@ -51,7 +73,7 @@ export async function submitCrypto(req, res, next) {
 
 export async function submitFiat(req, res, next) {
   try {
-    const { amount, utr_number } = req.body;
+    const { amount, utr_number, bank_name, account_number } = req.body;
 
     if (!req.file) {
       return error(res, 'payment_proof file is required', 400);
@@ -65,6 +87,8 @@ export async function submitFiat(req, res, next) {
       amount,
       currency: 'USDT',
       utrNumber: utr_number?.trim() || '',
+      bankName: bank_name?.trim() || '',
+      accountNumber: account_number?.trim() || '',
       paymentProof,
       status: 'pending',
     });

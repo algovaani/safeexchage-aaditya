@@ -54,16 +54,25 @@ export async function processOrdersForPrice(symbol, currentPrice) {
 }
 
 async function executeInternalFill(order, price, qty, symbol, liquidityId) {
+  let wallet = await Wallet.findOne({ userId: order.userId });
+
+  if (!wallet) {
+    if (order.side === 'sell') {
+      wallet = await Wallet.create({ userId: order.userId, balance: 0, lockedBalance: 0 });
+    } else {
+      await Order.findByIdAndUpdate(order._id, { status: 'rejected' });
+      return null;
+    }
+  }
+
   const userId = order.userId;
   const notional = price * qty;
   const fee = notional * FEE_RATE;
 
-  const wallet = await Wallet.findOne({ userId });
-  if (!wallet) return null;
-
   if (order.side === 'buy') {
     const cost = notional + fee;
-    if (wallet.balance < cost) {
+    const available = wallet.balance - (wallet.lockedBalance || 0);
+    if (available < cost) {
       await Order.findByIdAndUpdate(order._id, { status: 'rejected' });
       return null;
     }

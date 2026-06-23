@@ -3,7 +3,7 @@ import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
 
 const REST = process.env.BINANCE_REST_URL || 'https://api.binance.com';
 const REST_V3 = `${REST}/api/v3`;
-const CACHE_TTL_MS = 5000;
+const CACHE_TTL_MS = 500;
 
 let priceCache = {
   pairs: null,
@@ -68,7 +68,7 @@ export async function fetchTicker(symbol, { force = false } = {}) {
 }
 
 /**
- * Fetch all configured USDT pairs in one Binance request; cache 5 seconds.
+ * Fetch all configured USDT pairs in one Binance request; cache 500ms.
  */
 export async function fetchAllPairPrices({ force = false } = {}) {
   const now = Date.now();
