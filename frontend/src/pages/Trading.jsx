@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { api, parseApiResponse } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
 import { MARKET_POLL_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
+import { notifyWalletUpdated } from '../utils/walletEvents.js';
 import './Trading.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
@@ -13,8 +17,10 @@ const WATCHLIST = TRADING_PAIR_SYMBOLS;
 
 const CHART_INTERVALS = [
   { id: '1m', label: '1m' },
+  { id: '5m', label: '5m' },
   { id: '15m', label: '15m' },
-  { id: '1h', label: '1h' },
+  { id: '1h', label: '1H' },
+  { id: '4h', label: '4H' },
   { id: '1d', label: '1D' },
 ];
 
@@ -28,17 +34,32 @@ function fmtLocale(value, options) {
   return Number.isFinite(n) ? n.toLocaleString(undefined, options) : '—';
 }
 
-function isPendingOrder(o) {
-  return o.status === 'open' || o.status === 'partially_filled';
+function useDebounced(value, delay = 400) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
 }
 
 export default function Trading() {
+  const toast = useToast();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const loginReturn = { from: { pathname: '/trade' } };
   const [symbol, setSymbol] = useState('BNBUSDT');
   const [marketTab, setMarketTab] = useState('USDT');
   const [search, setSearch] = useState('');
   const [chartInterval, setChartInterval] = useState('1m');
   const [candles, setCandles] = useState([]);
-  const [orders, setOrders] = useState([]);
+  const [tableRows, setTableRows] = useState([]);
+  const [tableTotal, setTableTotal] = useState(0);
+  const [tablePage, setTablePage] = useState(1);
+  const [tablePageSize, setTablePageSize] = useState(10);
+  const [tableTotalPages, setTableTotalPages] = useState(1);
+  const [tableSearch, setTableSearch] = useState('');
+  const [tableLoading, setTableLoading] = useState(false);
   const [ticker, setTicker] = useState(null);
   const [balances, setBalances] = useState(null);
   const [depth, setDepth] = useState({ bids: [], asks: [], mid: null });
@@ -50,29 +71,39 @@ export default function Trading() {
   const [sellPrice, setSellPrice] = useState('');
   const [buyQty, setBuyQty] = useState('0.01');
   const [sellQty, setSellQty] = useState('0.01');
-  const [note, setNote] = useState('');
 
   const [orderSideTab, setOrderSideTab] = useState('buy');
   const [orderStatusTab, setOrderStatusTab] = useState('pending');
+  const [orderBusy, setOrderBusy] = useState(false);
+  const [mobileView, setMobileView] = useState('chart');
+  const [mobileOrderSide, setMobileOrderSide] = useState('buy');
 
   const [watchPrices, setWatchPrices] = useState({});
   const [liveClock, setLiveClock] = useState(() => formatLiveClock());
 
-  const usdtBalance = Number(balances?.balance_usdt ?? balances?.balance ?? 0);
+  const debouncedTableSearch = useDebounced(tableSearch);
+
+  const usdtBalance = Number(
+    balances?.available_balance ??
+      Math.max(0, Number(balances?.balance_usdt ?? balances?.balance ?? 0) - Number(balances?.locked_balance ?? 0))
+  );
+
+  const base = symbol.replace('USDT', '');
+
+  const baseBalance = useMemo(() => {
+    const assets = balances?.assets || [];
+    const row = assets.find((a) => a.asset === base);
+    if (!row) return 0;
+    return Number(row.balance ?? 0) - Number(row.locked_balance ?? 0);
+  }, [balances, base]);
 
   const filteredList = useMemo(() => {
     const q = search.trim().toUpperCase();
     return WATCHLIST.filter((p) => p.includes('USDT') && (!q || p.includes(q)));
   }, [search]);
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
-      const sideMatch = o.side === orderSideTab;
-      const pending = isPendingOrder(o);
-      const statusMatch = orderStatusTab === 'pending' ? pending : !pending;
-      return sideMatch && statusMatch;
-    });
-  }, [orders, orderSideTab, orderStatusTab]);
+  const tableFromRow = tableTotal === 0 ? 0 : (tablePage - 1) * tablePageSize + 1;
+  const tableToRow = Math.min(tablePage * tablePageSize, tableTotal);
 
   const buyTotal = useMemo(() => {
     const p = buyType === 'market' ? Number(ticker?.lastPrice) : parseFloat(buyPrice);
@@ -138,7 +169,7 @@ export default function Trading() {
     let active = true;
     (async () => {
       const { data } = await api.get('/market/klines', {
-        params: { symbol, interval: chartInterval, limit: 400 },
+        params: { symbol, interval: chartInterval, limit: 500 },
       });
       if (!active) return;
       const klines = parseApiResponse(data);
@@ -148,6 +179,14 @@ export default function Trading() {
       active = false;
     };
   }, [symbol, chartInterval]);
+
+  const refreshBalance = useCallback(async () => {
+    const { data } = await api.get('/wallet/balance');
+    const wallet = parseApiResponse(data);
+    setBalances(wallet);
+    notifyWalletUpdated(wallet);
+    return wallet;
+  }, []);
 
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['websocket'] });
@@ -165,7 +204,7 @@ export default function Trading() {
         if (!prev.length) return [c];
         const last = prev[prev.length - 1];
         if (c.openTime === last.openTime) return [...prev.slice(0, -1), c];
-        if (c.openTime > last.openTime) return [...prev.slice(-399), c];
+        if (c.openTime > last.openTime) return [...prev.slice(-499), c];
         const idx = prev.findIndex((x) => x.openTime === c.openTime);
         if (idx >= 0) {
           const next = [...prev];
@@ -204,6 +243,7 @@ export default function Trading() {
         const next = [{ ...payload, symbol: sym, _id: `${payload.time}-${Math.random()}` }, ...prev];
         return next.slice(0, 50);
       });
+      if (user) refreshBalance().catch(() => {});
     };
 
     socket.on('market:klines:merged', onMerged);
@@ -222,27 +262,87 @@ export default function Trading() {
       socket.off('market:trade', onTrade);
       socket.close();
     };
-  }, [symbol, chartInterval]);
+  }, [symbol, chartInterval, refreshBalance, user]);
 
-  async function refreshOrdersAndBalance() {
-    const [{ data: o }, { data: w }] = await Promise.all([
-      api.get('/orders'),
-      api.get('/wallet/balance'),
-    ]);
-    setOrders(Array.isArray(parseApiResponse(o)) ? parseApiResponse(o) : []);
-    setBalances(parseApiResponse(w));
-  }
+  const fetchTableData = useCallback(async () => {
+    if (!user) {
+      setTableRows([]);
+      setTableTotal(0);
+      setTableTotalPages(1);
+      setTableLoading(false);
+      return;
+    }
+    setTableLoading(true);
+    try {
+      const params = {
+        page: tablePage,
+        pageSize: tablePageSize,
+        sortBy: 'createdAt',
+        sortDir: 'desc',
+        side: orderSideTab,
+      };
+      if (debouncedTableSearch) params.search = debouncedTableSearch;
+
+      if (orderStatusTab === 'history') {
+        const { data } = await api.get('/orders/trades', { params });
+        const payload = parseApiResponse(data);
+        setTableRows(payload?.rows || []);
+        setTableTotal(payload?.total || 0);
+        setTableTotalPages(payload?.totalPages || 1);
+      } else {
+        const { data } = await api.get('/orders', {
+          params: { ...params, status: orderStatusTab },
+        });
+        const payload = parseApiResponse(data);
+        setTableRows(payload?.rows || []);
+        setTableTotal(payload?.total || 0);
+        setTableTotalPages(payload?.totalPages || 1);
+      }
+    } catch {
+      setTableRows([]);
+      setTableTotal(0);
+      setTableTotalPages(1);
+    } finally {
+      setTableLoading(false);
+    }
+  }, [tablePage, tablePageSize, debouncedTableSearch, orderSideTab, orderStatusTab, user]);
 
   useEffect(() => {
-    refreshOrdersAndBalance().catch(() => {});
-  }, []);
+    fetchTableData();
+  }, [fetchTableData]);
+
+  useEffect(() => {
+    setTablePage(1);
+  }, [debouncedTableSearch, orderSideTab, orderStatusTab, tablePageSize]);
+
+  useEffect(() => {
+    if (!user) {
+      setBalances(null);
+      return undefined;
+    }
+    refreshBalance().catch(() => {});
+    const id = setInterval(() => refreshBalance().catch(() => {}), 5000);
+    return () => clearInterval(id);
+  }, [refreshBalance, user]);
+
+  function requireLogin() {
+    navigate('/login', { state: loginReturn });
+  }
 
   async function place(side, orderType) {
-    setNote('');
+    if (!user) {
+      requireLogin();
+      return;
+    }
+    if (orderBusy) return;
     const qty = parseFloat(side === 'buy' ? buyQty : sellQty);
     const priceRaw = side === 'buy' ? buyPrice : sellPrice;
     if (!(qty > 0)) {
-      setNote('Enter a valid quantity.');
+      toast.warning('Enter a valid quantity greater than zero.');
+      return;
+    }
+    if (side === 'sell' && qty > baseBalance + 1e-12) {
+      toast.warning(`Insufficient ${base} balance. You have ${baseBalance.toFixed(8)} ${base}.`);
       return;
     }
     const payload = {
@@ -254,42 +354,73 @@ export default function Trading() {
       stopLoss: null,
       takeProfit: null,
     };
+    setOrderBusy(true);
     try {
       const { data } = await api.post('/orders', payload);
-      const order = parseApiResponse(data);
-      const msg =
-        data?.message ||
-        (order?.status === 'filled'
-          ? `${side.toUpperCase()} order filled at market price`
-          : `Order ${order?.status || 'placed'} (${side} ${orderType})`);
-      setNote(msg);
-      await refreshOrdersAndBalance();
-    } catch (ex) {
-      const errMsg =
-        ex?.response?.data?.message || ex?.message || 'Order failed. Check balance and try again.';
-      setNote(errMsg);
+      const result = parseApiResponse(data);
+      if (result?.wallet) {
+        setBalances(result.wallet);
+        notifyWalletUpdated(result.wallet);
+      } else {
+        await refreshBalance();
+      }
+      await fetchTableData();
+    } catch {
+      /* API error toast handled globally */
+    } finally {
+      setOrderBusy(false);
     }
   }
 
   const changePct = ticker?.priceChangePercent ?? 0;
   const up = changePct >= 0;
-  const base = symbol.replace('USDT', '');
+
+  function orderDisplayPrice(o) {
+    if (o.avgFillPrice != null && Number.isFinite(Number(o.avgFillPrice))) {
+      return fmtNum(o.avgFillPrice, Number(o.avgFillPrice) < 1 ? 6 : 4);
+    }
+    if (o.price != null) return o.price;
+    return 'Market';
+  }
+
+  function orderDisplayTotal(o) {
+    const p = o.avgFillPrice ?? o.price;
+    if (p != null && o.quantity) return (Number(p) * Number(o.quantity)).toFixed(2);
+    return '—';
+  }
+
+  function selectSymbol(next) {
+    setSymbol(next);
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
+      setMobileView('chart');
+    }
+  }
 
   return (
-    <div className="trading-page">
-      <div className="ex-ticker">
+    <div className={`trading-page${mobileView === 'orders' ? ' trading-page--orders-view' : ''}`}>
+      {!user && (
+        <div className="ex-guest-banner">
+          <span>You are viewing live markets as a guest.</span>
+          <Link to="/login" state={loginReturn}>Log in</Link>
+          <span>or</span>
+          <Link to="/signup">Sign up</Link>
+          <span>to place orders.</span>
+        </div>
+      )}
+      <div className="ex-ticker ex-ticker--scroll">
         <div className="ex-ticker__pair-wrap">
           <span className="ex-ticker__pair">{base}/USDT</span>
         </div>
 
-        <div className="ex-ticker__stat-block">
+        <div className="ex-ticker__stats">
+          <div className="ex-ticker__stat-block ex-ticker__stat-block--price">
           <span className="ex-ticker__stat-label">Last Price</span>
           <span className={`ex-ticker__price ${up ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
             {ticker ? fmtLocale(ticker.lastPrice, { maximumFractionDigits: 4 }) : '—'}
           </span>
-        </div>
+          </div>
 
-        <div className={`ex-ticker__stat-block ${up ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
+          <div className={`ex-ticker__stat-block ${up ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
           <span className="ex-ticker__stat-label">24h Change</span>
           <span>
             {ticker
@@ -321,10 +452,30 @@ export default function Trading() {
           <span className="ex-ticker__stat-label">Time</span>
           <span className="ex-ticker__clock">{liveClock}</span>
         </div>
+        </div>
       </div>
 
+      <nav className="ex-mobile-nav" aria-label="Trade sections">
+        {[
+          { id: 'chart', label: 'Chart' },
+          { id: 'trade', label: 'Trade' },
+          { id: 'markets', label: 'Markets' },
+          { id: 'book', label: 'Depth' },
+          { id: 'orders', label: 'History' },
+        ].map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={mobileView === item.id ? 'is-active' : ''}
+            onClick={() => setMobileView(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="ex-grid">
-        <aside className="ex-panel ex-markets">
+        <aside className={`ex-panel ex-markets ex-zone ex-zone--markets${mobileView === 'markets' ? ' is-active' : ''}`}>
           <div className="ex-markets__tabs">
             <button type="button" className={marketTab === 'USDT' ? 'is-active' : ''} onClick={() => setMarketTab('USDT')}>
               USDT
@@ -355,10 +506,10 @@ export default function Trading() {
                 <div
                   key={p}
                   className={`ex-markets__row ${active ? 'is-active' : ''}`}
-                  onClick={() => setSymbol(p)}
+                  onClick={() => selectSymbol(p)}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && setSymbol(p)}
+                  onKeyDown={(e) => e.key === 'Enter' && selectSymbol(p)}
                 >
                   <span className="ex-markets__pair">{p.replace('USDT', '')}/USDT</span>
                   <span>
@@ -376,13 +527,21 @@ export default function Trading() {
           <div className="ex-markets__balance">
             <small>SPOT balance</small>
             <div>
-              <strong>{balances != null ? usdtBalance.toFixed(2) : '—'}</strong> USDT
+              {user ? (
+                <>
+                  <strong>{balances != null ? usdtBalance.toFixed(2) : '—'}</strong> USDT available
+                </>
+              ) : (
+                <Link to="/login" state={loginReturn} className="ex-markets__login-link">
+                  Log in to view balance
+                </Link>
+              )}
             </div>
           </div>
         </aside>
 
         <section className="ex-center">
-          <div className="ex-panel ex-chart-area">
+          <div className={`ex-panel ex-chart-area ex-zone ex-zone--chart${mobileView === 'chart' ? ' is-active' : ''}`}>
             <div className="ex-chart-toolbar">
               <div className="ex-chart-toolbar__left">
                 <span className="ex-chart-toolbar__symbol">{base}/USDT</span>
@@ -401,7 +560,7 @@ export default function Trading() {
                   </button>
                 ))}
               </div>
-              <div className="ex-chart-toolbar__tools">
+              <div className="ex-chart-toolbar__tools ex-chart-toolbar__tools--desktop">
                 <span>Indicators</span>
                 <span>Templates</span>
               </div>
@@ -409,10 +568,25 @@ export default function Trading() {
             <LiveChart variant="exchange" className="ex-chart-wrap" candles={candles} />
           </div>
 
-          <div className="ex-orders">
-            <div className="ex-panel ex-order-card ex-order-card--buy">
-              <h3>Buy {base}</h3>
-              <p className="ex-balance-line">USDT: {usdtBalance.toFixed(2)}</p>
+          <div className={`ex-orders ex-zone ex-zone--trade${mobileView === 'trade' ? ' is-active' : ''}`}>
+            <div className="ex-mobile-order-tabs">
+              <button type="button" className={mobileOrderSide === 'buy' ? 'is-active' : ''} onClick={() => setMobileOrderSide('buy')}>
+                Buy
+              </button>
+              <button type="button" className={mobileOrderSide === 'sell' ? 'is-active' : ''} onClick={() => setMobileOrderSide('sell')}>
+                Sell
+              </button>
+            </div>
+
+            <div className={`ex-panel ex-order-card ex-order-card--buy${mobileOrderSide === 'sell' ? ' ex-order-card--hidden-mobile' : ''}`}>
+              <div className="ex-order-card__head">
+                <h3>Buy {base}</h3>
+                <p className="ex-balance-line">
+                  {user ? `USDT: ${usdtBalance.toFixed(2)}` : (
+                    <Link to="/login" state={loginReturn} className="ex-balance-line__link">Log in for balance</Link>
+                  )}
+                </p>
+              </div>
               <div className="ex-tabs-inline">
                 <button type="button" className={buyType === 'limit' ? 'is-active' : ''} onClick={() => setBuyType('limit')}>
                   Limit
@@ -438,14 +612,22 @@ export default function Trading() {
                 <label>Total (USDT)</label>
                 <input className="ex-input" readOnly value={buyTotal} placeholder="0.00" />
               </div>
-              <button type="button" className="ex-btn-buy" onClick={() => place('buy', buyType)}>
-                Buy {base}
+              <button type="button" className="ex-btn-buy" disabled={orderBusy} onClick={() => place('buy', buyType)}>
+                {orderBusy ? 'Placing…' : user ? `Buy ${base}` : 'Log in to Buy'}
               </button>
             </div>
 
-            <div className="ex-panel ex-order-card ex-order-card--sell">
-              <h3>Sell {base}</h3>
-              <p className="ex-balance-line">{base}: 0</p>
+            <div className={`ex-panel ex-order-card ex-order-card--sell${mobileOrderSide === 'buy' ? ' ex-order-card--hidden-mobile' : ''}`}>
+              <div className="ex-order-card__head">
+                <h3>Sell {base}</h3>
+                <p className="ex-balance-line">
+                  {user ? (
+                    <>{base}: {baseBalance.toFixed(8).replace(/\.?0+$/, '') || '0'}</>
+                  ) : (
+                    <Link to="/login" state={loginReturn} className="ex-balance-line__link">Log in for balance</Link>
+                  )}
+                </p>
+              </div>
               <div className="ex-tabs-inline">
                 <button type="button" className={sellType === 'limit' ? 'is-active' : ''} onClick={() => setSellType('limit')}>
                   Limit
@@ -471,72 +653,14 @@ export default function Trading() {
                 <label>Total (USDT)</label>
                 <input className="ex-input" readOnly value={sellTotal} placeholder="0.00" />
               </div>
-              <button type="button" className="ex-btn-sell" onClick={() => place('sell', sellType)}>
-                Sell {base}
+              <button type="button" className="ex-btn-sell" disabled={orderBusy} onClick={() => place('sell', sellType)}>
+                {orderBusy ? 'Placing…' : user ? `Sell ${base}` : 'Log in to Sell'}
               </button>
             </div>
-          </div>
-
-          <div className="ex-panel ex-my-orders">
-            <div className="ex-my-orders__tabs">
-              <button type="button" className={orderSideTab === 'buy' ? 'is-active' : ''} onClick={() => setOrderSideTab('buy')}>
-                Buy Orders
-              </button>
-              <button type="button" className={orderSideTab === 'sell' ? 'is-active' : ''} onClick={() => setOrderSideTab('sell')}>
-                Sell Orders
-              </button>
-            </div>
-            <div className="ex-my-orders__subtabs">
-              <button type="button" className={orderStatusTab === 'pending' ? 'is-active' : ''} onClick={() => setOrderStatusTab('pending')}>
-                Pending
-              </button>
-              <button type="button" className={orderStatusTab === 'completed' ? 'is-active' : ''} onClick={() => setOrderStatusTab('completed')}>
-                Completed
-              </button>
-            </div>
-            <div className="ex-my-orders__scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Pair</th>
-                    <th>Price</th>
-                    <th>Amount</th>
-                    <th>Total</th>
-                    <th>Date &amp; Time</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOrders.map((o) => {
-                    const total = o.price && o.quantity ? (Number(o.price) * Number(o.quantity)).toFixed(2) : '—';
-                    return (
-                      <tr key={o._id}>
-                        <td>{o.symbol?.replace('USDT', '')}/USDT</td>
-                        <td>{o.price ?? 'Market'}</td>
-                        <td>{o.quantity}</td>
-                        <td>{total}</td>
-                        <td>{o.createdAt ? formatMarketTime(o.createdAt) : '—'}</td>
-                        <td>
-                          <span className="ex-status-badge">{o.status}</span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!filteredOrders.length && (
-                    <tr>
-                      <td colSpan={6} className="ex-empty-row">
-                        No {orderStatusTab} {orderSideTab} orders.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            {note && <p className="ex-note">{note}</p>}
           </div>
         </section>
 
-        <aside className="ex-side-stack">
+        <aside className={`ex-side-stack ex-zone ex-zone--book${mobileView === 'book' ? ' is-active' : ''}`}>
           <div className="ex-panel">
             <div className="ex-panel__head">Market Depth</div>
             <div className="ex-book">
@@ -598,6 +722,166 @@ export default function Trading() {
           </div>
         </aside>
       </div>
+
+      <section
+        id="ex-history"
+        className={`ex-panel ex-history ex-my-orders ex-zone ex-zone--orders${mobileView === 'orders' ? ' is-active' : ''}`}
+      >
+        <div className="ex-history__title">My Orders</div>
+        {user && (
+          <>
+        <div className="ex-my-orders__tabs">
+          <button type="button" className={orderSideTab === 'buy' ? 'is-active' : ''} onClick={() => setOrderSideTab('buy')}>
+            Buy
+          </button>
+          <button type="button" className={orderSideTab === 'sell' ? 'is-active' : ''} onClick={() => setOrderSideTab('sell')}>
+            Sell
+          </button>
+        </div>
+        <div className="ex-my-orders__subtabs">
+          <button type="button" className={orderStatusTab === 'pending' ? 'is-active' : ''} onClick={() => setOrderStatusTab('pending')}>
+            Pending
+          </button>
+          <button type="button" className={orderStatusTab === 'completed' ? 'is-active' : ''} onClick={() => setOrderStatusTab('completed')}>
+            Completed
+          </button>
+          <button type="button" className={orderStatusTab === 'history' ? 'is-active' : ''} onClick={() => setOrderStatusTab('history')}>
+            Trade History
+          </button>
+        </div>
+        <div className="ex-my-orders__toolbar">
+          <input
+            type="search"
+            className="ex-input ex-my-orders__search"
+            placeholder={orderStatusTab === 'history' ? 'Search pair, side…' : 'Search pair, status…'}
+            value={tableSearch}
+            onChange={(e) => setTableSearch(e.target.value)}
+          />
+          <select
+            className="ex-input ex-my-orders__pagesize"
+            value={tablePageSize}
+            onChange={(e) => setTablePageSize(Number(e.target.value))}
+          >
+            {[10, 20, 50].map((n) => (
+              <option key={n} value={n}>{n} / page</option>
+            ))}
+          </select>
+        </div>
+          </>
+        )}
+        <div className="ex-my-orders__scroll">
+          {!user ? (
+            <div className="ex-my-orders__guest">
+              <p>Log in to view your orders and trade history.</p>
+              <Link to="/login" state={loginReturn} className="btn-outline-accent no-underline">
+                Log in
+              </Link>
+            </div>
+          ) : tableLoading ? (
+            <div className="ex-my-orders__loading">Loading…</div>
+          ) : orderStatusTab === 'history' ? (
+            <div className="ex-my-orders__table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Side</th>
+                  <th>Pair</th>
+                  <th>Price</th>
+                  <th>Amount</th>
+                  <th>Total</th>
+                  <th>Fee</th>
+                  <th>Date &amp; Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map((t) => (
+                  <tr key={t.id || t._id}>
+                    <td>
+                      <span className={`ex-status-badge ex-status-badge--${t.side}`}>{t.side}</span>
+                    </td>
+                    <td>{t.symbol?.replace('USDT', '')}/USDT</td>
+                    <td>{fmtNum(t.price, Number(t.price) < 1 ? 6 : 4)}</td>
+                    <td>{t.quantity}</td>
+                    <td>{t.total ?? fmtNum(Number(t.price) * Number(t.quantity), 2)}</td>
+                    <td>{t.fee != null ? fmtNum(t.fee, 4) : '—'}</td>
+                    <td>{t.createdAt ? formatMarketTime(t.createdAt) : '—'}</td>
+                  </tr>
+                ))}
+                {!tableRows.length && (
+                  <tr>
+                    <td colSpan={7} className="ex-empty-row">
+                      No {orderSideTab} trade history yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            </div>
+          ) : (
+          <div className="ex-my-orders__table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>Price</th>
+                <th>Amount</th>
+                <th>Total</th>
+                <th>Date &amp; Time</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((o) => {
+                return (
+                  <tr key={o._id || o.id}>
+                    <td>{o.symbol?.replace('USDT', '')}/USDT</td>
+                    <td>{orderDisplayPrice(o)}</td>
+                    <td>{o.quantity}</td>
+                    <td>{orderDisplayTotal(o)}</td>
+                    <td>{o.createdAt ? formatMarketTime(o.createdAt) : '—'}</td>
+                    <td>
+                      <span className="ex-status-badge">{o.status}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!tableRows.length && (
+                <tr>
+                  <td colSpan={6} className="ex-empty-row">
+                    No {orderStatusTab} {orderSideTab} orders.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+          )}
+        </div>
+        {!user ? null : !tableLoading && tableTotal > 0 && (
+          <div className="ex-my-orders__pagination">
+            <span>
+              Showing {tableFromRow}–{tableToRow} of {tableTotal}
+            </span>
+            <div className="ex-my-orders__pagination-actions">
+              <button
+                type="button"
+                disabled={tablePage <= 1}
+                onClick={() => setTablePage((p) => p - 1)}
+              >
+                Previous
+              </button>
+              <span>Page {tablePage} of {tableTotalPages}</span>
+              <button
+                type="button"
+                disabled={tablePage >= tableTotalPages}
+                onClick={() => setTablePage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

@@ -11,11 +11,14 @@ const userStakeSchema = new mongoose.Schema(
     maturityDate: { type: Date, required: true, index: true },
     status: {
       type: String,
-      enum: ['active', 'matured', 'withdrawn'],
+      enum: ['pending', 'active', 'rejected', 'matured', 'withdrawn'],
       default: 'active',
       index: true,
     },
     rewardEarned: { type: Number, default: 0 },
+    payoutReleased: { type: Boolean, default: false },
+    lastDailyPayoutAt: { type: Date, default: null },
+    adminNote: { type: String, default: '', maxlength: 500 },
   },
   { timestamps: true, collection: 'user_stakes' }
 );

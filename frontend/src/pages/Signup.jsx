@@ -1,60 +1,135 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
+import OtpInput, { otpToString } from '../components/OtpInput.jsx';
 import './Signup.css';
 
-function passwordStrength(pw) {
-  if (!pw) return { score: 0, label: '' };
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-  if (/\d/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-  const labels = ['', 'Weak', 'Medium', 'Strong', 'Very Strong'];
-  return { score, label: labels[score] };
-}
-
 export default function Signup() {
-  const { register } = useAuth();
+  const { register, sendOtp, resendOtp, user, loading: authLoading } = useAuth();
+  const toast = useToast();
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
   const [referral, setReferral] = useState('');
+  const [referralFromLink, setReferralFromLink] = useState(false);
   const [showRef, setShowRef] = useState(false);
-  const [showPw, setShowPw] = useState(false);
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otpSent, setOtpSent] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
-  const strength = useMemo(() => passwordStrength(password), [password]);
+  useEffect(() => {
+    const fromUrl = searchParams.get('ref') || searchParams.get('referral') || '';
+    const normalized = fromUrl.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (normalized) {
+      setReferral(normalized);
+      setReferralFromLink(true);
+      setShowRef(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const id = setInterval(() => {
+      setResendCooldown((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (user.role === 'admin') nav('/admin/panel', { replace: true });
+    else nav('/dashboard', { replace: true });
+  }, [authLoading, user, nav]);
+
+  async function handleSendOtp() {
+    if (!agreed) {
+      const message = 'Please agree to Terms & Privacy Policy';
+      setErr(message);
+      toast.warning(message);
+      return;
+    }
+    if (mobile.length !== 10) {
+      const message = 'Enter a valid 10-digit mobile number';
+      setErr(message);
+      toast.warning(message);
+      return;
+    }
+
+    setErr('');
+    setBusy(true);
+    try {
+      await sendOtp(mobile, 'register');
+      setOtpSent(true);
+      setResendCooldown(30);
+      setOtp(['', '', '', '', '', '']);
+      toast.success('OTP sent to your mobile number.');
+    } catch (ex) {
+      const message = ex.message || 'Could not send OTP';
+      setErr(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendOtp() {
+    if (resendCooldown > 0) return;
+    setErr('');
+    setBusy(true);
+    try {
+      await resendOtp(mobile, 'register');
+      setResendCooldown(30);
+      setOtp(['', '', '', '', '', '']);
+      toast.success('A new OTP has been sent.');
+    } catch (ex) {
+      const message = ex.message || 'Could not resend OTP';
+      setErr(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
     setErr('');
-    if (password !== confirm) {
-      setErr('Passwords do not match');
+
+    if (!otpSent) {
+      await handleSendOtp();
       return;
     }
-    if (!agreed) {
-      setErr('Please agree to Terms & Privacy Policy');
+
+    const code = otpToString(otp);
+    if (code.length !== 6) {
+      const message = 'Enter the 6-digit OTP';
+      setErr(message);
+      toast.warning(message);
       return;
     }
+
     setBusy(true);
     try {
       await register({
         name,
-        email,
-        password,
-        ...(mobile.trim() ? { mobile: `+91${mobile.trim()}` } : {}),
+        mobile,
+        otp: code,
+        ...(email.trim() ? { email: email.trim() } : {}),
+        ...(referral.trim() ? { referralCode: referral.trim().toUpperCase() } : {}),
       });
+      toast.success('Account created successfully. Welcome to SafeXchange!');
       nav('/dashboard');
     } catch (ex) {
-      setErr(ex.message || 'Could not register');
+      const message = ex.message || 'Could not register';
+      setErr(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -72,23 +147,44 @@ export default function Signup() {
       <main className="signup-main">
         <div className="signup-card">
           <h1 className="signup-card__title">Create your account</h1>
-          <p className="signup-card__subtitle">Join millions of traders on SafeXchange</p>
+          <p className="signup-card__subtitle">Verify your mobile number with OTP</p>
+
+          {referralFromLink && referral.trim() && (
+            <div className="signup-invite-banner" role="status">
+              <p className="signup-invite-banner__title">You were invited!</p>
+              <p className="signup-invite-banner__text">
+                Referral code <strong>{referral.trim().toUpperCase()}</strong> is applied to your registration.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={onSubmit} className="signup-form">
             <div className="signup-field">
               <label htmlFor="name">Full Name</label>
-              <input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
+              <input
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={otpSent}
+                required
+              />
             </div>
 
             <div className="signup-field">
-              <label htmlFor="email">Email Address</label>
-              <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <label htmlFor="email">Email Address (optional)</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={otpSent}
+              />
             </div>
 
             <div className="signup-field">
               <label htmlFor="mobile">Mobile Number</label>
               <div className="signup-mobile">
-                <select aria-label="Country code" defaultValue="+91">
+                <select aria-label="Country code" defaultValue="+91" disabled>
                   <option value="+91">+91</option>
                 </select>
                 <input
@@ -97,75 +193,58 @@ export default function Signup() {
                   placeholder="9876543210"
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  disabled={otpSent}
+                  required
                 />
               </div>
             </div>
 
-            <div className="signup-field signup-field--password">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type={showPw ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={8}
-                required
-              />
-              <button type="button" className="signup-field__toggle" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password">
-                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-              {password && (
-                <div className="signup-strength">
-                  <div className="signup-strength__bar">
-                    {[1, 2, 3, 4].map((i) => (
-                      <span
-                        key={i}
-                        className={`signup-strength__seg${
-                          i <= strength.score
-                            ? strength.score <= 1
-                              ? ' is-weak'
-                              : strength.score === 2
-                                ? ' is-medium'
-                                : strength.score === 3
-                                  ? ' is-strong'
-                                  : ' is-very'
-                            : ''
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <span className="signup-strength__label">{strength.label}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="signup-field">
-              <label htmlFor="confirm">Confirm Password</label>
-              <input
-                id="confirm"
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                required
-              />
-            </div>
+            {otpSent && (
+              <div className="signup-field">
+                <label>Enter OTP</label>
+                <OtpInput value={otp} onChange={setOtp} disabled={busy} idPrefix="signup-otp" />
+                <button
+                  type="button"
+                  className="signup-resend"
+                  onClick={handleResendOtp}
+                  disabled={busy || resendCooldown > 0}
+                >
+                  {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend OTP'}
+                </button>
+              </div>
+            )}
 
             <button type="button" className="signup-ref-toggle" onClick={() => setShowRef((v) => !v)}>
-              Referral Code (optional)
+              Referral Code {referral.trim() ? `(${referral.trim().toUpperCase()})` : '(optional)'}
               {showRef ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </button>
             {showRef && (
               <div className="signup-field">
+                <label htmlFor="referral">Referral code</label>
                 <input
+                  id="referral"
                   placeholder="Enter referral code"
                   value={referral}
-                  onChange={(e) => setReferral(e.target.value)}
+                  onChange={(e) => {
+                    setReferralFromLink(false);
+                    setReferral(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''));
+                  }}
+                  disabled={otpSent}
+                  maxLength={16}
                 />
+                {referralFromLink && referral.trim() && (
+                  <p className="signup-field-hint">Pre-filled from your invite link.</p>
+                )}
               </div>
             )}
 
             <label className="signup-check">
-              <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                disabled={otpSent}
+              />
               <span>
                 I agree to <a href="#terms">Terms</a> &amp; <a href="#privacy">Privacy Policy</a>
               </span>
@@ -174,8 +253,31 @@ export default function Signup() {
             {err && <p className="signup-error">{err}</p>}
 
             <button type="submit" className="signup-submit" disabled={busy}>
-              {busy ? <><Loader2 size={16} className="animate-spin" /> Creating…</> : 'Create Account'}
+              {busy ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  {otpSent ? 'Creating…' : 'Sending OTP…'}
+                </>
+              ) : otpSent ? (
+                'Verify & Create Account'
+              ) : (
+                'Send OTP'
+              )}
             </button>
+
+            {otpSent && (
+              <button
+                type="button"
+                className="signup-change-mobile"
+                onClick={() => {
+                  setOtpSent(false);
+                  setOtp(['', '', '', '', '', '']);
+                  setErr('');
+                }}
+              >
+                Change mobile number
+              </button>
+            )}
           </form>
 
           <p className="signup-footer">

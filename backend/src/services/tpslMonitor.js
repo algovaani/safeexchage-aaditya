@@ -1,5 +1,5 @@
 import { AdminTrade } from '../models/AdminTrade.js';
-import { fetchPriceMap } from './binanceService.js';
+import { fetchPriceMap } from './coingeckoService.js';
 import { settleAllOrdersForTrade } from './settlementService.js';
 
 const INTERVAL_MS = 30_000;
@@ -16,7 +16,7 @@ async function checkTpSl() {
 
     const { prices, stale } = await fetchPriceMap({ force: true });
     if (stale) {
-      console.warn('[tpslMonitor] Using stale Binance prices for TP/SL check');
+      console.warn('[tpslMonitor] Using stale CoinGecko prices for TP/SL check');
     }
 
     for (const trade of trades) {

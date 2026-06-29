@@ -28,12 +28,24 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import { ensureMarketStream, roomName } from './services/marketStreamService.js';
 import { startMonitor } from './services/tpslMonitor.js';
 import { startStakingCron } from './services/stakingRewardService.js';
-import { getCorsAllowedOrigins } from './config/cors.js';
+import { startChainDepositWatcher } from './services/chainWatcherService.js';
+import { evmScannerStatus } from './services/evmDepositScanService.js';
+import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
+import { installGracefulShutdown, installProcessHandlers } from './config/processStability.js';
+import { isDbConnected } from './config/db.js';
+
+installProcessHandlers();
 
 const app = express();
 const server = http.createServer(app);
 
+// Behind Nginx/Apache — use real client IP for rate limiting
+if (process.env.TRUST_PROXY !== '0') {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
+
 const corsOrigin = getCorsAllowedOrigins();
+logCorsConfig();
 
 const io = new Server(server, {
   cors: {
@@ -45,15 +57,19 @@ const io = new Server(server, {
 
 app.set('io', io);
 
+app.use(corsPreflightMiddleware);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(
   cors({
     origin: corsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    optionsSuccessStatus: 204,
+    preflightContinue: false,
   })
 );
+
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan('dev'));
 
@@ -72,14 +88,15 @@ app.use(
   '/api/',
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 500,
+    max: Number(process.env.API_RATE_LIMIT_MAX) || 500,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.method === 'OPTIONS' || /\/auth\/otp\//.test(req.originalUrl),
   })
 );
 
 app.get('/api/health', (_req, res) => {
-  const dbOk = mongoose.connection.readyState === 1;
+  const dbOk = isDbConnected();
   return success(
     res,
     {
@@ -127,32 +144,79 @@ io.on('connection', (socket) => {
 });
 
 const PORT = Number(process.env.PORT) || 5001;
+let chainWatcherTimer = null;
+
+async function startBackgroundJobs() {
+  startMonitor();
+  startStakingCron();
+  chainWatcherTimer = startChainDepositWatcher();
+  const scan = evmScannerStatus();
+  if (scan.moralis && scan.tatum) {
+    console.info('[deposits] BNB/ETH: Moralis primary, Tatum fallback');
+  } else if (scan.moralis) {
+    console.info('[deposits] BNB/ETH: Moralis enabled');
+  } else if (scan.tatum) {
+    console.info('[deposits] BNB/ETH: Tatum enabled');
+  } else {
+    console.warn('[deposits] Set MORALIS_API_KEY or TATUM_MAINNET_API_KEY for BNB/ETH auto-deposits');
+  }
+}
 
 async function main() {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     throw new Error('MONGODB_URI is missing. Copy backend/.env.example to backend/.env');
   }
+
+  const connectAttempts = process.env.NODE_ENV === 'production' ? 8 : 3;
   try {
-    await connectDb(uri);
+    await connectDb(uri, { attempts: connectAttempts });
     console.log('MongoDB connected');
-    startMonitor();
-    startStakingCron();
+    await startBackgroundJobs();
   } catch (err) {
     console.error('MongoDB connection failed:', err.message);
-    if (process.env.NODE_ENV === 'production') throw err;
-    console.warn(
-      'Dev mode: API will listen, but auth/wallet routes return 503 until MongoDB is reachable.'
-    );
+    if (process.env.NODE_ENV === 'production') {
+      console.warn(
+        '[mongodb] API will listen — DB routes return 503 until connection succeeds (auto-retry in background)'
+      );
+      await startBackgroundJobs();
+    } else {
+      console.warn(
+        'Dev mode: API will listen, but auth/wallet routes return 503 until MongoDB is reachable.'
+      );
+    }
   }
 
-  server.listen(PORT, '127.0.0.1', () => {
-    console.log(`API + WebSocket listening on :${PORT}`);
-    if (mongoose.connection.readyState !== 1) {
-      console.warn(
-      'MongoDB still unreachable. Run: npm run db:check — then fix cluster/credentials or use local MONGODB_URI.'
-    );
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} already in use — stop the other process or change PORT in .env`);
+    } else {
+      console.error('HTTP server error:', err.message);
     }
+    process.exit(1);
+  });
+
+  server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
+    console.log(`API + WebSocket listening on :${PORT}`);
+    if (!isDbConnected()) {
+      console.warn(
+        'MongoDB still unreachable. Run: npm run db:check — then fix cluster/credentials or use local MONGODB_URI.'
+      );
+    }
+  });
+
+  installGracefulShutdown(server, {
+    onShutdown: async () => {
+      const { stopMonitor } = await import('./services/tpslMonitor.js');
+      const { stopStakingCron } = await import('./services/stakingRewardService.js');
+      stopMonitor();
+      stopStakingCron();
+      if (chainWatcherTimer) {
+        clearInterval(chainWatcherTimer);
+        chainWatcherTimer = null;
+      }
+      await mongoose.disconnect().catch(() => {});
+    },
   });
 }
 

@@ -2,40 +2,39 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
 import './AdminLogin.css';
 
 export default function AdminLogin() {
-  const { login, logout } = useAuth();
+  const { adminLogin, logout } = useAuth();
+  const toast = useToast();
   const nav = useNavigate();
   const [email, setEmail] = useState('admin@safexchange.io');
   const [password, setPassword] = useState('Admin123!');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-
-  function handleOtpChange(i, val) {
-    if (!/^\d?$/.test(val)) return;
-    const next = [...otp];
-    next[i] = val;
-    setOtp(next);
-  }
 
   async function onSubmit(e) {
     e.preventDefault();
     setErr('');
     setBusy(true);
     try {
-      const data = await login(email, password);
+      const data = await adminLogin(email, password);
       if (data.user?.role !== 'admin') {
         await logout();
-        setErr('This account is not an admin account.');
+        const message = 'This account is not an admin account.';
+        setErr(message);
+        toast.error(message);
         return;
       }
+      toast.success('Admin login successful.');
       nav('/admin/panel?section=overview');
     } catch (ex) {
-      setErr(ex.message || 'Invalid admin credentials');
+      const message = ex.message || 'Invalid admin credentials';
+      setErr(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -83,23 +82,6 @@ export default function AdminLogin() {
               <button type="button" className="admin-login-field__toggle" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password">
                 {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-            </div>
-
-            <div className="admin-login-field">
-              <label>OTP (optional)</label>
-              <div className="admin-login-otp">
-                {otp.map((d, i) => (
-                  <input
-                    key={i}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={d}
-                    onChange={(e) => handleOtpChange(i, e.target.value)}
-                    aria-label={`OTP digit ${i + 1}`}
-                  />
-                ))}
-              </div>
             </div>
 
             {err && <p className="admin-login-error">{err}</p>}

@@ -7,15 +7,19 @@ import AdminLayout from './components/AdminLayout.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import InviteRedirect from './pages/InviteRedirect.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Markets from './pages/Markets.jsx';
 import Account from './pages/Account.jsx';
 import Deposit from './pages/Deposit.jsx';
 import AccountProfile from './pages/AccountProfile.jsx';
+import ReferEarn from './pages/ReferEarn.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Trading from './pages/Trading.jsx';
+import Staking from './pages/Staking.jsx';
 import Admin from './pages/Admin.jsx';
+import AdminUserDetail from './pages/admin/AdminUserDetail.jsx';
 
 export default function App() {
   return (
@@ -25,12 +29,11 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/invite/:code" element={<InviteRedirect />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<ExchangeLayout />}>
-          <Route path="/trade" element={<Trading />} />
-          <Route path="/exchange" element={<Navigate to="/trade" replace />} />
-        </Route>
+      <Route element={<ExchangeLayout />}>
+        <Route path="/trade" element={<Trading />} />
+        <Route path="/exchange" element={<Navigate to="/trade" replace />} />
       </Route>
 
       <Route element={<Layout />}>
@@ -78,10 +81,26 @@ export default function App() {
         />
 
         <Route
+          path="/refer"
+          element={
+            <ProtectedRoute>
+              <ReferEarn />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/transactions"
           element={
             <ProtectedRoute>
               <Transactions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staking"
+          element={
+            <ProtectedRoute>
+              <Staking />
             </ProtectedRoute>
           }
         />
@@ -98,6 +117,7 @@ export default function App() {
       >
         <Route index element={<Navigate to="/admin/panel?section=overview" replace />} />
         <Route path="panel" element={<Admin />} />
+        <Route path="users/:userId" element={<AdminUserDetail />} />
       </Route>
     </Routes>
   );

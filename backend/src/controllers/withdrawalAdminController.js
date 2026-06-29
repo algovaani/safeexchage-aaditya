@@ -1,3 +1,4 @@
+import { User } from '../models/User.js';
 import { Withdrawal } from '../models/Withdrawal.js';
 import {
   approveWithdrawal,
@@ -5,36 +6,89 @@ import {
   rejectWithdrawal,
 } from '../services/withdrawalService.js';
 import { error, success } from '../utils/response.js';
+import {
+  buildDateRangeFilter,
+  getExportLimit,
+  paginatedPayload,
+  parseDatatableQuery,
+  searchRegex,
+  sendCsvExport,
+} from '../utils/datatable.js';
 
-function buildAdminFilter(query) {
-  const filter = {};
+const WITHDRAWAL_EXPORT_COLUMNS = [
+  { key: 'userLabel', label: 'User', export: (r) => r.userLabel || '' },
+  { key: 'type', label: 'Type' },
+  { key: 'amount', label: 'Amount' },
+  { key: 'currency', label: 'Currency', export: (r) => r.currency || 'USDT' },
+  { key: 'destination', label: 'Destination', export: (r) => r.destination || '' },
+  { key: 'status', label: 'Status' },
+  { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
+];
+
+async function buildAdminFilter(query, search) {
+  const filter = { ...buildDateRangeFilter(query) };
   if (query.type) filter.type = query.type;
   if (query.status) filter.status = query.status;
 
-  if (query.from || query.to) {
-    filter.createdAt = {};
-    if (query.from) filter.createdAt.$gte = new Date(query.from);
-    if (query.to) {
-      const end = new Date(query.to);
-      end.setHours(23, 59, 59, 999);
-      filter.createdAt.$lte = end;
-    }
+  const re = searchRegex(search);
+  if (re) {
+    const users = await User.find({
+      $or: [{ email: re }, { mobile: re }, { name: re }],
+    })
+      .select('_id')
+      .limit(200)
+      .lean();
+    const userIds = users.map((u) => u._id);
+    filter.$or = [
+      { userId: { $in: userIds } },
+      { walletAddress: re },
+      { accountNumber: re },
+      { ifsc: re },
+      { bankName: re },
+    ];
   }
 
   return filter;
 }
 
+function enrichWithdrawalRow(req, row) {
+  const formatted = formatWithdrawal(req, row, { includeUser: true });
+  const userLabel = formatted.user?.email || formatted.user?.mobile || String(formatted.userId);
+  const destination =
+    formatted.type === 'crypto'
+      ? `${formatted.network || ''} ${formatted.walletAddress || ''}`.trim()
+      : `${formatted.bankName || ''} · ${formatted.accountNumber || ''} (${formatted.ifsc || ''})`.trim();
+  return { ...formatted, userLabel, destination };
+}
+
 export async function listWithdrawals(req, res, next) {
   try {
-    const filter = buildAdminFilter(req.query);
-    const rows = await Withdrawal.find(filter)
-      .populate('userId', 'email mobile name')
-      .sort({ createdAt: -1 })
-      .limit(500)
-      .lean();
+    const dt = parseDatatableQuery(req.query);
+    const filter = await buildAdminFilter(req.query, dt.search);
+    const limit = dt.isExport ? getExportLimit(true) : dt.pageSize;
+    const skip = dt.isExport ? 0 : dt.skip;
 
-    const data = rows.map((row) => formatWithdrawal(req, row, { includeUser: true }));
-    return success(res, data, 'Withdrawals fetched');
+    const [rows, total] = await Promise.all([
+      Withdrawal.find(filter)
+        .populate('userId', 'email mobile name')
+        .sort(dt.sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Withdrawal.countDocuments(filter),
+    ]);
+
+    const data = rows.map((row) => enrichWithdrawalRow(req, row));
+
+    if (dt.isExport) {
+      return sendCsvExport(res, 'withdrawals.csv', data, WITHDRAWAL_EXPORT_COLUMNS);
+    }
+
+    return success(
+      res,
+      paginatedPayload({ rows: data, total, page: dt.page, pageSize: dt.pageSize }),
+      'Withdrawals fetched'
+    );
   } catch (e) {
     return next(e);
   }

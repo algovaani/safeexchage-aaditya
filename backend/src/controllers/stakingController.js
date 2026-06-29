@@ -3,64 +3,102 @@ import { StakingPlan } from '../models/StakingPlan.js';
 import { UserStake } from '../models/UserStake.js';
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
-import { KycSubmission } from '../models/KycSubmission.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 import {
   addDays,
   calculateEarnedSoFar,
+  calculateMaturityAmount,
   calculateMaturityReward,
   daysBetween,
   planLabel,
   startOfDay,
 } from '../utils/stakingMath.js';
+import { releaseMaturityPayout, runWithTransaction } from '../services/stakingPayoutService.js';
 
 function formatPlan(plan) {
   return {
     id: plan._id,
     name: plan.name,
+    roi_percent: roundMoney(plan.apyPercent),
     apy_percent: roundMoney(plan.apyPercent),
     lock_days: plan.lockDays,
     min_amount: roundMoney(plan.minAmount),
     max_amount: roundMoney(plan.maxAmount),
+    payout_type: plan.payoutType || 'end_of_plan',
+    payout_mode: plan.payoutMode || 'auto',
+    requires_approval: Boolean(plan.requiresApproval),
+    currency: 'USDT',
     label: planLabel(plan.apyPercent, plan.lockDays),
   };
 }
 
 function formatStakeRow(stake, plan) {
   const today = startOfDay();
-  const daysElapsed = daysBetween(stake.startDate, today);
-  const daysRemaining = Math.max(0, daysBetween(today, stake.maturityDate));
-  const isMatured = today >= startOfDay(stake.maturityDate);
-  const earnedSoFar = calculateEarnedSoFar(stake.amount, stake.apyPercent, daysElapsed);
+  const isPending = stake.status === 'pending';
+  const isRejected = stake.status === 'rejected';
+  const daysElapsed = isPending || isRejected ? 0 : daysBetween(stake.startDate, today);
+  const daysRemaining =
+    isPending || isRejected ? stake.lockDays : Math.max(0, daysBetween(today, stake.maturityDate));
+  const isMatured =
+    !isPending && !isRejected && stake.startDate && today >= startOfDay(stake.maturityDate);
+  const earnedSoFar = calculateEarnedSoFar(
+    stake.amount,
+    stake.apyPercent,
+    stake.lockDays,
+    daysElapsed
+  );
   const totalRewardAtMaturity = calculateMaturityReward(
     stake.amount,
     stake.apyPercent,
     stake.lockDays
   );
+  const maturityAmount = calculateMaturityAmount(stake.amount, stake.apyPercent, stake.lockDays);
+  const payoutType = plan?.payoutType || 'end_of_plan';
+  const payoutMode = plan?.payoutMode || 'auto';
+  const canClaim =
+    ['active', 'matured'].includes(stake.status) &&
+    isMatured &&
+    !stake.payoutReleased &&
+    payoutMode !== 'manual';
+  const awaitingAdminRelease =
+    isMatured && payoutMode === 'manual' && !stake.payoutReleased && stake.status !== 'withdrawn';
 
   return {
     id: stake._id,
+    plan_id: stake.planId,
     plan_name: plan?.name || null,
+    roi_percent: roundMoney(stake.apyPercent),
     apy_percent: roundMoney(stake.apyPercent),
     lock_days: stake.lockDays,
     amount: roundMoney(stake.amount),
-    start_date: stake.startDate,
-    maturity_date: stake.maturityDate,
+    currency: 'USDT',
+    start_date: isPending ? null : stake.startDate,
+    end_date: isPending ? null : stake.maturityDate,
+    maturity_date: isPending ? null : stake.maturityDate,
     status: stake.status,
     reward_earned: roundMoney(stake.rewardEarned),
+    profit: roundMoney(stake.rewardEarned),
     days_elapsed: daysElapsed,
     days_remaining: daysRemaining,
     earned_so_far: roundMoney(earnedSoFar),
     total_reward_at_maturity: roundMoney(totalRewardAtMaturity),
+    maturity_amount: roundMoney(maturityAmount),
+    payout_type: payoutType,
+    payout_mode: payoutMode,
+    payout_released: Boolean(stake.payoutReleased),
     is_matured: isMatured,
+    can_claim: canClaim,
+    can_early_withdraw: stake.status === 'active' && !isMatured,
+    awaiting_admin_release: awaitingAdminRelease,
+    admin_note: stake.adminNote || '',
   };
 }
 
 export async function getPlans(_req, res, next) {
   try {
     const plans = await StakingPlan.find({ isActive: true }).sort({ lockDays: 1 }).lean();
-    return success(res, plans.map(formatPlan), 'Staking plans fetched');
+    return success(res, plans.map(formatPlan), 'Investment plans fetched');
   } catch (e) {
     return next(e);
   }
@@ -74,18 +112,10 @@ export async function createStake(req, res, next) {
     const { plan_id, amount } = req.body;
     const stakeAmount = storeMoney(amount);
 
-    const kyc = await KycSubmission.findOne({ userId: req.userId, status: 'approved' }).session(
-      session
-    );
-    if (!kyc) {
-      await session.abortTransaction();
-      return error(res, 'Approved KYC is required to stake', 403);
-    }
-
     const plan = await StakingPlan.findOne({ _id: plan_id, isActive: true }).session(session);
     if (!plan) {
       await session.abortTransaction();
-      return error(res, 'Staking plan not found or inactive', 400);
+      return error(res, 'Investment plan not found or inactive', 400);
     }
 
     if (stakeAmount < plan.minAmount || stakeAmount > plan.maxAmount) {
@@ -103,8 +133,9 @@ export async function createStake(req, res, next) {
       return error(res, 'Insufficient USDT balance', 400);
     }
 
-    const startDate = startOfDay();
-    const maturityDate = addDays(startDate, plan.lockDays);
+    const needsApproval = Boolean(plan.requiresApproval);
+    const startDate = needsApproval ? null : startOfDay();
+    const maturityDate = needsApproval ? null : addDays(startDate, plan.lockDays);
 
     wallet.balance = storeMoney(wallet.balance - stakeAmount);
     wallet.lockedBalance = storeMoney((wallet.lockedBalance || 0) + stakeAmount);
@@ -118,9 +149,9 @@ export async function createStake(req, res, next) {
           amount: stakeAmount,
           apyPercent: plan.apyPercent,
           lockDays: plan.lockDays,
-          startDate,
-          maturityDate,
-          status: 'active',
+          startDate: startDate || new Date(0),
+          maturityDate: maturityDate || new Date(0),
+          status: needsApproval ? 'pending' : 'active',
           rewardEarned: 0,
         },
       ],
@@ -144,7 +175,12 @@ export async function createStake(req, res, next) {
 
     await session.commitTransaction();
 
-    return success(res, formatStakeRow(stake.toObject(), plan.toObject()), 'Stake created successfully', 201);
+    return success(
+      res,
+      formatStakeRow(stake.toObject(), plan.toObject()),
+      needsApproval ? 'Investment submitted for admin approval' : 'Investment created successfully',
+      201
+    );
   } catch (e) {
     await session.abortTransaction();
     return next(e);
@@ -161,120 +197,92 @@ export async function getPortfolio(req, res, next) {
     const planMap = new Map(plans.map((p) => [String(p._id), p]));
 
     const portfolio = stakes.map((s) => formatStakeRow(s, planMap.get(String(s.planId))));
-    return success(res, portfolio, 'Staking portfolio fetched');
+    return success(res, portfolio, 'Investment portfolio fetched');
   } catch (e) {
     return next(e);
   }
 }
 
 export async function withdrawStake(req, res, next) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const stake = await UserStake.findById(req.params.stakeId).session(session);
+    const stake = await UserStake.findById(req.params.stakeId);
     if (!stake || String(stake.userId) !== req.userId) {
-      await session.abortTransaction();
-      return error(res, 'Stake not found', 404);
+      return error(res, 'Investment not found', 404);
     }
 
-    if (!['active', 'matured'].includes(stake.status)) {
-      await session.abortTransaction();
-      return error(res, 'Stake is not eligible for withdrawal', 400);
+    if (stake.status === 'pending') {
+      return error(res, 'Investment is awaiting admin approval', 400);
+    }
+    if (stake.status === 'rejected') {
+      return error(res, 'Investment was rejected', 400);
+    }
+    if (stake.payoutReleased || stake.status === 'withdrawn') {
+      return error(res, 'Investment already completed', 400);
     }
 
+    const plan = await StakingPlan.findById(stake.planId).lean();
     const today = startOfDay();
-    const isMatured = today >= startOfDay(stake.maturityDate);
-
-    const wallet = await Wallet.findOne({ userId: req.userId }).session(session);
-    if (!wallet || wallet.lockedBalance < stake.amount) {
-      await session.abortTransaction();
-      return error(res, 'Insufficient locked balance for this stake', 400);
-    }
-
-    let returnAmount;
-    let rewardEarned = 0;
-    let withdrawalType;
+    const isMatured = stake.startDate && today >= startOfDay(stake.maturityDate);
 
     if (isMatured) {
-      rewardEarned = calculateMaturityReward(stake.amount, stake.apyPercent, stake.lockDays);
-      returnAmount = storeMoney(stake.amount + rewardEarned);
-      withdrawalType = 'matured';
+      if (plan?.payoutMode === 'manual' && !stake.payoutReleased) {
+        return error(res, 'Maturity payout will be released by admin', 400);
+      }
 
-      wallet.lockedBalance = storeMoney(wallet.lockedBalance - stake.amount);
-      wallet.balance = storeMoney(wallet.balance + returnAmount);
+      const result = await runWithTransaction(async (session) => {
+        const row = await UserStake.findById(stake._id).session(session);
+        return releaseMaturityPayout(row, { session, markWithdrawn: true });
+      });
 
-      stake.status = 'matured';
-      stake.rewardEarned = rewardEarned;
+      return success(res, { ...result, withdrawal_type: 'matured' }, 'Maturity payout claimed');
+    }
 
-      await wallet.save({ session });
-      await stake.save({ session });
+    if (stake.status !== 'active') {
+      return error(res, 'Investment is not eligible for withdrawal', 400);
+    }
 
-      await Transaction.create(
-        [
-          {
-            userId: req.userId,
-            type: 'stake_principal_returned',
-            amount: roundMoney(stake.amount),
-            balanceAfter: roundMoney(wallet.balance),
-            currency: 'USDT',
-            status: 'completed',
-            reference: `stake_principal:${stake._id}`,
-          },
-          {
-            userId: req.userId,
-            type: 'stake_reward',
-            amount: roundMoney(rewardEarned),
-            balanceAfter: roundMoney(wallet.balance),
-            currency: 'USDT',
-            status: 'completed',
-            reference: `stake_reward:${stake._id}`,
-          },
-        ],
-        { session }
-      );
-    } else {
-      returnAmount = storeMoney(stake.amount);
-      withdrawalType = 'early';
+    const result = await runWithTransaction(async (session) => {
+      const row = await UserStake.findById(stake._id).session(session);
+      const wallet = await Wallet.findOne({ userId: req.userId }).session(session);
+      if (!wallet || wallet.lockedBalance < row.amount) {
+        throw Object.assign(new Error('Insufficient locked balance'), { status: 400 });
+      }
 
-      wallet.lockedBalance = storeMoney(wallet.lockedBalance - stake.amount);
-      wallet.balance = storeMoney(wallet.balance + stake.amount);
-
-      stake.status = 'withdrawn';
-      stake.rewardEarned = 0;
+      wallet.lockedBalance = storeMoney(wallet.lockedBalance - row.amount);
+      wallet.balance = storeMoney(wallet.balance + row.amount);
+      row.status = 'withdrawn';
+      row.rewardEarned = 0;
 
       await wallet.save({ session });
-      await stake.save({ session });
+      await row.save({ session });
 
       await Transaction.create(
         [
           {
             userId: req.userId,
             type: 'stake_early_withdrawal',
-            amount: roundMoney(stake.amount),
+            amount: roundMoney(row.amount),
             balanceAfter: roundMoney(wallet.balance),
             currency: 'USDT',
             status: 'completed',
-            reference: `stake_early:${stake._id}`,
+            reference: `stake_early:${row._id}`,
           },
         ],
         { session }
       );
-    }
 
-    await session.commitTransaction();
+      return {
+        return_amount: roundMoney(row.amount),
+        reward_earned: 0,
+        withdrawal_type: 'early',
+        balance: roundMoney(wallet.balance),
+        locked_balance: roundMoney(wallet.lockedBalance),
+      };
+    });
 
-    return success(res, {
-      return_amount: roundMoney(returnAmount),
-      reward_earned: roundMoney(rewardEarned),
-      withdrawal_type: withdrawalType,
-      balance: roundMoney(wallet.balance),
-      locked_balance: roundMoney(wallet.lockedBalance),
-    }, 'Stake withdrawn successfully');
+    return success(res, result, 'Early withdrawal completed (no reward)');
   } catch (e) {
-    await session.abortTransaction();
+    if (e.status) return error(res, e.message, e.status);
     return next(e);
-  } finally {
-    session.endSession();
   }
 }

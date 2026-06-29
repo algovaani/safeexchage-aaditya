@@ -1,4 +1,5 @@
 import { error } from '../utils/response.js';
+import { applyCorsHeaders } from '../config/cors.js';
 
 function duplicateKeyMessage(err) {
   const field = Object.keys(err.keyPattern || {})[0] || 'field';
@@ -6,11 +7,12 @@ function duplicateKeyMessage(err) {
   return `${readable.charAt(0).toUpperCase()}${readable.slice(1)} is already registered`;
 }
 
-export function errorHandler(err, _req, res, next) {
+export function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err);
   }
 
+  applyCorsHeaders(req, res);
   console.error(err);
 
   if (err.code === 11000) {

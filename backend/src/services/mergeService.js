@@ -1,7 +1,7 @@
 import { ManualPriceData } from '../models/ManualPriceData.js';
 
 /**
- * Merge Binance candles with manual overrides.
+ * Merge external (CoinGecko) candles with manual overrides.
  * Rule: same openTime → manual wins (latest revision for candle mode; ticks applied in order).
  */
 export function mergeCandles(binanceCandles, manualDocs) {

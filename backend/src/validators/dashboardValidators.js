@@ -1,7 +1,10 @@
 import { query } from 'express-validator';
+import { datatableQueryValidators } from './adminListValidators.js';
 
 export const transactionListValidators = [
-  query('type').optional().isIn(['deposit', 'trade', 'stake', 'all']),
-  query('page').optional().isInt({ min: 1 }).toInt(),
-  query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+  ...datatableQueryValidators,
+  query('type')
+    .optional()
+    .isIn(['all', 'deposit', 'withdrawal', 'trade', 'stake', 'buy', 'sell', 'hold']),
+  query('status').optional().isIn(['all', 'pending', 'approved', 'rejected', 'completed']),
 ];

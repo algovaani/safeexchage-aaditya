@@ -2,15 +2,16 @@ import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
+import { listUserAssets } from '../services/assetBalanceService.js';
+import { formatWalletSnapshot } from '../services/walletAdjustmentService.js';
 
 export async function balance(req, res, next) {
   try {
-    const w = await Wallet.findOne({ userId: req.userId }).lean();
-    return success(res, {
-      balance_usdt: roundMoney(w?.balance || 0),
-      locked_balance: roundMoney(w?.lockedBalance || 0),
-      currency: w?.currency || 'USDT',
-    }, 'Wallet balance fetched');
+    const [w, assets] = await Promise.all([
+      Wallet.findOne({ userId: req.userId }).lean(),
+      listUserAssets(req.userId),
+    ]);
+    return success(res, formatWalletSnapshot(w, assets), 'Wallet balance fetched');
   } catch (e) {
     return next(e);
   }

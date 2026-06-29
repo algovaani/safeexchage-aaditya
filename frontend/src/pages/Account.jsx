@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, depositAPI, parseApiResponse } from '../api/client.js';
+import { api, authAPI, depositAPI, parseApiResponse } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { WALLET_ASSETS } from '../theme/assets.js';
 import DepositModal from '../components/DepositModal.jsx';
@@ -17,6 +17,13 @@ export default function Account() {
   const [depositCoin, setDepositCoin] = useState(null);
   const [withdrawCoin, setWithdrawCoin] = useState(null);
   const [platformInfo, setPlatformInfo] = useState(null);
+  const [walletForm, setWalletForm] = useState({
+    bnbWalletAddress: '',
+    ethWalletAddress: '',
+    trcWalletAddress: '',
+    usdtWalletAddress: '',
+  });
+  const [walletBusy, setWalletBusy] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -36,6 +43,32 @@ export default function Account() {
       .getPlatformInfo()
       .then(setPlatformInfo)
       .catch(() => setPlatformInfo(null));
+    authAPI
+      .me()
+      .then((profile) => {
+        setWalletForm({
+          bnbWalletAddress: profile?.bnbWalletAddress || '',
+          ethWalletAddress: profile?.ethWalletAddress || '',
+          trcWalletAddress: profile?.trcWalletAddress || '',
+          usdtWalletAddress: profile?.usdtWalletAddress || '',
+        });
+      })
+      .catch(() => {});
+    const timer = setInterval(() => {
+      refresh().catch(() => {});
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onWallet = (e) => {
+      const w = e.detail;
+      if (!w) return;
+      setSpotUsdt(w.balance_usdt ?? w.balance ?? 0);
+      setLockedUsdt(w.locked_balance ?? 0);
+    };
+    window.addEventListener('wallet:updated', onWallet);
+    return () => window.removeEventListener('wallet:updated', onWallet);
   }, []);
 
   const rows = useMemo(() => {
@@ -61,6 +94,20 @@ export default function Account() {
 
   function onWithdraw(symbol) {
     setWithdrawCoin(symbol);
+  }
+
+  async function saveWalletAddresses(e) {
+    e.preventDefault();
+    setWalletBusy(true);
+    setMsg('');
+    try {
+      await authAPI.updateProfile(walletForm);
+      setMsg('Wallet addresses saved.');
+    } catch (ex) {
+      setMsg(ex.message || 'Failed to save wallet addresses');
+    } finally {
+      setWalletBusy(false);
+    }
   }
 
   const portfolio = spotUsdt != null ? Number(spotUsdt) : null;
@@ -185,6 +232,38 @@ export default function Account() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="ui-card space-y-4">
+        <div>
+          <h2 className="text-sm font-medium text-text-primary">Your wallet addresses</h2>
+          <p className="text-xs text-text-secondary mt-0.5">
+            Used when you submit deposits — auto-filled in the deposit form.
+          </p>
+        </div>
+        <form onSubmit={saveWalletAddresses} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="ui-label">BNB address</label>
+            <input className="ui-input" value={walletForm.bnbWalletAddress} onChange={(e) => setWalletForm((f) => ({ ...f, bnbWalletAddress: e.target.value }))} placeholder="0x…" />
+          </div>
+          <div>
+            <label className="ui-label">ETH address</label>
+            <input className="ui-input" value={walletForm.ethWalletAddress} onChange={(e) => setWalletForm((f) => ({ ...f, ethWalletAddress: e.target.value }))} placeholder="0x…" />
+          </div>
+          <div>
+            <label className="ui-label">TRX / TRON address</label>
+            <input className="ui-input" value={walletForm.trcWalletAddress} onChange={(e) => setWalletForm((f) => ({ ...f, trcWalletAddress: e.target.value }))} placeholder="T…" />
+          </div>
+          <div>
+            <label className="ui-label">USDT address</label>
+            <input className="ui-input" value={walletForm.usdtWalletAddress} onChange={(e) => setWalletForm((f) => ({ ...f, usdtWalletAddress: e.target.value }))} placeholder="Your USDT wallet" />
+          </div>
+          <div className="md:col-span-2">
+            <button type="submit" className="btn-secondary" disabled={walletBusy}>
+              {walletBusy ? 'Saving…' : 'Save wallet addresses'}
+            </button>
+          </div>
+        </form>
       </div>
 
       {msg && (

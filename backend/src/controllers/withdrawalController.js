@@ -4,6 +4,7 @@ import {
   releaseWithdrawalFunds,
   reserveWithdrawalFunds,
 } from '../services/withdrawalService.js';
+import { createPendingWithdrawalTransaction } from '../services/transactionService.js';
 import { error, success } from '../utils/response.js';
 
 async function createWithdrawalRequest(req, res, next, payload) {
@@ -19,6 +20,7 @@ async function createWithdrawalRequest(req, res, next, payload) {
         status: 'pending',
         ...payload,
       });
+      await createPendingWithdrawalTransaction(withdrawal);
     } catch (createError) {
       await releaseWithdrawalFunds(req.userId, amount).catch(() => {});
       throw createError;

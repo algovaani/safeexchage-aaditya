@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { api, parseApiResponse, setAuthToken } from '../api/client.js';
+import { api, authAPI, parseApiResponse, setAuthToken } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
@@ -42,22 +42,30 @@ export function AuthProvider({ children }) {
     })();
   }, [token]);
 
-  const login = async (identifier, password) => {
-    const { data } = await api.post('/auth/login', { identifier, password });
-    const payload = parseApiResponse(data);
+  const persistSession = (payload) => {
     localStorage.setItem(STORAGE_KEY, payload.token);
     setToken(payload.token);
     setUser(payload.user);
     return payload;
   };
 
+  const sendOtp = async (mobile, purpose) => authAPI.sendOtp(mobile, purpose);
+
+  const resendOtp = async (mobile, purpose) => authAPI.resendOtp(mobile, purpose);
+
+  const login = async (mobile, otp) => {
+    const payload = await authAPI.login(mobile, otp);
+    return persistSession(payload);
+  };
+
+  const adminLogin = async (email, password) => {
+    const payload = await authAPI.adminLogin(email, password);
+    return persistSession(payload);
+  };
+
   const register = async (body) => {
-    const { data } = await api.post('/auth/register', body);
-    const payload = parseApiResponse(data);
-    localStorage.setItem(STORAGE_KEY, payload.token);
-    setToken(payload.token);
-    setUser(payload.user);
-    return payload;
+    const payload = await authAPI.register(body);
+    return persistSession(payload);
   };
 
   const logout = async () => {
@@ -76,7 +84,10 @@ export function AuthProvider({ children }) {
       token,
       user,
       loading,
+      sendOtp,
+      resendOtp,
       login,
+      adminLogin,
       register,
       logout,
       isAdmin: user?.role === 'admin',

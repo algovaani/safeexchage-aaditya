@@ -4,15 +4,17 @@ import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
 import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
 import { MARKET_POLL_MS } from '../config/marketPoll.js';
+import DataTable from '../components/DataTable.jsx';
 import { fmtINR, fmtPct, inrFromUsdt } from '../utils/format.js';
+import './Markets.css';
 
 const CATEGORIES = ['All', 'Crypto', 'Stocks', 'Forex', 'Commodities'];
 const CRYPTO_SYMBOLS = TRADING_PAIR_SYMBOLS;
 
 const STOCK_MOCK = [
-  { symbol: 'NIFTY', name: 'Nifty 50', price: 24850.3, change: 0.42, volume: '12.4B', cap: '—' },
-  { symbol: 'SENSEX', name: 'BSE Sensex', price: 81432.15, change: -0.18, volume: '8.1B', cap: '—' },
-  { symbol: 'RELIANCE', name: 'Reliance', price: 2945.5, change: 1.22, volume: '2.1B', cap: '19.8T' },
+  { symbol: 'NIFTY', name: 'Nifty 50', price: 24850.3, change: 0.42, volume: '12.4B', cap: '—', type: 'stock' },
+  { symbol: 'SENSEX', name: 'BSE Sensex', price: 81432.15, change: -0.18, volume: '8.1B', cap: '—', type: 'stock' },
+  { symbol: 'RELIANCE', name: 'Reliance', price: 2945.5, change: 1.22, volume: '2.1B', cap: '19.8T', type: 'stock' },
 ];
 
 function MiniSparkline({ up }) {
@@ -29,14 +31,28 @@ function MiniSparkline({ up }) {
   );
 }
 
+function formatPrice(row) {
+  return row.type === 'crypto' ? fmtINR(inrFromUsdt(row.price)) : `₹ ${row.price.toLocaleString()}`;
+}
+
+function AssetCell({ row }) {
+  return (
+    <div className="markets-dt__asset">
+      <span className="markets-dt__icon">{row.symbol.slice(0, 2)}</span>
+      <div className="min-w-0">
+        <p className="markets-dt__name">{row.name}</p>
+        <p className="markets-dt__symbol">{row.symbol}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Markets() {
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('volume');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const perPage = 8;
 
   useEffect(() => {
     let active = true;
@@ -63,7 +79,7 @@ export default function Markets() {
           };
         }).filter(Boolean);
 
-        setRows([...crypto, ...STOCK_MOCK.map((s) => ({ ...s, type: 'stock' }))]);
+        setRows([...crypto, ...STOCK_MOCK]);
       } finally {
         if (active) setLoading(false);
       }
@@ -97,42 +113,109 @@ export default function Markets() {
     return list;
   }, [rows, category, search, sort]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageRows = filtered.slice((page - 1) * perPage, page * perPage);
+  const columns = useMemo(
+    () => [
+      {
+        key: 'rank',
+        label: '#',
+        mobileLabel: '#',
+        render: (_row, index) => index + 1,
+      },
+      {
+        key: 'asset',
+        label: 'Asset',
+        sortable: true,
+        sortValue: (row) => row.symbol,
+        render: (row) => <AssetCell row={row} />,
+      },
+      {
+        key: 'price',
+        label: 'Price',
+        sortable: true,
+        sortValue: (row) => row.price,
+        render: (row) => <span className="font-mono tabular-nums">{formatPrice(row)}</span>,
+      },
+      {
+        key: 'change',
+        label: '24h Change',
+        sortable: true,
+        sortValue: (row) => row.change,
+        render: (row) => {
+          const up = row.change >= 0;
+          return (
+            <span className={`inline-flex items-center gap-1 ${up ? 'text-profit' : 'text-loss'}`}>
+              {up ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+              {fmtPct(row.change)}
+            </span>
+          );
+        },
+      },
+      {
+        key: 'volume',
+        label: '24h Volume',
+        sortable: true,
+        sortValue: (row) => row.volume,
+        render: (row) => <span className="text-text-secondary">{row.volume}</span>,
+      },
+      {
+        key: 'cap',
+        label: 'Market Cap',
+        render: (row) => <span className="text-text-secondary">{row.cap}</span>,
+      },
+      {
+        key: 'trend',
+        label: '7D',
+        mobileLabel: '7D Trend',
+        render: (row) => <MiniSparkline up={row.change >= 0} />,
+      },
+      {
+        key: 'action',
+        label: 'Action',
+        render: () => (
+          <Link to="/trade" className="btn-outline-accent no-underline">
+            Trade
+          </Link>
+        ),
+      },
+    ],
+    []
+  );
 
   return (
-    <div className="space-y-6">
+    <div className="markets-page space-y-5 md:space-y-6">
       <div>
-        <h1 className="text-xl font-medium text-text-primary mb-1">Markets</h1>
+        <h1 className="text-lg md:text-xl font-medium text-text-primary mb-1">Markets</h1>
         <p className="text-sm text-text-secondary">Browse and trade global assets</p>
       </div>
 
-      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-        <div className="tab-row !inline-flex flex-wrap">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              type="button"
-              className={`!flex-none px-4${category === c ? ' is-active' : ''}`}
-              onClick={() => { setCategory(c); setPage(1); }}
-            >
-              {c}
-            </button>
-          ))}
+      <div className="markets-page__toolbar">
+        <div className="markets-page__categories">
+          <div className="tab-row !inline-flex">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={`!flex-none${category === c ? ' is-active' : ''}`}
+                onClick={() => setCategory(c)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-3 ml-auto w-full lg:w-auto">
-          <div className="relative flex-1 lg:w-56">
+        <div className="markets-page__filters">
+          <div className="markets-page__search-wrap">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
             <input
               type="search"
               placeholder="Search assets…"
-              className="ui-input !pl-9"
+              className="ui-input !pl-9 w-full"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <select
-            className="ui-input !w-auto"
+            className="ui-input markets-page__sort"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
@@ -143,82 +226,15 @@ export default function Markets() {
       </div>
 
       <div className="ui-card p-0 overflow-hidden">
-        {loading ? (
-          <div className="p-6 space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="skeleton h-12 w-full" />
-            ))}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Asset</th>
-                  <th>Price</th>
-                  <th>24h Change</th>
-                  <th>24h Volume</th>
-                  <th>Market Cap</th>
-                  <th>7D</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((r, i) => {
-                  const up = r.change >= 0;
-                  return (
-                    <tr key={r.symbol}>
-                      <td className="text-text-muted">{(page - 1) * perPage + i + 1}</td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <span className="w-8 h-8 rounded-full bg-bg-tertiary flex items-center justify-center text-[10px] font-medium text-accent">
-                            {r.symbol.slice(0, 2)}
-                          </span>
-                          <div>
-                            <p className="font-medium text-sm">{r.name}</p>
-                            <p className="text-xs text-text-muted">{r.symbol}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="font-mono tabular-nums">
-                        {r.type === 'crypto' ? fmtINR(inrFromUsdt(r.price)) : `₹ ${r.price.toLocaleString()}`}
-                      </td>
-                      <td>
-                        <span className={`inline-flex items-center gap-1 ${up ? 'text-profit' : 'text-loss'}`}>
-                          {up ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-                          {fmtPct(r.change)}
-                        </span>
-                      </td>
-                      <td className="text-text-secondary">{r.volume}</td>
-                      <td className="text-text-secondary">{r.cap}</td>
-                      <td><MiniSparkline up={up} /></td>
-                      <td>
-                        <Link to="/trade" className="btn-outline-accent no-underline">Trade</Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!loading && !pageRows.length && (
-          <div className="empty-state py-12">No assets match your filters</div>
-        )}
-
-        <div className="flex items-center justify-between px-4 py-3 border-t border-border text-sm text-text-secondary">
-          <span>Page {page} of {totalPages}</span>
-          <div className="flex gap-2">
-            <button type="button" className="btn-secondary !h-8 !text-xs" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              Previous
-            </button>
-            <button type="button" className="btn-secondary !h-8 !text-xs" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              Next
-            </button>
-          </div>
-        </div>
+        <DataTable
+          columns={columns}
+          data={filtered}
+          loading={loading}
+          rowKey="symbol"
+          emptyMessage="No assets match your filters"
+          defaultPageSize={20}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
       </div>
     </div>
   );

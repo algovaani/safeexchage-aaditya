@@ -11,9 +11,17 @@ const STYLES = {
   not_submitted: 'badge-muted',
   buy: 'badge-green',
   sell: 'badge-red',
+  hold: 'badge-amber',
   deposit: 'badge-green',
   withdrawal: 'badge-amber',
   trade: 'badge-blue',
+  trade_margin_locked: 'badge-amber',
+  trade_profit: 'badge-green',
+  trade_loss: 'badge-red',
+  trade_margin_returned: 'badge-blue',
+  stake_locked: 'badge-amber',
+  stake_reward: 'badge-green',
+  referral_reward: 'badge-green',
 };
 
 export default function StatusBadge({ status, className = '' }) {

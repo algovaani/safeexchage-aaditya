@@ -9,7 +9,8 @@ const r = Router();
 r.use(requireAuth);
 
 r.post('/', validateBody(orderSchema), o.createOrder);
-r.get('/', o.listOrders);
+r.get('/open', o.listOpenOrders);
 r.get('/trades', o.listTrades);
+r.get('/', o.listOrders);
 
 export default r;

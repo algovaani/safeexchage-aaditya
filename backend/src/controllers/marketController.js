@@ -3,8 +3,9 @@ import {
   fetchAllPairPrices,
   fetchTicker,
   fetchTicker24h,
+  getPriceCacheTtlMs,
   normalizeSymbol,
-} from '../services/binanceService.js';
+} from '../services/marketDataProvider.js';
 import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
 import { error, success } from '../utils/response.js';
 
@@ -20,13 +21,15 @@ export async function allPrices(_req, res, next) {
 export async function livePrices(_req, res, next) {
   try {
     const result = await fetchAllPairPrices();
+    const pollMs = getPriceCacheTtlMs();
     res.set('Cache-Control', 'no-store');
     return success(
       res,
       {
         ...result,
-        pollIntervalSeconds: 0.5,
-        hint: 'Poll this endpoint every 500ms for near-live updates',
+        source: result.provider || 'kraken',
+        pollIntervalSeconds: pollMs / 1000,
+        hint: `Prices via ${result.provider || 'kraken'} (CoinGecko fallback if needed)`,
       },
       'Live prices fetched'
     );

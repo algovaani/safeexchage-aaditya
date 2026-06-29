@@ -9,10 +9,12 @@ import {
   Wallet,
   FileText,
   Settings,
+  Gift,
   Search,
   Bell,
   Menu,
   X,
+  Landmark,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
@@ -27,14 +29,18 @@ const NAV = [
   { to: '/dashboard', icon: PieChart, label: 'Portfolio', match: '/dashboard' },
   { to: '/trade', icon: ListOrdered, label: 'Orders', match: '/trade' },
   { to: '/wallet', icon: Wallet, label: 'Wallet' },
+  { to: '/staking', icon: Landmark, label: 'Invest' },
   { to: '/transactions', icon: FileText, label: 'Reports' },
+  { to: '/refer', icon: Gift, label: 'Refer & Earn' },
   { to: '/account/profile', icon: Settings, label: 'Settings' },
 ];
 
 function isNavActive(pathname, item) {
   if (item.label === 'Portfolio' || item.label === 'Orders') return false;
+  if (item.to === '/refer') return pathname === '/refer' || pathname.startsWith('/account/profile/refer');
   if (item.to === '/account/profile') return pathname.startsWith('/account/profile');
   if (item.to === '/wallet') return pathname === '/wallet' || pathname.startsWith('/wallet/') || pathname === '/account';
+  if (item.to === '/staking') return pathname === '/staking';
   return pathname === item.to || (item.to !== '/dashboard' && pathname.startsWith(item.to));
 }
 
@@ -71,7 +77,7 @@ export default function Layout() {
       <aside className={`app-sidebar${sidebarOpen ? ' is-open' : ''}`}>
         <div className="app-sidebar__brand">
           <BrandLogo size="sm" />
-          <button type="button" className="app-sidebar__close lg:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+          <button type="button" className="app-sidebar__close" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
             <X size={18} />
           </button>
         </div>
@@ -110,11 +116,11 @@ export default function Layout() {
 
       <div className="app-main">
         <header className="app-navbar">
-          <button type="button" className="app-navbar__menu lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+          <button type="button" className="app-navbar__menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
             <Menu size={20} />
           </button>
 
-          <NavLink to="/dashboard" className="app-navbar__logo-mobile lg:hidden">
+          <NavLink to="/dashboard" className="app-navbar__logo-mobile">
             <BrandLogo size="sm" />
           </NavLink>
 

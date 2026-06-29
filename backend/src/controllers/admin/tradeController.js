@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { AdminTrade } from '../../models/AdminTrade.js';
 import { UserOrder } from '../../models/UserOrder.js';
 import { TradingPair } from '../../models/TradingPair.js';
-import { fetchTicker } from '../../services/binanceService.js';
+import { fetchTicker } from '../../services/coingeckoService.js';
 import {
   cancelTradeAndReleaseMargins,
   estimateOrderPnl,

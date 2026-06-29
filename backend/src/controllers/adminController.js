@@ -4,14 +4,174 @@ import { Wallet } from '../models/Wallet.js';
 import { ManualPriceData } from '../models/ManualPriceData.js';
 import { Trade } from '../models/Trade.js';
 import { Order } from '../models/Order.js';
+import { KycSubmission } from '../models/KycSubmission.js';
+import { Deposit } from '../models/Deposit.js';
+import { Withdrawal } from '../models/Withdrawal.js';
 import { mergeCandles } from '../services/mergeService.js';
-import { fetchKlines } from '../services/binanceService.js';
+import { fetchKlines } from '../services/marketDataProvider.js';
 import { error, success } from '../utils/response.js';
+import { roundMoney } from '../utils/money.js';
+import {
+  buildDateRangeFilter,
+  getExportLimit,
+  paginatedPayload,
+  parseDatatableQuery,
+  parseObjectId,
+  searchRegex,
+  sendCsvExport,
+} from '../utils/datatable.js';
 
-export async function listUsers(_req, res, next) {
+const USER_EXPORT_COLUMNS = [
+  { key: 'email', label: 'Email', export: (r) => r.email || '' },
+  { key: 'mobile', label: 'Mobile', export: (r) => r.mobile || '' },
+  { key: 'name', label: 'Name', export: (r) => r.name || '' },
+  { key: 'role', label: 'Role' },
+  { key: 'status', label: 'Status' },
+  { key: 'referralCode', label: 'Referral Code', export: (r) => r.referralCode || '' },
+  { key: 'balance', label: 'Balance (USDT)', export: (r) => r.balance ?? 0 },
+  { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
+];
+
+const ORDER_EXPORT_COLUMNS = [
+  { key: 'userLabel', label: 'User', export: (r) => r.userLabel || '' },
+  { key: 'symbol', label: 'Symbol' },
+  { key: 'side', label: 'Side' },
+  { key: 'orderType', label: 'Type' },
+  { key: 'quantity', label: 'Quantity' },
+  { key: 'price', label: 'Price', export: (r) => r.price ?? '' },
+  { key: 'status', label: 'Status' },
+  { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
+];
+
+function buildUserFilter(query, search) {
+  const filter = { ...buildDateRangeFilter(query) };
+  const re = searchRegex(search);
+  if (re) {
+    filter.$or = [{ email: re }, { mobile: re }, { name: re }, { referralCode: re }];
+  }
+  if (query.role) filter.role = query.role;
+  if (query.status) filter.status = query.status;
+  return filter;
+}
+
+export async function overviewStats(_req, res, next) {
   try {
-    const users = await User.find().select('-passwordHash').sort({ createdAt: -1 }).limit(500).lean();
-    return success(res, users, 'Users fetched');
+    const [users, pendingKyc, pendingDeposits, pendingWithdrawals, pendingTx, openOrders, pendingTreasurySweeps] =
+      await Promise.all([
+        User.countDocuments(),
+        KycSubmission.countDocuments({ status: 'pending' }),
+        Deposit.countDocuments({ status: 'pending' }),
+        Withdrawal.countDocuments({ status: 'pending' }),
+        Transaction.countDocuments({ status: 'pending' }),
+        Order.countDocuments({ status: 'open' }),
+        Deposit.countDocuments({
+          type: 'crypto',
+          status: 'approved',
+          treasuryStatus: { $ne: 'swept' },
+        }),
+      ]);
+
+    return success(
+      res,
+      {
+        users,
+        pendingKyc,
+        pendingDeposits,
+        pendingWithdrawals,
+        pendingTx,
+        openOrders,
+        pendingTreasurySweeps,
+      },
+      'Overview stats fetched'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function listUsers(req, res, next) {
+  try {
+    const dt = parseDatatableQuery(req.query);
+    const filter = buildUserFilter(req.query, dt.search);
+    const limit = dt.isExport ? getExportLimit(true) : dt.pageSize;
+    const skip = dt.isExport ? 0 : dt.skip;
+
+    const [users, total] = await Promise.all([
+      User.find(filter).select('-passwordHash').sort(dt.sort).skip(skip).limit(limit).lean(),
+      User.countDocuments(filter),
+    ]);
+
+    const wallets = await Wallet.find({ userId: { $in: users.map((u) => u._id) } }).lean();
+    const walletMap = new Map(wallets.map((w) => [String(w.userId), w]));
+
+    const rows = users.map((u) => {
+      const w = walletMap.get(String(u._id));
+      const balance = roundMoney(w?.balance || 0);
+      const locked = roundMoney(w?.lockedBalance || 0);
+      const available = roundMoney(Math.max(0, (w?.balance || 0) - (w?.lockedBalance || 0)));
+      return {
+        ...u,
+        id: u._id,
+        balance,
+        locked_balance: locked,
+        available_balance: available,
+      };
+    });
+
+    if (dt.isExport) {
+      return sendCsvExport(res, 'users.csv', rows, USER_EXPORT_COLUMNS);
+    }
+
+    return success(res, paginatedPayload({ rows, total, page: dt.page, pageSize: dt.pageSize }), 'Users fetched');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+function buildOrderFilter(query, search) {
+  const filter = { ...buildDateRangeFilter(query) };
+  const re = searchRegex(search);
+  if (re) {
+    const or = [{ symbol: re }, { side: re }, { status: re }, { orderType: re }];
+    const oid = parseObjectId(search);
+    if (oid) or.push({ userId: oid });
+    filter.$or = or;
+  }
+  if (query.status) filter.status = query.status;
+  if (query.side) filter.side = query.side;
+  if (query.orderType) filter.orderType = query.orderType;
+  if (query.symbol) filter.symbol = String(query.symbol).toUpperCase();
+  return filter;
+}
+
+export async function listAllOrders(req, res, next) {
+  try {
+    const dt = parseDatatableQuery(req.query);
+    const filter = buildOrderFilter(req.query, dt.search);
+    const limit = dt.isExport ? getExportLimit(true) : dt.pageSize;
+    const skip = dt.isExport ? 0 : dt.skip;
+
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .populate('userId', 'email mobile name')
+        .sort(dt.sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Order.countDocuments(filter),
+    ]);
+
+    const rows = orders.map((o) => ({
+      ...o,
+      id: o._id,
+      userLabel: o.userId?.email || o.userId?.mobile || String(o.userId?._id || o.userId),
+    }));
+
+    if (dt.isExport) {
+      return sendCsvExport(res, 'orders.csv', rows, ORDER_EXPORT_COLUMNS);
+    }
+
+    return success(res, paginatedPayload({ rows, total, page: dt.page, pageSize: dt.pageSize }), 'Orders fetched');
   } catch (e) {
     return next(e);
   }
@@ -30,15 +190,6 @@ export async function listAllTransactions(_req, res, next) {
   try {
     const txs = await Transaction.find().sort({ createdAt: -1 }).limit(1000).lean();
     return success(res, txs, 'Transactions fetched');
-  } catch (e) {
-    return next(e);
-  }
-}
-
-export async function listAllOrders(_req, res, next) {
-  try {
-    const orders = await Order.find().sort({ createdAt: -1 }).limit(1000).lean();
-    return success(res, orders, 'Orders fetched');
   } catch (e) {
     return next(e);
   }
@@ -107,7 +258,7 @@ export async function upsertManualPrice(req, res, next) {
 
     const io = req.app.get('io');
     if (io) {
-      const binance = await fetchKlines(doc.symbol, doc.interval, {
+      const external = await fetchKlines(doc.symbol, doc.interval, {
         startTime: doc.openTime,
         endTime: doc.openTime,
         limit: 5,
@@ -119,7 +270,7 @@ export async function upsertManualPrice(req, res, next) {
       })
         .sort({ revision: 1 })
         .lean();
-      const merged = mergeCandles(binance.length ? binance : [stubCandle(doc)], manual);
+      const merged = mergeCandles(external.length ? external : [stubCandle(doc)], manual);
       io.to(`m:${doc.symbol}:${doc.interval}`).emit('market:manual:updated', {
         candles: merged,
       });

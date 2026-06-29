@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 import { getApiErrorMessage, withdrawalAPI } from '../services/api.js';
+import { useToast } from '../context/ToastContext.jsx';
 import {
   COIN_COLORS,
   getNetworksForCoin,
@@ -10,6 +11,7 @@ import { WALLET_ASSETS } from '../theme/assets.js';
 import './DepositModal.css';
 
 function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
+  const toast = useToast();
   const [form, setForm] = useState({
     amount: '',
     bank_name: '',
@@ -19,19 +21,21 @@ function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [msg, setMsg] = useState('');
 
   async function submitFiat(e) {
     e.preventDefault();
     setErr('');
-    setMsg('');
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) {
-      setErr('Enter a valid amount.');
+      const message = 'Enter a valid amount.';
+      setErr(message);
+      toast.warning(message);
       return;
     }
     if (amount > available) {
-      setErr('Amount exceeds available balance.');
+      const message = 'Amount exceeds available balance.';
+      setErr(message);
+      toast.warning(message);
       return;
     }
     setBusy(true);
@@ -43,7 +47,6 @@ function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
         ifsc: form.ifsc,
         account_holder: form.account_holder,
       });
-      setMsg('Bank withdrawal submitted. Admin will process your request.');
       onSuccess?.();
       setTimeout(onClose, 1500);
     } catch (ex) {
@@ -115,7 +118,6 @@ function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
       </div>
 
       {err && <p className="deposit-modal__error">{err}</p>}
-      {msg && <p className="deposit-modal__success">{msg}</p>}
 
       <button type="submit" className="deposit-modal__submit deposit-modal__submit--danger" disabled={busy}>
         {busy ? 'Submitting…' : 'Submit for verification'}
@@ -131,6 +133,7 @@ export default function WithdrawModal({
   onClose,
   onSuccess,
 }) {
+  const toast = useToast();
   const [selectedCoin, setSelectedCoin] = useState(initialCoin || 'USDT');
 
   const networks = useMemo(
@@ -143,7 +146,6 @@ export default function WithdrawModal({
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [msg, setMsg] = useState('');
 
   const available = Number(availableBalance) || 0;
 
@@ -161,7 +163,6 @@ export default function WithdrawModal({
     setWalletAddress('');
     setAmount('');
     setErr('');
-    setMsg('');
   }, [selectedCoin, networks]);
 
   useEffect(() => {
@@ -185,14 +186,17 @@ export default function WithdrawModal({
   async function submitCrypto(e) {
     e.preventDefault();
     setErr('');
-    setMsg('');
     const parsed = parseFloat(amount);
     if (!(parsed > 0)) {
-      setErr('Enter a valid amount.');
+      const message = 'Enter a valid amount.';
+      setErr(message);
+      toast.warning(message);
       return;
     }
     if (parsed > available) {
-      setErr('Amount exceeds available balance.');
+      const message = 'Amount exceeds available balance.';
+      setErr(message);
+      toast.warning(message);
       return;
     }
     setBusy(true);
@@ -203,7 +207,6 @@ export default function WithdrawModal({
         network: apiNetwork,
         currency: selectedCoin,
       });
-      setMsg(`${selectedCoin} withdrawal submitted. Admin will verify and process.`);
       setAmount('');
       setWalletAddress('');
       onSuccess?.();
@@ -327,7 +330,6 @@ export default function WithdrawModal({
                   </div>
 
                   {err && <p className="deposit-modal__error">{err}</p>}
-                  {msg && <p className="deposit-modal__success">{msg}</p>}
 
                   <button
                     type="submit"

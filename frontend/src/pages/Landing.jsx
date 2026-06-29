@@ -435,7 +435,7 @@ export default function Landing() {
             and next-generation market access.
           </p>
           <div className="lux-hero__btns">
-            <Link to="/signup" className="lux-btn lux-btn--gold">
+            <Link to="/trade" className="lux-btn lux-btn--gold">
               START TRADING →
             </Link>
           </div>

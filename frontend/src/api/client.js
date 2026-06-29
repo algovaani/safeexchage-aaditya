@@ -2,6 +2,7 @@ export {
   api,
   parseApiResponse,
   setAuthToken,
+  getApiErrorMessage,
   authAPI,
   kycAPI,
   depositAPI,

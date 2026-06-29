@@ -4,7 +4,7 @@ import { UserOrder } from '../models/UserOrder.js';
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { KycSubmission } from '../models/KycSubmission.js';
-import { fetchPriceMap } from '../services/binanceService.js';
+import { fetchPriceMap } from '../services/coingeckoService.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney, storeMoney } from '../utils/money.js';

@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-/** Cached Binance (or external) OHLCV per bucket */
+/** Cached CoinGecko OHLCV per bucket */
 const marketDataSchema = new mongoose.Schema(
   {
     symbol: { type: String, required: true, uppercase: true },
@@ -12,7 +12,7 @@ const marketDataSchema = new mongoose.Schema(
     close: { type: Number, required: true },
     volume: { type: Number, default: 0 },
     isFinal: { type: Boolean, default: false },
-    source: { type: String, default: 'binance' },
+    source: { type: String, default: 'coingecko' },
   },
   { timestamps: true }
 );

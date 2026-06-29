@@ -6,6 +6,8 @@ import {
   adminStakesListValidators,
   createPlanValidators,
   updatePlanValidators,
+  reviewStakeValidators,
+  releasePayoutValidators,
 } from '../../validators/stakingValidators.js';
 
 const r = Router();
@@ -16,5 +18,7 @@ r.post('/plans', createPlanValidators, validateRequest, stakingAdmin.createPlan)
 r.get('/plans', stakingAdmin.getAllPlans);
 r.patch('/plans/:id', updatePlanValidators, validateRequest, stakingAdmin.updatePlan);
 r.get('/stakes', adminStakesListValidators, validateRequest, stakingAdmin.getAllStakes);
+r.patch('/stakes/:id/review', reviewStakeValidators, validateRequest, stakingAdmin.reviewStake);
+r.post('/stakes/:id/release-payout', releasePayoutValidators, validateRequest, stakingAdmin.releaseStakePayout);
 
 export default r;

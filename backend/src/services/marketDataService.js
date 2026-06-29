@@ -1,8 +1,8 @@
 import { MarketData } from '../models/MarketData.js';
-import { fetchKlines, fetchAggTrades, bucketTradesToSecondCandles } from './binanceService.js';
+import { fetchKlines, fetchAggTrades, bucketTradesToSecondCandles } from './marketDataProvider.js';
 import { loadManualForRange, mergeCandles } from './mergeService.js';
 
-export async function persistBinanceKlines(symbol, interval, candles) {
+export async function persistMarketKlines(symbol, interval, candles) {
   const ops = candles.map((c) => ({
     updateOne: {
       filter: { symbol, interval, openTime: c.openTime },
@@ -14,7 +14,7 @@ export async function persistBinanceKlines(symbol, interval, candles) {
           close: c.close,
           volume: c.volume,
           isFinal: c.isFinal,
-          source: 'binance',
+          source: 'coingecko',
         },
       },
       upsert: true,
@@ -23,27 +23,30 @@ export async function persistBinanceKlines(symbol, interval, candles) {
   if (ops.length) await MarketData.bulkWrite(ops, { ordered: false });
 }
 
+/** @deprecated alias */
+export const persistBinanceKlines = persistMarketKlines;
+
 /**
- * Returns merged history for chart + persists raw Binance rows to market_data.
+ * Returns merged history for chart + persists raw CoinGecko rows to market_data.
  */
 export async function getMergedKlines(symbol, interval, { startTime, endTime, limit = 500 }) {
   if (interval === '1s') {
     const trades = await fetchAggTrades(symbol, { limit: 1000 });
-    const binance = bucketTradesToSecondCandles(trades, Math.min(limit, 600));
-    const start = binance[0]?.openTime ?? startTime;
-    const end = binance[binance.length - 1]?.openTime ?? endTime;
+    const external = bucketTradesToSecondCandles(trades, Math.min(limit, 600));
+    const start = external[0]?.openTime ?? startTime;
+    const end = external[external.length - 1]?.openTime ?? endTime;
     if (start == null || end == null) return [];
     const manual = await loadManualForRange(symbol, interval, start, end);
-    return mergeCandles(binance, manual);
+    return mergeCandles(external, manual);
   }
 
-  const binance = await fetchKlines(symbol, interval, { startTime, endTime, limit });
-  await persistBinanceKlines(symbol, interval, binance);
+  const external = await fetchKlines(symbol, interval, { startTime, endTime, limit });
+  await persistMarketKlines(symbol, interval, external);
 
-  const start = binance[0]?.openTime ?? startTime;
-  const end = binance[binance.length - 1]?.openTime ?? endTime;
+  const start = external[0]?.openTime ?? startTime;
+  const end = external[external.length - 1]?.openTime ?? endTime;
   if (start == null || end == null) return [];
 
   const manual = await loadManualForRange(symbol, interval, start, end);
-  return mergeCandles(binance, manual);
+  return mergeCandles(external, manual);
 }

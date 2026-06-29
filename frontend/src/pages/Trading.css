@@ -1,10 +1,14 @@
 /* Professional exchange terminal — Binance-style layout */
 
 .trading-page {
+  --ex-chart-h: clamp(280px, 38vh, 400px);
+  --ex-layout-gap: 0.5rem;
+
   background: var(--ex-bg);
   color: var(--ex-text);
-  padding: 0.5rem;
-  min-height: calc(100vh - 56px);
+  padding: var(--ex-layout-gap);
+  box-sizing: border-box;
+  min-height: calc(100dvh - 56px);
 }
 
 .trading-page label {
@@ -37,13 +41,40 @@
 /* —— Ticker bar —— */
 .ex-ticker {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 1.25rem 2rem;
-  padding: 0.65rem 1rem;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
   background: var(--ex-ticker-bg);
   border-bottom: 1px solid var(--ex-border);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--ex-layout-gap);
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.ex-ticker--scroll {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.ex-ticker__pair-wrap {
+  flex-shrink: 0;
+  padding-right: 0.5rem;
+  border-right: 1px solid var(--ex-border);
+}
+
+.ex-ticker__stats {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem 1.5rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.ex-ticker__stats::-webkit-scrollbar {
+  display: none;
 }
 
 .ex-ticker__pair {
@@ -56,6 +87,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.ex-ticker__stat-block--price .ex-ticker__price {
+  font-size: 1.125rem;
 }
 
 .ex-ticker__stat-label {
@@ -86,28 +122,286 @@
   letter-spacing: 0.02em;
 }
 
+/* —— Mobile section nav —— */
+.ex-mobile-nav {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  gap: 0;
+  margin-bottom: 0.5rem;
+  background: var(--ex-panel);
+  border: 1px solid var(--ex-border);
+  border-radius: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.ex-mobile-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.ex-mobile-nav button {
+  flex: 1;
+  min-width: 4.5rem;
+  padding: 0.55rem 0.65rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ex-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ex-mobile-nav button.is-active {
+  color: var(--ex-text);
+  border-bottom-color: var(--ex-gold);
+  background: var(--ex-panel-2);
+}
+
+.ex-mobile-order-tabs {
+  display: none;
+  grid-column: 1 / -1;
+  gap: 0;
+  margin-bottom: 0.25rem;
+  background: var(--ex-panel);
+  border: 1px solid var(--ex-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ex-mobile-order-tabs button {
+  flex: 1;
+  padding: 0.55rem;
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ex-muted);
+  cursor: pointer;
+}
+
+.ex-mobile-order-tabs button:first-child.is-active {
+  background: var(--ex-buy-soft);
+  color: var(--ex-buy);
+}
+
+.ex-mobile-order-tabs button:last-child.is-active {
+  background: var(--ex-sell-soft);
+  color: var(--ex-sell);
+}
+
 /* —— Grid —— */
 .ex-grid {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 260px;
-  gap: 0.5rem;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  gap: var(--ex-layout-gap);
   align-items: start;
+}
+
+@media (min-width: 1400px) {
+  .ex-grid {
+    grid-template-columns: 240px minmax(0, 1fr) 300px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .ex-grid {
+    grid-template-columns: 200px minmax(0, 1fr) 240px;
+  }
 }
 
 .ex-center {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--ex-layout-gap);
 }
 
-@media (max-width: 1200px) {
-  .ex-grid {
-    grid-template-columns: 1fr;
+/* —— History / My Orders (below fold) —— */
+.ex-history {
+  margin-top: var(--ex-layout-gap);
+  display: flex;
+  flex-direction: column;
+}
+
+.ex-history__title {
+  padding: 0.65rem 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-bottom: 1px solid var(--ex-border);
+  background: var(--ex-panel-2);
+}
+
+@media (min-width: 1024px) {
+  .ex-markets {
+    position: sticky;
+    top: 0;
+    max-height: calc(100dvh - 72px);
   }
 
-  .ex-markets {
+  .ex-side-stack {
+    position: sticky;
+    top: 0;
+  }
+
+  .ex-book {
+    max-height: 360px;
+  }
+
+  .ex-tape {
     max-height: 280px;
+  }
+
+  .ex-history {
+    min-height: 280px;
+  }
+
+  .ex-my-orders__scroll {
+    min-height: 220px;
+    max-height: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .trading-page {
+    --ex-chart-h: min(42vh, 320px);
+    padding: 0.35rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .trading-page--orders-view .ex-grid {
+    display: none;
+  }
+
+  .ex-mobile-nav {
+    display: flex;
+  }
+
+  .ex-grid {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
+
+  .ex-grid > .ex-zone,
+  .ex-center > .ex-zone {
+    display: none;
+  }
+
+  .ex-grid > .ex-zone.is-active,
+  .ex-center > .ex-zone.is-active {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .ex-center > .ex-zone--chart.is-active {
+    display: block;
+  }
+
+  .ex-history {
+    display: none;
+  }
+
+  .ex-history.is-active {
+    display: flex;
+  }
+
+  .ex-markets.is-active {
+    max-height: min(70vh, 560px);
+  }
+
+  .ex-side-stack.is-active {
+    gap: 0.35rem;
+  }
+
+  .ex-chart-toolbar__tools--desktop {
+    display: none;
+  }
+
+  .ex-chart-area {
+    min-height: 0;
+  }
+
+  .ex-chart-wrap {
+    height: var(--ex-chart-h);
+    min-height: 200px;
+  }
+
+  .ex-orders {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .ex-mobile-order-tabs {
+    display: flex;
+  }
+
+  .ex-order-card--hidden-mobile {
+    display: none !important;
+  }
+
+  .ex-my-orders__scroll {
+    max-height: min(55vh, 420px);
+  }
+
+  .ex-book {
+    max-height: min(40vh, 320px);
+  }
+
+  .ex-tape {
+    max-height: min(35vh, 260px);
+  }
+}
+
+@media (max-width: 480px) {
+  .ex-ticker {
+    padding: 0.5rem 0.65rem;
+    gap: 0.65rem;
+  }
+
+  .ex-ticker__pair {
+    font-size: 1rem;
+  }
+
+  .ex-ticker__stats {
+    gap: 1rem;
+  }
+
+  .ex-ticker__stat-block span:last-child {
+    font-size: 0.8rem;
+  }
+
+  .ex-ticker__stat-block--price .ex-ticker__price {
+    font-size: 1rem;
+  }
+
+  .ex-chart-toolbar {
+    padding: 0.35rem 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .ex-chart-toolbar__intervals button {
+    padding: 0.2rem 0.35rem;
+    font-size: 0.68rem;
+  }
+
+  .ex-my-orders__tabs button,
+  .ex-my-orders__subtabs button {
+    padding: 0.45rem 0.65rem;
+    font-size: 0.7rem;
+  }
+
+  .ex-my-orders table {
+    font-size: 0.68rem;
+  }
+
+  .ex-my-orders th,
+  .ex-my-orders td {
+    padding: 0.35rem 0.45rem;
   }
 }
 
@@ -132,7 +426,6 @@
 .ex-markets {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 120px);
 }
 
 .ex-markets__tabs {
@@ -231,19 +524,22 @@
 
 /* —— Chart —— */
 .ex-chart-area {
-  min-height: 380px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ex-chart-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.4rem 0.65rem;
+  gap: 0.5rem;
+  padding: 0.3rem 0.55rem;
   border-bottom: 1px solid var(--ex-border);
   background: var(--ex-panel-2);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .ex-chart-toolbar__left {
@@ -289,19 +585,33 @@
 }
 
 .ex-chart-wrap {
-  height: 380px;
+  height: var(--ex-chart-h) !important;
+  max-height: var(--ex-chart-h);
+  min-height: 0 !important;
   width: 100%;
-  background: var(--ex-chart-bg);
+  flex-shrink: 0;
+  background: #161a1e;
+  border: none;
+  border-radius: 0;
+}
+
+.trading-page .chart-wrap {
+  height: var(--ex-chart-h) !important;
+  max-height: var(--ex-chart-h);
+  min-height: 0 !important;
+  border: none;
+  border-radius: 0;
 }
 
 /* —— Order forms —— */
 .ex-orders {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  gap: var(--ex-layout-gap);
+  flex-shrink: 0;
 }
 
-@media (max-width: 700px) {
+@media (min-width: 1024px) and (max-width: 1100px) {
   .ex-orders {
     grid-template-columns: 1fr;
   }
@@ -309,6 +619,24 @@
 
 .ex-order-card {
   padding: 0.75rem;
+}
+
+.ex-order-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.ex-order-card__head h3 {
+  margin: 0;
+}
+
+.ex-order-card__head .ex-balance-line {
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .ex-order-card h3 {
@@ -459,9 +787,77 @@
 }
 
 .ex-my-orders__scroll {
-  min-height: 200px;
-  max-height: 280px;
+  min-height: 0;
+  max-height: 320px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ex-my-orders__table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ex-my-orders__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--ex-border);
+  background: var(--ex-panel-2);
+}
+
+.ex-my-orders__search {
+  flex: 1;
+  min-width: 140px;
+  font-size: 0.75rem;
+}
+
+.ex-my-orders__pagesize {
+  width: auto;
+  min-width: 90px;
+  font-size: 0.75rem;
+}
+
+.ex-my-orders__loading {
+  padding: 2rem;
+  text-align: center;
+  color: var(--ex-muted);
+  font-size: 0.8rem;
+}
+
+.ex-my-orders__pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-top: 1px solid var(--ex-border);
+  font-size: 0.7rem;
+  color: var(--ex-muted);
+  background: var(--ex-panel-2);
+}
+
+.ex-my-orders__pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ex-my-orders__pagination-actions button {
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--ex-border);
+  border-radius: 4px;
+  background: var(--ex-input-bg);
+  color: var(--ex-text);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.ex-my-orders__pagination-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .ex-my-orders__tabs,
@@ -527,6 +923,16 @@
   color: var(--ex-muted);
 }
 
+.ex-status-badge--buy {
+  background: var(--ex-buy-soft);
+  color: var(--ex-buy);
+}
+
+.ex-status-badge--sell {
+  background: var(--ex-sell-soft, rgba(246, 70, 93, 0.12));
+  color: var(--ex-sell, #f6465d);
+}
+
 .ex-note {
   margin: 0.5rem 0.65rem;
   padding: 0.5rem 0.75rem;
@@ -539,11 +945,68 @@
 .ex-side-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--ex-layout-gap);
+  min-height: 0;
 }
 
 .ex-empty-row {
   text-align: center;
   padding: 1.25rem !important;
   color: var(--ex-muted);
+}
+
+.ex-guest-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem 0.5rem;
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: rgba(240, 185, 11, 0.08);
+  border: 1px solid rgba(240, 185, 11, 0.25);
+  font-size: 0.8rem;
+  color: var(--ex-muted);
+  text-align: center;
+}
+
+.ex-guest-banner a {
+  color: var(--ex-accent, #f0b90b);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ex-guest-banner a:hover {
+  text-decoration: underline;
+}
+
+.ex-markets__login-link,
+.ex-balance-line__link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ex-accent, #f0b90b);
+  text-decoration: none;
+}
+
+.ex-markets__login-link:hover,
+.ex-balance-line__link:hover {
+  text-decoration: underline;
+}
+
+.ex-my-orders__guest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 160px;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--ex-muted);
+  font-size: 0.85rem;
+}
+
+.ex-my-orders__guest p {
+  margin: 0;
 }

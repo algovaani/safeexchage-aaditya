@@ -3,6 +3,12 @@ import mongoose from 'mongoose';
 const passwordOtpSchema = new mongoose.Schema(
   {
     identifier: { type: String, required: true, index: true },
+    purpose: {
+      type: String,
+      enum: ['login', 'register', 'password_reset'],
+      default: 'login',
+      index: true,
+    },
     otpHash: { type: String, required: true },
     expiresAt: { type: Date, required: true },
     used: { type: Boolean, default: false },

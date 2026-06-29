@@ -1,6 +1,11 @@
 import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { roundMoney } from '../utils/money.js';
+import {
+  completeLinkedTransaction,
+  createPendingWithdrawalTransaction,
+  rejectLinkedTransaction,
+} from './transactionService.js';
 
 export function formatWithdrawal(req, doc, { includeUser = false } = {}) {
   const payload = {
@@ -19,6 +24,7 @@ export function formatWithdrawal(req, doc, { includeUser = false } = {}) {
     adminNote: doc.adminNote || '',
     transactionId: doc.transactionId || null,
     submittedAt: doc.createdAt,
+    createdAt: doc.createdAt,
     reviewedAt: doc.reviewedAt || null,
   };
 
@@ -97,21 +103,32 @@ export async function approveWithdrawal(withdrawal, reviewedBy) {
     throw Object.assign(new Error('Insufficient balance'), { status: 400 });
   }
 
-  const transaction = await Transaction.create({
-    userId: withdrawal.userId,
-    type: 'withdrawal',
-    amount: parsed,
-    balanceAfter: roundMoney(wallet.balance),
-    currency: withdrawal.currency || 'USDT',
-    status: 'completed',
-    method: withdrawal.type === 'crypto' ? 'crypto' : 'fiat',
-    reference:
-      withdrawal.type === 'crypto'
-        ? withdrawal.walletAddress
-        : withdrawal.accountNumber || String(withdrawal._id),
-    withdrawalId: withdrawal._id,
-    adminNote: '',
-  });
+  let transaction;
+  if (withdrawal.transactionId) {
+    transaction = await completeLinkedTransaction(withdrawal, {
+      balanceAfter: wallet.balance,
+      status: 'completed',
+    });
+  }
+
+  if (!transaction) {
+    transaction = await Transaction.create({
+      userId: withdrawal.userId,
+      type: 'withdrawal',
+      amount: parsed,
+      balanceAfter: roundMoney(wallet.balance),
+      currency: withdrawal.currency || 'USDT',
+      status: 'completed',
+      method: withdrawal.type === 'crypto' ? 'crypto' : 'fiat',
+      reference:
+        withdrawal.type === 'crypto'
+          ? withdrawal.walletAddress
+          : withdrawal.accountNumber || String(withdrawal._id),
+      withdrawalId: withdrawal._id,
+      adminNote: '',
+    });
+    withdrawal.transactionId = transaction._id;
+  }
 
   withdrawal.status = 'approved';
   withdrawal.reviewedBy = reviewedBy;
@@ -128,6 +145,7 @@ export async function rejectWithdrawal(withdrawal, reviewedBy, note = '') {
   }
 
   await releaseWithdrawalFunds(withdrawal.userId, withdrawal.amount);
+  await rejectLinkedTransaction(withdrawal, note);
 
   withdrawal.status = 'rejected';
   withdrawal.adminNote = note?.trim() || '';

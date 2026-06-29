@@ -169,6 +169,15 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+@media (min-width: 1024px) {
+  .app-navbar__menu,
+  .app-navbar__logo-mobile,
+  .app-sidebar__close {
+    display: none !important;
+  }
 }
 
 .app-navbar__logo-mobile {
@@ -309,8 +318,9 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .app-content {
     padding: 1rem 0.75rem 1.5rem;
+    overflow-x: hidden;
   }
 }

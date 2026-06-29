@@ -5,6 +5,51 @@
 | `https://safexchange.io` | Frontend (Vite build from `frontend/`) |
 | `https://api.safexchange.io` | Backend API + WebSocket |
 
+## CORS error in browser (most common)
+
+If the console shows **"blocked by CORS policy"** or **net::ERR_FAILED** on `api.safexchange.io`, check the API first:
+
+```bash
+curl -s https://api.safexchange.io/api/health
+```
+
+| Response | Meaning |
+|----------|---------|
+| JSON `{"success":true,...}` | API is up — rebuild frontend or check `CORS_ORIGIN` |
+| **503 / 50X HTML** from Apache | **Node is not running** or Apache proxy port is wrong — fix below |
+
+The browser reports CORS when Apache returns an error page **without** `Access-Control-Allow-Origin`.
+
+### Fix 503 on api.safexchange.io
+
+1. SSH into the API server.
+2. Start the backend (port **5001** must match Apache proxy):
+
+```bash
+cd /path/to/safeexchage-aaditya/backend
+cp .env.example .env   # if missing — then edit
+# Required in .env:
+#   NODE_ENV=production
+#   PORT=5001
+#   MONGODB_URI=mongodb+srv://...
+#   JWT_SECRET=long-random-string
+#   CORS_ORIGIN=https://safexchange.io,https://www.safexchange.io
+#   TRUST_PROXY=1
+
+bash ../deploy/start-api.sh
+# Or: pm2 start ecosystem.config.cjs
+```
+
+3. Apache must proxy to `http://127.0.0.1:5001` — see `deploy/apache-api.safexchange.io.conf`.
+
+```bash
+sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers
+sudo systemctl reload apache2
+curl -s https://api.safexchange.io/api/health
+```
+
+4. MongoDB Atlas: allow the server IP (or `0.0.0.0/0` for testing).
+
 ## Frontend `.env.production`
 
 ```env
@@ -31,6 +76,8 @@ FRONTEND_URL=https://safexchange.io
 ```
 
 Restart backend after changing `CORS_ORIGIN`.
+
+Set `TRUST_PROXY=1` when the API runs behind Nginx/Apache so rate limits apply per user IP, not one shared bucket.
 
 ```bash
 cd backend && npm install && npm start

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import * as deposit from '../controllers/depositController.js';
+import * as moralisWebhook from '../controllers/moralisWebhookController.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 import { fiatProofUpload, removeFiatProof } from '../middleware/fiatDepositUpload.js';
 import { validateRequest } from '../middleware/validateRequest.js';
@@ -30,7 +31,9 @@ function handleFiatUpload(req, res, next) {
   });
 }
 
+depositRouter.post('/moralis/webhook', moralisWebhook.moralisWebhook);
 depositRouter.get('/platform-info', authMiddleware, deposit.platformInfo);
+depositRouter.get('/addresses', authMiddleware, deposit.getUserDepositAddresses);
 depositRouter.get('/crypto/address', authMiddleware, deposit.cryptoAddress);
 depositRouter.post(
   '/crypto/submit',

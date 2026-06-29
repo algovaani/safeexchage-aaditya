@@ -8,6 +8,7 @@ export const TRADING_PAIRS = [
   { symbol: 'DOGEUSDT', displayPair: 'DOGE/USDT' },
   { symbol: 'ADAUSDT', displayPair: 'ADA/USDT' },
   { symbol: 'TRXUSDT', displayPair: 'TRX/USDT' },
+  { symbol: 'POLUSDT', displayPair: 'POL/USDT' },
 ];
 
 export const TRADING_PAIR_SYMBOLS = TRADING_PAIRS.map((p) => p.symbol);

@@ -5,7 +5,7 @@ import { UserOrder } from '../models/UserOrder.js';
 import { AdminTrade } from '../models/AdminTrade.js';
 import { UserStake } from '../models/UserStake.js';
 import { StakingPlan } from '../models/StakingPlan.js';
-import { fetchPriceMap } from '../services/binanceService.js';
+import { fetchPriceMap } from '../services/coingeckoService.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
@@ -110,7 +110,7 @@ export async function getPortfolio(req, res, next) {
         .sort({ closedAt: -1, createdAt: -1 })
         .limit(20)
         .lean(),
-      UserStake.find({ userId, status: { $in: ['active', 'matured'] } })
+      UserStake.find({ userId, status: { $in: ['active', 'matured', 'pending'] } })
         .sort({ createdAt: -1 })
         .lean(),
       Transaction.find({ userId }).sort({ createdAt: -1 }).limit(10).lean(),
@@ -179,7 +179,12 @@ export async function getPortfolio(req, res, next) {
       const plan = planMap.get(String(stake.planId));
       const daysElapsed = daysBetween(stake.startDate, today);
       const daysRemaining = Math.max(0, daysBetween(today, stake.maturityDate));
-      const earnedSoFar = calculateEarnedSoFar(stake.amount, stake.apyPercent, daysElapsed);
+      const earnedSoFar = calculateEarnedSoFar(
+        stake.amount,
+        stake.apyPercent,
+        stake.lockDays,
+        daysElapsed
+      );
 
       return {
         id: stake._id,

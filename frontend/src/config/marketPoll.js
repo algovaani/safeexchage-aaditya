@@ -1,2 +1,2 @@
-/** Minimum market price refresh interval (ms) */
-export const MARKET_POLL_MS = 500;
+/** CoinGecko price poll interval (ms) — match backend COINGECKO_PRICE_CACHE_MS default */
+export const MARKET_POLL_MS = 12_000;

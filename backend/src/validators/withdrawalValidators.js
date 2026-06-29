@@ -1,4 +1,5 @@
 import { body, query } from 'express-validator';
+import { datatableQueryValidators } from './adminListValidators.js';
 
 export function isValidWalletAddress(address, network) {
   const addr = String(address).trim();
@@ -91,8 +92,7 @@ export const verifyWithdrawalValidators = [
 ];
 
 export const adminWithdrawalListValidators = [
+  ...datatableQueryValidators,
   query('type').optional().isIn(['crypto', 'fiat']),
   query('status').optional().isIn(['pending', 'approved', 'rejected']),
-  query('from').optional().isISO8601().withMessage('from must be a valid ISO date'),
-  query('to').optional().isISO8601().withMessage('to must be a valid ISO date'),
 ];

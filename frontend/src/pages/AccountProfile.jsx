@@ -3,10 +3,12 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Check, CheckCircle, Clock, XCircle, Loader2, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
+import { useToast } from '../context/ToastContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
 import Input from '../components/ui/Input.jsx';
 import FileUploadZone from '../components/ui/FileUploadZone.jsx';
+import ReferEarn from './ReferEarn.jsx';
 
 function ProfileTab() {
   const { user } = useAuth();
@@ -183,10 +185,10 @@ function KycStepIndicator({ currentStep }) {
 }
 
 function KycTab() {
+  const toast = useToast();
   const [docType, setDocType] = useState('passport');
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [filesReady, setFilesReady] = useState({ doc_front: false, selfie: false, address_proof: false });
 
@@ -209,7 +211,6 @@ function KycTab() {
   async function onSubmit(e) {
     e.preventDefault();
     setErr('');
-    setMsg('');
     setBusy(true);
     try {
       const form = new FormData(e.target);
@@ -217,10 +218,10 @@ function KycTab() {
       await api.post('/kyc/submit', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setMsg('KYC submitted. Admin will review shortly.');
       await loadStatus();
     } catch (ex) {
-      setErr(ex.response?.data?.message || 'Could not submit KYC');
+      const message = ex.response?.data?.message || ex.message || 'Could not submit KYC';
+      setErr(message);
     } finally {
       setBusy(false);
     }
@@ -311,7 +312,6 @@ function KycTab() {
               </div>
 
               {err && <p className="text-sm text-loss mb-3">{err}</p>}
-              {msg && <p className="text-sm text-profit mb-3">{msg}</p>}
 
               <button
                 type="submit"
@@ -375,6 +375,7 @@ export default function AccountProfile() {
     { to: '/account/profile', end: true, label: 'Profile' },
     { to: '/account/profile/security', label: 'Security' },
     { to: '/account/profile/kyc', label: 'KYC Verification' },
+    { to: '/account/profile/refer', label: 'Refer & Earn' },
     { to: '/account/profile/notifications', label: 'Notifications' },
     { to: '/account/profile/preferences', label: 'Preferences' },
   ];
@@ -415,7 +416,7 @@ export default function AccountProfile() {
             <Route path="api" element={<Navigate to="/account/profile" replace />} />
             <Route path="preferences" element={<PlaceholderTab title="Preferences" />} />
             <Route path="whitelist" element={<PlaceholderTab title="Whitelist" />} />
-            <Route path="refer" element={<PlaceholderTab title="Refer & Earn" />} />
+            <Route path="refer" element={<ReferEarn embedded />} />
             <Route path="support" element={<PlaceholderTab title="Support" />} />
             <Route path="*" element={<Navigate to="/account/profile" replace />} />
           </Routes>

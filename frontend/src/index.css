@@ -303,8 +303,8 @@ html.light {
 }
 
 .chart-wrap {
-  height: 420px;
   width: 100%;
+  min-height: 180px;
   border-radius: var(--radius-card);
   overflow: hidden;
   border: 0.5px solid var(--border);

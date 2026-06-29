@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { QRCodeSVG } from 'qrcode.react';
-import { Copy, Loader2 } from 'lucide-react';
-import { depositAPI, getApiErrorMessage } from '../services/api.js';
-import {
-  COIN_COLORS,
-  FIAT_DEPOSIT_SYMBOLS,
-  getNetworksForCoin,
-  txnHashPlaceholder,
-} from '../config/depositNetworks.js';
+import { Loader2 } from 'lucide-react';
+import { depositAPI } from '../services/api.js';
+import { useToast } from '../context/ToastContext.jsx';
+import { COIN_COLORS, FIAT_DEPOSIT_SYMBOLS } from '../config/depositNetworks.js';
+import { isCryptoDepositSupported } from '../config/cryptoDepositChains.js';
 import { WALLET_ASSETS } from '../theme/assets.js';
+import CryptoDepositView from '../components/CryptoDepositView.jsx';
 import Input from '../components/ui/Input.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
+import { fmtUSD } from '../utils/format.js';
+import '../components/DepositModal.css';
 
 const FIAT_ONLY = FIAT_DEPOSIT_SYMBOLS;
 
 export default function Deposit() {
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const coinParam = (searchParams.get('coin') || 'USDT').toUpperCase();
 
@@ -25,28 +25,22 @@ export default function Deposit() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
 
-  const networks = useMemo(() => getNetworksForCoin(selectedCoin, platform), [selectedCoin, platform]);
-  const [chainId, setChainId] = useState(networks?.[0]?.id ?? '');
-
-  const chain = networks?.find((n) => n.id === chainId) || networks?.[0];
-  const address = chain?.address || '';
-  const apiNetwork = chain?.apiNetwork || 'TRC20';
   const coinColor = COIN_COLORS[selectedCoin] || '#f0b90b';
+  const cryptoSupported = isCryptoDepositSupported(selectedCoin);
 
-  const [cryptoForm, setCryptoForm] = useState({ amount: '', txn_hash: '' });
   const [fiatForm, setFiatForm] = useState({
     amount: '',
     bank_name: '',
     account_number: '',
+    branch: '',
     utr_number: '',
   });
   const [proof, setProof] = useState(null);
 
   const cryptoCoins = useMemo(
-    () => WALLET_ASSETS.map((a) => a.symbol).filter((s) => !FIAT_ONLY.has(s)),
+    () => WALLET_ASSETS.map((a) => a.symbol).filter((s) => !FIAT_ONLY.has(s) && isCryptoDepositSupported(s)),
     []
   );
 
@@ -54,10 +48,6 @@ export default function Deposit() {
     setSelectedCoin(coinParam);
     setTab(FIAT_ONLY.has(coinParam) ? 'fiat' : 'crypto');
   }, [coinParam]);
-
-  useEffect(() => {
-    setChainId(networks?.[0]?.id ?? '');
-  }, [selectedCoin, networks]);
 
   async function loadData() {
     setLoading(true);
@@ -86,37 +76,15 @@ export default function Deposit() {
     setSearchParams(sym === 'USDT' ? {} : { coin: sym });
     setTab(FIAT_ONLY.has(sym) ? 'fiat' : 'crypto');
     setErr('');
-    setMsg('');
-  }
-
-  async function submitCrypto(e) {
-    e.preventDefault();
-    setErr('');
-    setMsg('');
-    setBusy(true);
-    try {
-      await depositAPI.submitCrypto({
-        amount: parseFloat(cryptoForm.amount),
-        txn_hash: cryptoForm.txn_hash.trim(),
-        network: apiNetwork,
-        currency: selectedCoin,
-      });
-      setCryptoForm({ amount: '', txn_hash: '' });
-      setMsg(`${selectedCoin} deposit submitted. Admin will verify your transaction.`);
-      await loadData();
-    } catch (ex) {
-      setErr(getApiErrorMessage(ex));
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function submitFiat(e) {
     e.preventDefault();
     setErr('');
-    setMsg('');
     if (!proof) {
-      setErr('Payment proof (screenshot or PDF) is required.');
+      const message = 'Payment proof (screenshot or PDF) is required.';
+      setErr(message);
+      toast.warning(message);
       return;
     }
     setBusy(true);
@@ -125,22 +93,18 @@ export default function Deposit() {
       fd.append('amount', fiatForm.amount);
       fd.append('bank_name', fiatForm.bank_name);
       fd.append('account_number', fiatForm.account_number);
+      fd.append('branch', fiatForm.branch);
       fd.append('utr_number', fiatForm.utr_number);
       fd.append('payment_proof', proof);
       await depositAPI.submitFiat(fd);
-      setFiatForm({ amount: '', bank_name: '', account_number: '', utr_number: '' });
+      setFiatForm({ amount: '', bank_name: '', account_number: '', branch: '', utr_number: '' });
       setProof(null);
-      setMsg('Bank transfer submitted. Admin will verify your payment proof.');
       await loadData();
     } catch (ex) {
-      setErr(getApiErrorMessage(ex));
+      setErr(ex.message || 'Failed to submit deposit');
     } finally {
       setBusy(false);
     }
-  }
-
-  function copyAddress() {
-    if (address) navigator.clipboard.writeText(address);
   }
 
   const bank = platform?.bank || {};
@@ -161,8 +125,8 @@ export default function Deposit() {
             </h1>
             <p className="text-sm text-text-secondary">
               {tab === 'fiat'
-                ? 'Bank transfer — admin approval required'
-                : `Send ${selectedCoin} on ${chain?.label || 'selected network'}`}
+                ? 'Transfer to platform bank account, then submit proof for admin approval'
+                : 'Send crypto to platform wallet, then submit TX hash for approval'}
             </p>
           </div>
         </div>
@@ -208,89 +172,16 @@ export default function Deposit() {
       )}
 
       {tab === 'crypto' && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4">
-          <div className="ui-card space-y-4">
-            <h2 className="text-sm font-medium text-text-primary">
-              {selectedCoin} deposit address
-            </h2>
-            <p className="text-xs text-amber">
-              Send only {selectedCoin} on the selected network. Wrong network may result in lost funds.
-            </p>
-
-            {networks && networks.length > 1 && (
-              <div>
-                <label className="ui-label">Network</label>
-                <select
-                  className="ui-input"
-                  value={chainId}
-                  onChange={(e) => setChainId(e.target.value)}
-                >
-                  {networks.map((n) => (
-                    <option key={n.id} value={n.id}>
-                      {n.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="p-3 bg-bg-tertiary rounded-xl border border-border">
-              <p className="text-[11px] uppercase tracking-wide text-text-muted mb-1">
-                Platform wallet ({chain?.label || apiNetwork})
-              </p>
-              <div className="flex items-start gap-2">
-                <code className="text-xs break-all flex-1 text-text-primary">{address || '—'}</code>
-                <button
-                  type="button"
-                  className="btn-secondary !h-8 !px-2 shrink-0"
-                  onClick={copyAddress}
-                  disabled={!address}
-                  aria-label="Copy address"
-                >
-                  <Copy size={14} />
-                </button>
-              </div>
+        <div className="ui-card">
+          {cryptoSupported ? (
+            <div className="deposit-modal deposit-modal--embedded">
+              <CryptoDepositView coin={selectedCoin} onSubmitted={loadData} />
             </div>
-
-            <form onSubmit={submitCrypto} className="space-y-4 pt-2">
-              <Input
-                label={`Amount (${selectedCoin})`}
-                type="number"
-                step="any"
-                min="0"
-                placeholder="100.00"
-                value={cryptoForm.amount}
-                onChange={(e) => setCryptoForm((f) => ({ ...f, amount: e.target.value }))}
-                required
-              />
-              <Input
-                label="Transaction hash"
-                placeholder={txnHashPlaceholder(apiNetwork)}
-                value={cryptoForm.txn_hash}
-                onChange={(e) => setCryptoForm((f) => ({ ...f, txn_hash: e.target.value }))}
-                required
-              />
-              <button type="submit" className="btn-primary w-full" disabled={busy || !address}>
-                {busy ? 'Submitting…' : `Submit ${selectedCoin} deposit`}
-              </button>
-            </form>
-          </div>
-
-          <div className="ui-card flex flex-col items-center justify-center gap-3 p-6">
-            <p className="text-sm font-medium text-text-primary">Scan to deposit {selectedCoin}</p>
-            {address ? (
-              <div className="p-2 bg-white rounded-xl">
-                <QRCodeSVG value={address} size={180} level="M" includeMargin />
-              </div>
-            ) : (
-              <p className="text-sm text-text-muted">Address not configured</p>
-            )}
-            <ol className="text-xs text-text-secondary space-y-1 list-decimal list-inside w-full max-w-xs">
-              <li>Scan QR or copy address</li>
-              <li>Send {selectedCoin} from your wallet</li>
-              <li>Submit transaction hash below</li>
-            </ol>
-          </div>
+          ) : (
+            <p className="text-sm text-loss">
+              On-chain deposit for {selectedCoin} is not available. Choose BNB, ETH, TRX, or USDT.
+            </p>
+          )}
         </div>
       )}
 
@@ -302,12 +193,14 @@ export default function Deposit() {
               <p><span className="text-text-muted">Bank:</span> {bank.name || '—'}</p>
               <p><span className="text-text-muted">Account:</span> {bank.account || '—'}</p>
               <p><span className="text-text-muted">IFSC:</span> {bank.ifsc || '—'}</p>
+              <p><span className="text-text-muted">Branch:</span> {bank.branch || '—'}</p>
               <p><span className="text-text-muted">Account holder:</span> {bank.holder || '—'}</p>
             </div>
             <form onSubmit={submitFiat} className="space-y-4">
               <Input label="Amount (USDT equivalent)" type="number" step="any" min="0" value={fiatForm.amount} onChange={(e) => setFiatForm((f) => ({ ...f, amount: e.target.value }))} required />
               <Input label="Your bank name" value={fiatForm.bank_name} onChange={(e) => setFiatForm((f) => ({ ...f, bank_name: e.target.value }))} required />
               <Input label="Your account number" value={fiatForm.account_number} onChange={(e) => setFiatForm((f) => ({ ...f, account_number: e.target.value }))} required />
+              <Input label="Your branch" value={fiatForm.branch} onChange={(e) => setFiatForm((f) => ({ ...f, branch: e.target.value }))} />
               <Input label="UTR / reference number" value={fiatForm.utr_number} onChange={(e) => setFiatForm((f) => ({ ...f, utr_number: e.target.value }))} required />
               <div>
                 <label className="ui-label">Payment proof</label>
@@ -323,9 +216,6 @@ export default function Deposit() {
 
       {err && (
         <p className="text-sm text-loss bg-loss/10 border border-loss/20 rounded-xl px-4 py-3">{err}</p>
-      )}
-      {msg && (
-        <p className="text-sm text-profit bg-profit/10 border border-profit/20 rounded-xl px-4 py-3">{msg}</p>
       )}
 
       <div className="ui-card p-0 overflow-hidden">
@@ -349,7 +239,14 @@ export default function Deposit() {
                 <tr key={d.id}>
                   <td><strong>{d.currency || 'USDT'}</strong></td>
                   <td className="capitalize">{d.type}</td>
-                  <td className="tabular-nums">{d.amount} {d.currency || 'USDT'}</td>
+                  <td className="tabular-nums">
+                    {d.amount} {d.currency || 'USDT'}
+                    {d.usdtAmount != null && d.currency !== 'USDT' && (
+                      <span className="block text-xs text-text-muted">
+                        ≈ {fmtUSD(d.usdtAmount)} USDT
+                      </span>
+                    )}
+                  </td>
                   <td className="text-xs text-text-secondary max-w-[200px] truncate">
                     {d.type === 'crypto' ? d.txnHash || '—' : d.utrNumber || '—'}
                   </td>

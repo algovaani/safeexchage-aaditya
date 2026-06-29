@@ -1,4 +1,5 @@
 import { body, query } from 'express-validator';
+import { datatableQueryValidators } from './adminListValidators.js';
 
 const NETWORKS = ['TRC20', 'ERC20', 'BEP20', 'BSC', 'ETH', 'TRX', 'SOL', 'DOGE', 'POLYGON'];
 
@@ -25,14 +26,18 @@ export const cryptoSubmitValidators = [
   body('txn_hash')
     .trim()
     .notEmpty()
-    .withMessage('txn_hash is required'),
+    .withMessage('txn_hash is required')
+    .isLength({ min: 8, max: 128 }),
+  body('from_address').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('user_wallet_address').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
   body('network')
     .trim()
     .notEmpty()
     .withMessage('network is required')
     .isLength({ max: 32 }),
   body().custom((_, { req }) => {
-    if (!isValidTxnHash(req.body.txn_hash, req.body.network)) {
+    const hash = req.body.txn_hash?.trim();
+    if (hash && !isValidTxnHash(hash, req.body.network)) {
       throw new Error('Invalid txn_hash format for the selected network');
     }
     return true;
@@ -59,14 +64,15 @@ export const fiatSubmitValidators = [
     .notEmpty()
     .withMessage('account_number is required')
     .isLength({ max: 64 }),
+  body('branch').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
 ];
 
 export const verifyDepositValidators = [
   body('action')
     .trim()
     .notEmpty()
-    .isIn(['approve', 'reject'])
-    .withMessage('action must be approve or reject'),
+    .isIn(['approve', 'reject', 'cancel'])
+    .withMessage('action must be approve, reject, or cancel'),
   body('note').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
   body().custom((_, { req }) => {
     if (req.body.action === 'reject' && !req.body.note?.trim()) {
@@ -77,8 +83,16 @@ export const verifyDepositValidators = [
 ];
 
 export const adminDepositListValidators = [
+  ...datatableQueryValidators,
   query('type').optional().isIn(['crypto', 'fiat']),
   query('status').optional().isIn(['pending', 'approved', 'rejected']),
-  query('from').optional().isISO8601().withMessage('from must be a valid ISO date'),
-  query('to').optional().isISO8601().withMessage('to must be a valid ISO date'),
+  query('chain').optional().isIn(['BNB', 'ETH', 'TRC']),
+];
+
+export const userWalletProfileValidators = [
+  body('bnbWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('ethWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('trcWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('usdtWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('name').optional({ values: 'falsy' }).trim().isLength({ max: 120 }),
 ];

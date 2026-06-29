@@ -475,3 +475,52 @@
     font-size: 1.25rem;
   }
 }
+
+.login-mobile-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.login-mobile-prefix {
+  flex-shrink: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 0.5px solid var(--login-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--login-muted);
+  font-size: 0.875rem;
+}
+
+.login-mobile-row input {
+  flex: 1;
+}
+
+.login-resend,
+.login-change-mobile,
+.signup-resend,
+.signup-change-mobile {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--login-amber, #f59e0b);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.login-resend:disabled,
+.signup-resend:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.login-change-mobile,
+.signup-change-mobile {
+  margin-top: 0.5rem;
+  color: rgba(255, 255, 255, 0.45);
+}

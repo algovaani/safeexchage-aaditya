@@ -8,8 +8,11 @@ All auth responses: `{ success: boolean, message: string, data: object | null }`
 
 | Method | Path | Body | Auth |
 |--------|------|------|------|
-| POST | `/auth/register` | `{ email?, mobile?, password, name? }` — at least one of email/mobile | No |
-| POST | `/auth/login` | `{ identifier, password }` — identifier = email or mobile | No |
+| POST | `/auth/otp/send` | `{ mobile, purpose: "login" \| "register" }` | No |
+| POST | `/auth/otp/resend` | `{ mobile, purpose: "login" \| "register" }` | No |
+| POST | `/auth/register` | `{ mobile, otp, name?, email?, referralCode? }` | No |
+| POST | `/auth/login` | `{ mobile, otp }` | No |
+| POST | `/auth/admin/login` | `{ email, password }` | No |
 | POST | `/auth/forgot-password` | `{ identifier }` | No |
 | POST | `/auth/reset-password` | `{ identifier, otp, newPassword }` | No |
 | POST | `/auth/logout` | — | Bearer JWT |
@@ -18,7 +21,8 @@ All auth responses: `{ success: boolean, message: string, data: object | null }`
 **Notes**
 - Passwords hashed with bcrypt (12 rounds).
 - JWT expires in `7d` (see `JWT_EXPIRES_IN` in `.env`).
-- Forgot-password OTP is logged to the server console in dev (email/SMS integration later).
+- Forgot-password OTP is sent via NinzaSMS for mobile users (logged to console for email in dev).
+- User login and registration use mobile OTP only; admin login uses email + password at `/auth/admin/login`.
 - Blocked users receive `403` on login and protected routes.
 
 ## KYC

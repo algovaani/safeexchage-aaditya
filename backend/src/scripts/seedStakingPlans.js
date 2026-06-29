@@ -4,10 +4,46 @@ import { resolveMongoUri } from '../config/resolveMongoUri.js';
 import { StakingPlan } from '../models/StakingPlan.js';
 
 const DEFAULT_PLANS = [
-  { name: '30-Day Flex', apyPercent: 8, lockDays: 30, minAmount: 50, maxAmount: 10000 },
-  { name: '90-Day Growth', apyPercent: 18, lockDays: 90, minAmount: 200, maxAmount: 50000 },
-  { name: '180-Day Pro', apyPercent: 28, lockDays: 180, minAmount: 500, maxAmount: 100000 },
-  { name: '365-Day Elite', apyPercent: 45, lockDays: 365, minAmount: 1000, maxAmount: 500000 },
+  {
+    name: 'Silver',
+    apyPercent: 15,
+    lockDays: 30,
+    minAmount: 50,
+    maxAmount: 100000,
+    payoutType: 'end_of_plan',
+    payoutMode: 'auto',
+    requiresApproval: false,
+  },
+  {
+    name: 'Gold',
+    apyPercent: 35,
+    lockDays: 90,
+    minAmount: 200,
+    maxAmount: 500000,
+    payoutType: 'end_of_plan',
+    payoutMode: 'manual',
+    requiresApproval: true,
+  },
+  {
+    name: 'Platinum',
+    apyPercent: 60,
+    lockDays: 180,
+    minAmount: 500,
+    maxAmount: 1000000,
+    payoutType: 'daily',
+    payoutMode: 'auto',
+    requiresApproval: false,
+  },
+  {
+    name: 'Elite',
+    apyPercent: 100,
+    lockDays: 365,
+    minAmount: 1000,
+    maxAmount: 5000000,
+    payoutType: 'end_of_plan',
+    payoutMode: 'auto',
+    requiresApproval: false,
+  },
 ];
 
 async function run() {
@@ -26,7 +62,7 @@ async function run() {
   }
 
   await mongoose.disconnect();
-  console.log('Staking plans seed complete.');
+  console.log('Investment plans seed complete.');
 }
 
 run().catch((e) => {

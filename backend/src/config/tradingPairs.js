@@ -1,4 +1,4 @@
-/** Binance spot symbols (USDT quote) */
+/** Trading pair symbols (USDT quote) — prices from CoinGecko */
 export const TRADING_PAIRS = [
   { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', displayPair: 'BTC/USDT' },
   { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT', displayPair: 'ETH/USDT' },
@@ -8,6 +8,7 @@ export const TRADING_PAIRS = [
   { symbol: 'DOGEUSDT', baseAsset: 'DOGE', quoteAsset: 'USDT', displayPair: 'DOGE/USDT' },
   { symbol: 'ADAUSDT', baseAsset: 'ADA', quoteAsset: 'USDT', displayPair: 'ADA/USDT' },
   { symbol: 'TRXUSDT', baseAsset: 'TRX', quoteAsset: 'USDT', displayPair: 'TRX/USDT' },
+  { symbol: 'POLUSDT', baseAsset: 'POL', quoteAsset: 'USDT', displayPair: 'POL/USDT' },
 ];
 
 export const TRADING_PAIR_SYMBOLS = TRADING_PAIRS.map((p) => p.symbol);
