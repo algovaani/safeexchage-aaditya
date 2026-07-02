@@ -46,10 +46,6 @@ function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
-function randomPasswordHash() {
-  return bcrypt.hash(crypto.randomBytes(24).toString('hex'), BCRYPT_ROUNDS);
-}
-
 async function storeOtp(mobile, purpose, otp) {
   const identifier = normalizeIndianMobile(mobile);
   const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS);
@@ -85,11 +81,19 @@ async function verifyStoredOtp(mobile, purpose, otp) {
 }
 
 async function dispatchOtpSms(mobile, otp) {
+  // Local development में SMS मत भेजो
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[LOCAL] OTP for ${normalizeIndianMobile(mobile)}: ${otp}`);
+    return true;
+  }
+
   try {
     const result = await sendSmsOtp(mobile, otp);
+
     if (result.skipped) {
       console.log(`[auth] Dev OTP for ${normalizeIndianMobile(mobile)}: ${otp}`);
     }
+
     return true;
   } catch (smsErr) {
     console.error('[auth] NinzaSMS send failed:', smsErr.message);
@@ -150,6 +154,9 @@ export async function resendOtp(req, res, next) {
   return sendOtp(req, res, next);
 }
 
+/**
+ * Signup flow: Name + Mobile + Password, verified via OTP.
+ */
 export async function register(req, res, next) {
   try {
     const { otp, name, password } = req.body;
@@ -162,25 +169,21 @@ export async function register(req, res, next) {
       return error(res, 'Valid 10-digit Indian mobile number is required', 400);
     }
 
-    if (!otp) {
-      return error(res, 'OTP is required', 400);
+    if (!password) {
+      return error(res, 'Password is required', 400);
     }
 
-    const otpCheck = await verifyStoredOtp(mobile, 'register', otp);
-    if (!otpCheck.ok) {
-      return error(res, otpCheck.message, 400);
+    if (process.env.NODE_ENV === 'production') {
+      const otpCheck = await verifyStoredOtp(mobile, 'register', otp);
+
+      if (!otpCheck.ok) {
+        return error(res, otpCheck.message, 400);
+      }
     }
 
     const mobileTaken = await findUserByMobile(mobile);
     if (mobileTaken) {
       return error(res, 'Mobile number is already registered', 409);
-    }
-
-    if (email) {
-      const emailTaken = await User.findOne({ email });
-      if (emailTaken) {
-        return error(res, 'Email is already registered', 409);
-      }
     }
 
     let referredBy = null;
@@ -196,9 +199,7 @@ export async function register(req, res, next) {
       referredBy = referrer._id;
     }
 
-    const passwordHash = password
-      ? await bcrypt.hash(password, BCRYPT_ROUNDS)
-      : await randomPasswordHash();
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
     const user = await User.create({
       email,
@@ -238,17 +239,20 @@ export async function register(req, res, next) {
   }
 }
 
+/**
+ * Login flow: Mobile + Password (no OTP).
+ */
 export async function login(req, res, next) {
   try {
-    const { otp } = req.body;
+    const { password } = req.body;
     const mobile = normalizeIndianMobile(req.body.mobile);
 
     if (!mobile || !toIndianMobile10(mobile)) {
       return error(res, 'Valid 10-digit Indian mobile number is required', 400);
     }
 
-    if (!otp) {
-      return error(res, 'OTP is required', 400);
+    if (!password) {
+      return error(res, 'Password is required', 400);
     }
 
     const user = await findUserByMobile(mobile);
@@ -260,18 +264,9 @@ export async function login(req, res, next) {
       return error(res, 'Your account has been blocked. Contact support.', 403);
     }
 
-    if (user.role === 'admin') {
-      return error(res, 'Use admin login for admin accounts', 403);
-    }
-
-    const otpCheck = await verifyStoredOtp(mobile, 'login', otp);
-    if (!otpCheck.ok) {
-      return error(res, otpCheck.message, 400);
-    }
-
-    if (!user.mobileVerified) {
-      user.mobileVerified = true;
-      await user.save();
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      return error(res, 'Invalid mobile number or password', 401);
     }
 
     const token = signToken(user);

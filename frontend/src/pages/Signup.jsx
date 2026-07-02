@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import BrandLogo from '../components/BrandLogo.jsx';
@@ -15,6 +15,9 @@ export default function Signup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [referral, setReferral] = useState('');
   const [referralFromLink, setReferralFromLink] = useState(false);
   const [showRef, setShowRef] = useState(false);
@@ -58,6 +61,18 @@ export default function Signup() {
     }
     if (mobile.length !== 10) {
       const message = 'Enter a valid 10-digit mobile number';
+      setErr(message);
+      toast.warning(message);
+      return;
+    }
+    if (password.length < 8) {
+      const message = 'Password must be at least 8 characters';
+      setErr(message);
+      toast.warning(message);
+      return;
+    }
+    if (password !== confirmPassword) {
+      const message = 'Passwords do not match';
       setErr(message);
       toast.warning(message);
       return;
@@ -120,6 +135,7 @@ export default function Signup() {
       await register({
         name,
         mobile,
+        password,
         otp: code,
         ...(email.trim() ? { email: email.trim() } : {}),
         ...(referral.trim() ? { referralCode: referral.trim().toUpperCase() } : {}),
@@ -170,7 +186,7 @@ export default function Signup() {
               />
             </div>
 
-            <div className="signup-field">
+            {/* <div className="signup-field">
               <label htmlFor="email">Email Address (optional)</label>
               <input
                 id="email"
@@ -179,7 +195,7 @@ export default function Signup() {
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={otpSent}
               />
-            </div>
+            </div> */}
 
             <div className="signup-field">
               <label htmlFor="mobile">Mobile Number</label>
@@ -190,13 +206,52 @@ export default function Signup() {
                 <input
                   id="mobile"
                   type="tel"
-                  placeholder="9876543210"
+                  placeholder=""
                   value={mobile}
                   onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   disabled={otpSent}
                   required
                 />
               </div>
+            </div>
+
+            <div className="signup-field">
+              <label htmlFor="password">Password</label>
+              <div className="signup-mobile">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="At least 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={otpSent}
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword((v) => !v)}
+                  disabled={otpSent}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 12px' }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="signup-field">
+              <label htmlFor="confirmPassword">Confirm Password</label>
+              <input
+                id="confirmPassword"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Re-enter your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={otpSent}
+                minLength={8}
+                required
+              />
             </div>
 
             {otpSent && (

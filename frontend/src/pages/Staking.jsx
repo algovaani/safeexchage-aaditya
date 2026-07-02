@@ -123,22 +123,21 @@ export default function Staking() {
 
   return (
     <div className="staking-page">
-      <header className="staking-header">
-        <div>
-          <h1>Investment Plans</h1>
-          <p>Stake USDT in fixed-duration plans and earn ROI at maturity or daily.</p>
-        </div>
-        <div className="staking-balance-card">
-          <Wallet size={18} />
-          <div>
-            <span className="staking-balance-card__label">Available balance</span>
-            <strong>{usdt(balance)}</strong>
-          </div>
-          <Link to="/wallet/deposit?coin=USDT" className="staking-link-btn">
-            Deposit USDT
-          </Link>
-        </div>
-      </header>
+<header className="staking-header">
+  <div>
+    <h1>Investment Plans</h1>
+    <p>Stake USDT in fixed-duration plans and earn ROI at maturity or daily.</p>
+  </div>
+
+  <Link to="/wallet/deposit?coin=USDT" className="staking-balance-card">
+  <Wallet size={18} />
+  <div className="staking-balance-card__info">
+    <span className="staking-balance-card__label">Available balance</span>
+    <strong>{usdt(balance)}</strong>
+  </div>
+  <span className="staking-link-btn">Deposit USDT</span>
+</Link>
+</header>
 
       <div className="staking-tabs">
         <button type="button" className={tab === 'plans' ? 'is-active' : ''} onClick={() => setTab('plans')}>

@@ -48,7 +48,6 @@ export const registerValidators = [
     .withMessage('Invalid email format')
     .normalizeEmail(),
   body('password')
-    .optional({ values: 'falsy' })
     .isString()
     .isLength({ min: 8 })
     .withMessage('Password must be at least 8 characters'),
@@ -65,7 +64,10 @@ export const registerValidators = [
     .withMessage('Referral code must be 4–16 characters'),
 ];
 
-export const loginValidators = [mobileValidator('mobile'), otpValidator];
+export const loginValidators = [
+  mobileValidator('mobile'),
+  body('password').notEmpty().withMessage('Password is required'),
+];
 
 export const adminLoginValidators = [
   body('email').trim().isEmail().withMessage('Valid admin email is required').normalizeEmail(),

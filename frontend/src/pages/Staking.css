@@ -24,13 +24,17 @@
   }
 }
 
+/* —— Header —— */
 .staking-header {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.5rem;
+  pointer-events: auto;
 }
 
 .staking-header h1 {
@@ -46,14 +50,28 @@
   color: var(--text-secondary);
 }
 
+/* —— Balance card —— */
 .staking-balance-card {
+  position: relative;
+  z-index: 1;
+  width: auto;
+  min-width: 300px;
+  max-width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  flex-wrap: nowrap;
+  gap: 12px;
+  padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   background: var(--surface-elevated);
+  text-decoration: none;
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.staking-balance-card svg {
+  flex: 0 0 auto;
 }
 
 .staking-balance-card__label {
@@ -64,14 +82,31 @@
   letter-spacing: 0.04em;
 }
 
+.staking-balance-card__info {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.staking-balance-card__info strong {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+
 .staking-link-btn {
-  margin-left: 0.5rem;
-  font-size: 0.8rem;
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+  font-size: 13px;
   color: var(--accent);
   text-decoration: none;
   white-space: nowrap;
 }
 
+/* —— Tabs —— */
 .staking-tabs {
   display: flex;
   gap: 0.5rem;
@@ -80,36 +115,31 @@
   padding-bottom: 0.5rem;
 }
 
-.staking-tabs button {
-  background: none;
-  border: none;
-  padding: 0.5rem 0.85rem;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
 .staking-tabs button.is-active {
   color: var(--text-primary);
   background: var(--surface-elevated);
   font-weight: 500;
 }
 
+/* —— Plans grid —— */
 .staking-plans-grid {
+  position: relative;
+  z-index: 10;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1rem;
 }
 
 .staking-plan-card {
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  padding: 1.1rem;
-  background: var(--surface-elevated);
+  position: relative;
+  z-index: 11;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  padding: 1.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-elevated);
 }
 
 .staking-plan-card__head {
@@ -157,7 +187,11 @@
   color: var(--text-secondary);
 }
 
+/* —— Buttons —— */
 .staking-btn {
+  position: relative;
+  z-index: 12;
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -186,6 +220,7 @@
   font-size: 0.75rem;
 }
 
+/* —— Table —— */
 .staking-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border-subtle);
@@ -226,6 +261,7 @@
   flex-wrap: wrap;
 }
 
+/* —— Status pills —— */
 .staking-pill {
   display: inline-block;
   font-size: 0.72rem;
@@ -266,6 +302,7 @@
   text-align: center;
 }
 
+/* —— Modal —— */
 .staking-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -273,7 +310,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 99999;
   padding: 1rem;
 }
 
@@ -332,4 +369,158 @@
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1rem;
+}
+
+/* —— Mobile responsive (≤767px) —— */
+@media (max-width: 767px) {
+  .staking-page {
+    max-width: 100%;
+    padding: 0.75rem 0 1.5rem;
+  }
+
+  .staking-header {
+    position: relative;
+    z-index: 1;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .staking-header h1 {
+    font-size: 1.15rem;
+  }
+
+  .staking-header p {
+    font-size: 0.8rem;
+  }
+
+  .staking-balance-card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  .staking-balance-card svg,
+  .staking-balance-card__info,
+  .staking-link-btn {
+    pointer-events: none;
+  }
+
+  .staking-balance-card:hover {
+    border-color: var(--accent);
+  }
+
+  .staking-link-btn {
+    margin-left: 0;
+    font-size: 0.75rem;
+  }
+
+  .staking-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    gap: 0.35rem;
+    padding-bottom: 0.5rem;
+    scrollbar-width: none;
+  }
+
+  .staking-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .staking-tabs button {
+    flex: 0 0 auto;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .staking-plans-grid {
+    z-index: 10;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+  }
+
+  .staking-plan-card {
+    padding: 0.9rem;
+    border-radius: 12px;
+  }
+
+  .staking-plan-card__head h3 {
+    font-size: 0.95rem;
+  }
+
+  .staking-plan-card__roi {
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  .staking-btn {
+    min-height: 44px;
+    width: 100%;
+  }
+
+  .staking-table-wrap {
+    overflow-x: auto;
+    border-radius: 12px;
+  }
+
+  .staking-table {
+    min-width: 680px;
+    font-size: 0.8rem;
+  }
+
+  .staking-table th,
+  .staking-table td {
+    padding: 0.65rem 0.75rem;
+    white-space: nowrap;
+  }
+
+  .staking-modal-backdrop {
+    align-items: flex-end;
+    padding: 0.75rem;
+  }
+
+  .staking-modal {
+    max-width: 100%;
+    padding: 1rem;
+    border-radius: 14px;
+  }
+
+  .staking-modal__actions {
+    flex-direction: column-reverse;
+  }
+
+  .staking-modal__actions .staking-btn {
+    width: 100%;
+  }
+}
+
+/* —— Very small phones —— */
+@media (max-width: 380px) {
+  .staking-balance-card {
+    flex-wrap: wrap;
+  }
+
+  .staking-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .staking-balance-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .staking-link-btn {
+    font-size: 11px;
+  }
+
+  .staking-balance-card__info strong {
+    font-size: 12px;
+  }
 }

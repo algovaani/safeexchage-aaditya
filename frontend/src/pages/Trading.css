@@ -1,18 +1,20 @@
-/* Professional exchange terminal — Binance-style layout */
+/* Professional exchange terminal — Binance-style layout (FIXED) */
 
 .trading-page {
   --ex-chart-h: clamp(280px, 38vh, 400px);
   --ex-layout-gap: 0.5rem;
 
-  background: var(--ex-bg);
-  color: var(--ex-text);
+  /* FIX: added fallback colors so the page never goes blank/transparent
+     if the theme variables aren't defined upstream */
+  background: var(--ex-bg, #0b0e11);
+  color: var(--ex-text, #eaecef);
   padding: var(--ex-layout-gap);
   box-sizing: border-box;
   min-height: calc(100dvh - 56px);
 }
 
 .trading-page label {
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.72rem;
   font-weight: 500;
 }
@@ -20,16 +22,16 @@
 .trading-page .ex-input {
   width: 100%;
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--ex-border);
+  border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
-  background: var(--ex-input-bg);
-  color: var(--ex-text);
+  background: var(--ex-input-bg, #1e2329);
+  color: var(--ex-text, #eaecef);
   font-size: 0.8125rem;
 }
 
 .trading-page .ex-input:focus {
   outline: none;
-  border-color: var(--ex-muted);
+  border-color: var(--ex-muted, #848e9c);
 }
 
 .trading-page .ex-input:disabled,
@@ -40,88 +42,118 @@
 
 /* —— Ticker bar —— */
 .ex-ticker {
-  display: flex;
+  display: grid;
+  /* FIX: pair column + 6 stat columns = matches your 7-item header
+     (BTC/USDT | Last Price | 24h Change | 24h High | 24h Low | 24h Volume | Time) */
+  grid-template-columns: 160px repeat(6, minmax(0, 1fr));
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.45rem 0.75rem;
-  background: var(--ex-ticker-bg);
-  border-bottom: 1px solid var(--ex-border);
-  margin-bottom: var(--ex-layout-gap);
-  min-width: 0;
-  flex-shrink: 0;
-}
-
-.ex-ticker--scroll {
-  flex-wrap: nowrap;
-  overflow: hidden;
+  gap: 16px;
+  width: 100%;
+  padding: 10px 16px;
+  background: var(--ex-ticker-bg, #181a20);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
 .ex-ticker__pair-wrap {
-  flex-shrink: 0;
-  padding-right: 0.5rem;
-  border-right: 1px solid var(--ex-border);
+  border-right: 1px solid var(--ex-border, #2b3139);
+  padding-right: 16px;
+  min-width: 0;
 }
 
 .ex-ticker__stats {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem 1.5rem;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.ex-ticker__stats::-webkit-scrollbar {
-  display: none;
-}
-
-.ex-ticker__pair {
-  font-weight: 700;
-  font-size: 1.125rem;
-  color: var(--ex-text);
+  display: contents;
 }
 
 .ex-ticker__stat-block {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
-  flex-shrink: 0;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--ex-border);
 }
 
-.ex-ticker__stat-block--price .ex-ticker__price {
-  font-size: 1.125rem;
+.ex-ticker__stat-block:last-child {
+  border-right: none;
 }
-
 .ex-ticker__stat-label {
-  font-size: 0.65rem;
-  color: var(--ex-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.ex-ticker__stat-block span:last-child {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.875rem;
+  font-size: 11px;
+  color: var(--ex-muted, #848e9c);
+  white-space: nowrap;
 }
 
 .ex-ticker__price {
-  font-size: 1.125rem;
+  font-size: 22px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
-.ex-ticker__price--up { color: var(--ex-buy); }
-.ex-ticker__price--down { color: var(--ex-sell); }
-.ex-ticker__stat--up span:last-child { color: var(--ex-buy); }
-.ex-ticker__stat--down span:last-child { color: var(--ex-sell); }
+.ex-ticker__price--up { color: var(--ex-buy, #0ecb81); }
+.ex-ticker__price--down { color: var(--ex-sell, #f6465d); }
+.ex-ticker__stat--up span:last-child { color: var(--ex-buy, #0ecb81); }
+.ex-ticker__stat--down span:last-child { color: var(--ex-sell, #f6465d); }
 
 .ex-ticker__clock {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
+
+@media (max-width:1024px){
+
+  .ex-ticker{
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      width: 100%;
+      max-width: 100%;
+      gap: 8px;
+      padding: 10px;
+  }
+
+  .ex-ticker__pair-wrap{
+      grid-column: 1 / -1;
+      border-right: none;
+      border-bottom: 1px solid var(--ex-border, #2b3139);
+      padding: 0 0 8px 0;
+  }
+
+  .ex-ticker__pair {
+      font-size: 1.1rem;
+      font-weight: 700;
+  }
+
+  .ex-ticker__stats{
+      display: contents;
+  }
+
+  .ex-ticker__stat-block{
+      flex-shrink: unset;
+      min-width: 0;
+      border: 1px solid var(--ex-border, #2b3139);
+      border-radius: 6px;
+      background: var(--ex-panel, #181a20);
+      padding: 6px 10px;
+  }
+
+  .ex-ticker__stat-block:last-child {
+      border: 1px solid var(--ex-border, #2b3139);
+  }
+
+  .ex-ticker__stat-block--price {
+      grid-column: 1 / -1;
+      background: var(--ex-panel-2, #1e2329);
+  }
+
+  .ex-ticker__stat-block--clock {
+      grid-column: 1 / -1;
+  }
+
+  .ex-ticker__clock {
+      font-size: 0.85rem;
+  }
+
+}
 /* —— Mobile section nav —— */
 .ex-mobile-nav {
   display: none;
@@ -130,8 +162,8 @@
   z-index: 20;
   gap: 0;
   margin-bottom: 0.5rem;
-  background: var(--ex-panel);
-  border: 1px solid var(--ex-border);
+  background: var(--ex-panel, #181a20);
+  border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -151,15 +183,15 @@
   background: transparent;
   font-size: 0.72rem;
   font-weight: 600;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .ex-mobile-nav button.is-active {
-  color: var(--ex-text);
-  border-bottom-color: var(--ex-gold);
-  background: var(--ex-panel-2);
+  color: var(--ex-text, #eaecef);
+  border-bottom-color: var(--ex-gold, #f0b90b);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 .ex-mobile-order-tabs {
@@ -167,8 +199,8 @@
   grid-column: 1 / -1;
   gap: 0;
   margin-bottom: 0.25rem;
-  background: var(--ex-panel);
-  border: 1px solid var(--ex-border);
+  background: var(--ex-panel, #181a20);
+  border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -180,18 +212,18 @@
   background: transparent;
   font-size: 0.8rem;
   font-weight: 700;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   cursor: pointer;
 }
 
 .ex-mobile-order-tabs button:first-child.is-active {
-  background: var(--ex-buy-soft);
-  color: var(--ex-buy);
+  background: var(--ex-buy-soft, rgba(14, 203, 129, 0.12));
+  color: var(--ex-buy, #0ecb81);
 }
 
 .ex-mobile-order-tabs button:last-child.is-active {
-  background: var(--ex-sell-soft);
-  color: var(--ex-sell);
+  background: var(--ex-sell-soft, rgba(246, 70, 93, 0.12));
+  color: var(--ex-sell, #f6465d);
 }
 
 /* —— Grid —— */
@@ -232,8 +264,8 @@
   padding: 0.65rem 0.85rem;
   font-size: 0.9rem;
   font-weight: 700;
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-panel-2);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 @media (min-width: 1024px) {
@@ -359,16 +391,16 @@
 
 @media (max-width: 480px) {
   .ex-ticker {
-    padding: 0.5rem 0.65rem;
-    gap: 0.65rem;
+    padding: 8px;
+    gap: 6px;
   }
 
   .ex-ticker__pair {
     font-size: 1rem;
   }
 
-  .ex-ticker__stats {
-    gap: 1rem;
+  .ex-ticker__stat-block {
+    padding: 5px 8px;
   }
 
   .ex-ticker__stat-block span:last-child {
@@ -376,7 +408,7 @@
   }
 
   .ex-ticker__stat-block--price .ex-ticker__price {
-    font-size: 1rem;
+    font-size: 1.1rem;
   }
 
   .ex-chart-toolbar {
@@ -407,8 +439,8 @@
 
 /* —— Panels —— */
 .ex-panel {
-  background: var(--ex-panel);
-  border: 1px solid var(--ex-border);
+  background: var(--ex-panel, #181a20);
+  border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -417,9 +449,9 @@
   padding: 0.5rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 600;
-  border-bottom: 1px solid var(--ex-border);
-  color: var(--ex-text);
-  background: var(--ex-panel-2);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  color: var(--ex-text, #eaecef);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 /* —— Markets —— */
@@ -431,7 +463,7 @@
 .ex-markets__tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
 .ex-markets__tabs button {
@@ -442,13 +474,13 @@
   background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   cursor: pointer;
 }
 
 .ex-markets__tabs button.is-active {
-  color: var(--ex-text);
-  border-bottom-color: var(--ex-gold);
+  color: var(--ex-text, #eaecef);
+  border-bottom-color: var(--ex-gold, #f0b90b);
 }
 
 .ex-markets__tabs button:disabled {
@@ -458,7 +490,7 @@
 
 .ex-markets__search {
   padding: 0.4rem 0.5rem;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
 .ex-markets__head {
@@ -469,9 +501,9 @@
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: var(--ex-muted);
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-strip-bg);
+  color: var(--ex-muted, #848e9c);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-strip-bg, #14161a);
 }
 
 .ex-markets__list {
@@ -487,38 +519,38 @@
   padding: 0.4rem 0.65rem;
   cursor: pointer;
   align-items: center;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
 .ex-markets__row:hover {
-  background: var(--ex-row-hover);
+  background: var(--ex-row-hover, rgba(255,255,255,0.04));
 }
 
 .ex-markets__row.is-active {
-  background: var(--ex-highlight);
+  background: var(--ex-highlight, rgba(240, 185, 11, 0.08));
 }
 
 .ex-markets__pair {
   font-weight: 600;
 }
 
-.ex-change--up { color: var(--ex-buy); }
-.ex-change--down { color: var(--ex-sell); }
+.ex-change--up { color: var(--ex-buy, #0ecb81); }
+.ex-change--down { color: var(--ex-sell, #f6465d); }
 
 .ex-markets__balance {
   padding: 0.55rem 0.65rem;
   font-size: 0.75rem;
-  border-top: 1px solid var(--ex-border);
-  background: var(--ex-strip-bg);
+  border-top: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-strip-bg, #14161a);
 }
 
 .ex-markets__balance small {
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.65rem;
 }
 
 .ex-markets__balance strong {
-  color: var(--ex-text);
+  color: var(--ex-text, #eaecef);
   font-size: 0.9rem;
 }
 
@@ -535,8 +567,8 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.3rem 0.55rem;
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-panel-2);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-panel-2, #1e2329);
   font-size: 0.72rem;
   flex-wrap: wrap;
   flex-shrink: 0;
@@ -546,13 +578,13 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  color: var(--ex-text);
+  color: var(--ex-text, #eaecef);
   font-weight: 600;
 }
 
 .ex-chart-toolbar__dot,
 .ex-chart-toolbar__exchange {
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-weight: 500;
 }
 
@@ -566,21 +598,21 @@
   border: none;
   border-radius: 3px;
   background: transparent;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ex-chart-toolbar__intervals button.is-active {
-  background: var(--ex-input-bg);
-  color: var(--ex-text);
+  background: var(--ex-input-bg, #1e2329);
+  color: var(--ex-text, #eaecef);
 }
 
 .ex-chart-toolbar__tools {
   display: flex;
   gap: 0.75rem;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.72rem;
 }
 
@@ -645,20 +677,20 @@
   font-weight: 700;
 }
 
-.ex-order-card--buy h3 { color: var(--ex-buy); }
-.ex-order-card--sell h3 { color: var(--ex-sell); }
+.ex-order-card--buy h3 { color: var(--ex-buy, #0ecb81); }
+.ex-order-card--sell h3 { color: var(--ex-sell, #f6465d); }
 
 .ex-balance-line {
   margin: 0 0 0.5rem;
   font-size: 0.72rem;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
 }
 
 .ex-tabs-inline {
   display: flex;
   gap: 0;
   margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
 .ex-tabs-inline button {
@@ -669,14 +701,14 @@
   background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   cursor: pointer;
   margin-bottom: -1px;
 }
 
 .ex-tabs-inline button.is-active {
-  color: var(--ex-text);
-  border-bottom-color: var(--ex-gold);
+  color: var(--ex-text, #eaecef);
+  border-bottom-color: var(--ex-gold, #f0b90b);
 }
 
 .ex-order-card .field {
@@ -696,8 +728,8 @@
   cursor: pointer;
 }
 
-.ex-btn-buy { background: var(--ex-buy); }
-.ex-btn-sell { background: var(--ex-sell); }
+.ex-btn-buy { background: var(--ex-buy, #0ecb81); }
+.ex-btn-sell { background: var(--ex-sell, #f6465d); }
 
 .ex-btn-buy:hover { filter: brightness(1.05); }
 .ex-btn-sell:hover { filter: brightness(1.05); }
@@ -715,9 +747,9 @@
   padding: 0.35rem 0.55rem;
   font-size: 0.65rem;
   font-weight: 600;
-  color: var(--ex-muted);
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-strip-bg);
+  color: var(--ex-muted, #848e9c);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-strip-bg, #14161a);
 }
 
 .ex-book__row {
@@ -727,21 +759,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-.ex-book__row--ask { color: var(--ex-sell); }
-.ex-book__row--bid { color: var(--ex-buy); }
+.ex-book__row--ask { color: var(--ex-sell, #f6465d); }
+.ex-book__row--bid { color: var(--ex-buy, #0ecb81); }
 
 .ex-book__mid {
   text-align: center;
   padding: 0.4rem;
   font-weight: 700;
   font-size: 0.95rem;
-  background: var(--ex-panel-2);
-  border-top: 1px solid var(--ex-border);
-  border-bottom: 1px solid var(--ex-border);
+  background: var(--ex-panel-2, #1e2329);
+  border-top: 1px solid var(--ex-border, #2b3139);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
 }
 
-.ex-book__mid--up { color: var(--ex-buy); }
-.ex-book__mid--down { color: var(--ex-sell); }
+.ex-book__mid--up { color: var(--ex-buy, #0ecb81); }
+.ex-book__mid--down { color: var(--ex-sell, #f6465d); }
 
 /* —— Tape —— */
 .ex-tape {
@@ -757,9 +789,9 @@
   padding: 0.35rem 0.55rem;
   font-size: 0.65rem;
   font-weight: 600;
-  color: var(--ex-muted);
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-strip-bg);
+  color: var(--ex-muted, #848e9c);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-strip-bg, #14161a);
 }
 
 .ex-tape__row {
@@ -767,16 +799,18 @@
   grid-template-columns: 1fr 1fr 0.8fr 0.8fr;
   gap: 0.25rem;
   padding: 0.15rem 0.55rem;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
   font-variant-numeric: tabular-nums;
 }
 
-.ex-tape__row--buy { color: var(--ex-buy); }
-.ex-tape__row--sell { color: var(--ex-sell); }
+/* FIX: was inconsistent — buy/sell colors now always have a fallback
+   so rows never render in default text color if vars are missing */
+.ex-tape__row--buy { color: var(--ex-buy, #0ecb81); }
+.ex-tape__row--sell { color: var(--ex-sell, #f6465d); }
 
 .ex-tape__empty {
   padding: 1rem 0.55rem;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   text-align: center;
 }
 
@@ -803,8 +837,8 @@
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.5rem 0.65rem;
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-panel-2);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 .ex-my-orders__search {
@@ -822,7 +856,7 @@
 .ex-my-orders__loading {
   padding: 2rem;
   text-align: center;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.8rem;
 }
 
@@ -833,10 +867,10 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.5rem 0.65rem;
-  border-top: 1px solid var(--ex-border);
+  border-top: 1px solid var(--ex-border, #2b3139);
   font-size: 0.7rem;
-  color: var(--ex-muted);
-  background: var(--ex-panel-2);
+  color: var(--ex-muted, #848e9c);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 .ex-my-orders__pagination-actions {
@@ -847,10 +881,10 @@
 
 .ex-my-orders__pagination-actions button {
   padding: 0.25rem 0.55rem;
-  border: 1px solid var(--ex-border);
+  border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
-  background: var(--ex-input-bg);
-  color: var(--ex-text);
+  background: var(--ex-input-bg, #1e2329);
+  color: var(--ex-text, #eaecef);
   font-size: 0.7rem;
   cursor: pointer;
 }
@@ -864,8 +898,8 @@
 .ex-my-orders__subtabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--ex-border);
-  background: var(--ex-panel-2);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: var(--ex-panel-2, #1e2329);
 }
 
 .ex-my-orders__tabs button,
@@ -876,15 +910,15 @@
   background: transparent;
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   cursor: pointer;
   margin-bottom: -1px;
 }
 
 .ex-my-orders__tabs button.is-active,
 .ex-my-orders__subtabs button.is-active {
-  color: var(--ex-text);
-  border-bottom-color: var(--ex-gold);
+  color: var(--ex-text, #eaecef);
+  border-bottom-color: var(--ex-gold, #f0b90b);
 }
 
 .ex-my-orders table {
@@ -898,9 +932,9 @@
   text-align: left;
   font-size: 0.65rem;
   font-weight: 600;
-  color: var(--ex-muted);
-  background: var(--ex-strip-bg);
-  border-bottom: 1px solid var(--ex-border);
+  color: var(--ex-muted, #848e9c);
+  background: var(--ex-strip-bg, #14161a);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -908,7 +942,7 @@
 
 .ex-my-orders td {
   padding: 0.4rem 0.65rem;
-  border-bottom: 1px solid var(--ex-border);
+  border-bottom: 1px solid var(--ex-border, #2b3139);
   font-variant-numeric: tabular-nums;
 }
 
@@ -919,15 +953,16 @@
   font-size: 0.65rem;
   font-weight: 600;
   text-transform: capitalize;
-  background: var(--ex-input-bg);
-  color: var(--ex-muted);
+  background: var(--ex-input-bg, #1e2329);
+  color: var(--ex-muted, #848e9c);
 }
 
 .ex-status-badge--buy {
-  background: var(--ex-buy-soft);
-  color: var(--ex-buy);
+  background: var(--ex-buy-soft, rgba(14, 203, 129, 0.12));
+  color: var(--ex-buy, #0ecb81);
 }
 
+/* FIX: now matches the same fallback pattern used everywhere else */
 .ex-status-badge--sell {
   background: var(--ex-sell-soft, rgba(246, 70, 93, 0.12));
   color: var(--ex-sell, #f6465d);
@@ -937,8 +972,8 @@
   margin: 0.5rem 0.65rem;
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
-  background: var(--ex-buy-soft);
-  color: var(--ex-buy);
+  background: var(--ex-buy-soft, rgba(14, 203, 129, 0.12));
+  color: var(--ex-buy, #0ecb81);
   font-size: 0.8rem;
 }
 
@@ -952,7 +987,7 @@
 .ex-empty-row {
   text-align: center;
   padding: 1.25rem !important;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
 }
 
 .ex-guest-banner {
@@ -967,7 +1002,7 @@
   background: rgba(240, 185, 11, 0.08);
   border: 1px solid rgba(240, 185, 11, 0.25);
   font-size: 0.8rem;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   text-align: center;
 }
 
@@ -1003,10 +1038,120 @@
   min-height: 160px;
   padding: 1.5rem 1rem;
   text-align: center;
-  color: var(--ex-muted);
+  color: var(--ex-muted, #848e9c);
   font-size: 0.85rem;
 }
 
 .ex-my-orders__guest p {
   margin: 0;
+}
+
+/* ===== MOBILE FORCE FIX ===== */
+
+@media (max-width: 768px) {
+  .trading-page {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    padding: 6px;
+  }
+
+  .ex-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .ex-center,
+  .ex-side-stack,
+  .ex-panel,
+  .ex-markets,
+  .ex-chart-area,
+  .ex-history,
+  .ex-orders {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .ex-mobile-nav {
+    display: flex !important;
+    width: 100%;
+    position: sticky;
+    top: 0;
+  }
+
+  /* IMPORTANT: don't force .ex-zone display here — that overrode the
+     .is-active tab logic from the 1023px breakpoint above and made
+     every section (chart, trade, markets, depth, history) render at
+     the same time on small screens, breaking the mobile tab nav.
+     Visibility for .ex-zone is controlled entirely by the rules in
+     the @media (max-width: 1023px) block; this block only handles
+     width/stacking for whichever zone is already active. */
+
+  .ex-orders.is-active {
+    flex-direction: column !important;
+  }
+
+  .ex-order-card {
+    width: 100%;
+  }
+
+  .ex-chart-wrap,
+  .trading-page .chart-wrap {
+    width: 100% !important;
+    height: 300px !important;
+    min-height: 260px !important;
+  }
+
+  .ex-book,
+  .ex-tape,
+  .ex-my-orders__scroll {
+    max-height: 360px;
+    overflow: auto;
+  }
+
+  .ex-my-orders__table-wrap,
+  .ex-my-orders__scroll {
+    overflow-x: auto;
+  }
+
+  .ex-my-orders table {
+    min-width: 720px;
+  }
+
+  .ex-chart-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ex-chart-toolbar__intervals {
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .ex-ticker__price {
+    font-size: 16px;
+  }
+
+  .ex-mobile-nav button {
+    min-width: 72px;
+    font-size: 11px;
+  }
+
+  .ex-order-card__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ex-order-card__head .ex-balance-line {
+    text-align: left;
+  }
+
+  .ex-chart-wrap,
+  .trading-page .chart-wrap {
+    height: 280px !important;
+  }
 }

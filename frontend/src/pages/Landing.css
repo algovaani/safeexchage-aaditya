@@ -935,6 +935,28 @@ body {
   overflow-x: clip;
 }
 
+/* Global safety net — long words never force horizontal scroll */
+.lux-hero__title,
+.lux-hero__title-mid,
+.lux-h2,
+.lux-hero__sub,
+.lux-lead,
+.lux-plan__price,
+.lux-feature p,
+.lux-step p,
+.lux-quote p {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+/* ============================= */
+/* RESPONSIVE — tablet & below   */
+/* ============================= */
 @media (max-width: 960px) {
   .lux-nav {
     display: none;
@@ -966,6 +988,226 @@ body {
 
   .lux-header__right {
     gap: 0.5rem;
+  }
+}
+
+/* ============================= */
+/* RESPONSIVE — mobile (≤768px)  */
+/* ============================= */
+@media (max-width: 768px) {
+  .lux--fixed-header {
+    --lux-header-h: 4rem;
+  }
+
+  .lux-header__inner {
+    padding: 0.65rem 1rem;
+    gap: 0.6rem;
+  }
+
+  .lux-wrap {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .lux-btn--sm {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.66rem;
+  }
+
+  .lux-hero {
+    min-height: auto;
+    padding: 2.75rem 1rem 3.5rem;
+  }
+
+  .lux-hero__title {
+    font-size: 2.1rem;
+  }
+
+  .lux-hero__title-mid {
+    white-space: normal;
+    font-size: 1.35rem;
+  }
+
+  .lux-hero__sub {
+    font-size: 0.88rem;
+  }
+
+  .lux-hero__btns {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lux-hero__btns .lux-btn {
+    width: 100%;
+  }
+
+  .lux-stats {
+    grid-template-columns: 1fr;
+    padding: 2rem 1rem;
+    gap: 1.25rem;
+  }
+
+  .lux-stat {
+    padding: 1rem 0;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lux-stat:last-child {
+    border-bottom: none;
+  }
+
+  .lux-section {
+    padding: 3rem 1rem;
+  }
+
+  .lux-features,
+  .lux-steps,
+  .lux-testimonials,
+  .lux-pricing {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .lux-table {
+    min-width: 600px;
+  }
+
+  .lux-cta {
+    padding: 3.5rem 1rem;
+  }
+
+  .lux-footer__row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .lux-footer__nav {
+    gap: 1rem;
+  }
+}
+
+/* ============================= */
+/* RESPONSIVE — small phones     */
+/* (≤480px)                      */
+/* ============================= */
+@media (max-width: 480px) {
+  .lux-header__inner {
+    padding: 0.55rem 0.85rem;
+    gap: 0.5rem;
+  }
+
+  .lux-header__right {
+    gap: 0.4rem;
+  }
+
+  .lux-header__right .lux-btn {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.62rem;
+  }
+
+  .lux-hero__title {
+    font-size: 1.85rem;
+  }
+
+  .lux-h2 {
+    font-size: 1.55rem;
+  }
+
+  .lux-lead {
+    font-size: 0.85rem;
+  }
+
+  .lux-plan {
+    padding: 1.5rem 1.15rem;
+  }
+
+  .lux-plan__price {
+    font-size: 1.9rem;
+  }
+
+  .lux-quote {
+    padding: 1.25rem;
+  }
+}
+
+/* ============================= */
+/* RESPONSIVE — 320px and below  */
+/* ============================= */
+@media (max-width: 320px) {
+  .lux--fixed-header {
+    --lux-header-h: 3.5rem;
+  }
+
+  .lux-header__inner {
+    padding: 0.45rem 0.65rem;
+    gap: 0.4rem;
+  }
+
+  .lux-header__right {
+    gap: 0.35rem;
+  }
+
+  .lux-header__right .lux-btn {
+    padding: 0.45rem 0.55rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* if both header buttons can't fit, keep only the primary CTA */
+  .lux-header__right .lux-btn--ghost {
+    display: none;
+  }
+
+  .lux-wrap,
+  .lux-section {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .lux-hero {
+    padding: 2.25rem 0.75rem 2.75rem;
+  }
+
+  .lux-hero__title {
+    font-size: 1.55rem;
+  }
+
+  .lux-hero__title-mid {
+    white-space: normal;
+    font-size: 1.05rem;
+  }
+
+  .lux-hero__sub {
+    font-size: 0.8rem;
+  }
+
+  .lux-h2 {
+    font-size: 1.3rem;
+  }
+
+  .lux-lead {
+    font-size: 0.8rem;
+  }
+
+  .lux-stat strong {
+    font-size: 1.4rem;
+  }
+
+  .lux-stat span {
+    font-size: 0.58rem;
+  }
+
+  .lux-plan__price {
+    font-size: 1.7rem;
+  }
+
+  .lux-quote {
+    padding: 1rem;
+  }
+
+  .lux-cta {
+    padding: 2.75rem 0.75rem;
   }
 }
 

@@ -396,7 +396,7 @@ export default function Landing() {
             <a href="#rates">RATES</a>
             <a href="#pricing">STAKE</a>
             <a href="#faq">FAQ</a>
-          </nav>
+          </nav> 
           <div className="lux-header__right">
             <a href={appUrl('/signup')} className="lux-btn lux-btn--gold lux-btn--sm">
               LAUNCH APP

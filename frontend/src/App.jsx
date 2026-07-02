@@ -7,6 +7,7 @@ import AdminLayout from './components/AdminLayout.jsx';
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
 import InviteRedirect from './pages/InviteRedirect.jsx';
 import AdminLogin from './pages/AdminLogin.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -21,6 +22,7 @@ import Staking from './pages/Staking.jsx';
 import Admin from './pages/Admin.jsx';
 import AdminUserDetail from './pages/admin/AdminUserDetail.jsx';
 
+
 export default function App() {
   return (
     <Routes>
@@ -28,6 +30,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/invite/:code" element={<InviteRedirect />} />
 

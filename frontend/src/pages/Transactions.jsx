@@ -144,7 +144,8 @@ export default function Transactions() {
             <input
               type="search"
               className="flex-1 bg-transparent outline-none text-sm"
-              placeholder="Search type, status, reference…"
+              // placeholder="Search type, status, reference…"
+              placeholder="Search type, status, remark…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -188,7 +189,7 @@ export default function Transactions() {
                   <th>Status</th>
                   <th>Remark</th>
                   <th>Date</th>
-                  <th>Reference</th>
+                  {/* <th>Reference</th> */}
                 </tr>
               </thead>
               <tbody>
@@ -215,12 +216,15 @@ export default function Transactions() {
                       <td className="text-text-secondary text-xs max-w-[200px] truncate" title={t.remark || t.admin_note || ''}>
                         {t.remark || t.admin_note || '—'}
                       </td>
-                      <td className="text-text-secondary text-xs tabular-nums">
+                      {/* <td className="text-text-secondary text-xs tabular-nums">
                         {t.date ? new Date(t.date).toLocaleString() : '—'}
                       </td>
                       <td className="font-mono text-xs text-text-muted max-w-[140px] truncate" title={t.reference || ''}>
                         {t.reference || String(t.id || '').slice(-8)}
-                      </td>
+                      </td> */}
+                      <td className="text-text-secondary text-xs tabular-nums">
+                      {t.date ? new Date(t.date).toLocaleString() : '—'}
+                       </td>
                     </tr>
                   );
                 })}

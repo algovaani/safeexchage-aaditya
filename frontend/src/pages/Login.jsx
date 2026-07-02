@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
 import BrandLogo from '../components/BrandLogo.jsx';
-import OtpInput, { otpToString } from '../components/OtpInput.jsx';
 import './Login.css';
 
 const PLATFORM_STATS = [
@@ -47,30 +46,21 @@ function TickerItem({ symbol, price, change }) {
 }
 
 export default function Login() {
-  const { login, sendOtp, resendOtp, user, loading: authLoading } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const toast = useToast();
   const nav = useNavigate();
   const location = useLocation();
   const redirectTo = location.state?.from?.pathname || '/dashboard';
   const [mobile, setMobile] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const [otpSent, setOtpSent] = useState(false);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
   const [tickers, setTickers] = useState([
     { symbol: 'BTC', price: '—', change: 0 },
     { symbol: 'ETH', price: '—', change: 0 },
     ...STATIC_TICKERS,
   ]);
-
-  useEffect(() => {
-    if (resendCooldown <= 0) return undefined;
-    const id = setInterval(() => {
-      setResendCooldown((s) => (s <= 1 ? 0 : s - 1));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [resendCooldown]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -119,54 +109,18 @@ export default function Login() {
 
   const tickerStrip = [...tickers, ...tickers];
 
-  async function handleSendOtp() {
-    setErr('');
-    setBusy(true);
-    try {
-      await sendOtp(mobile, 'login');
-      setOtpSent(true);
-      setResendCooldown(30);
-      setOtp(['', '', '', '', '', '']);
-      toast.success('OTP sent to your mobile number.');
-    } catch (ex) {
-      const message = ex.message || 'Could not send OTP';
-      setErr(message);
-      toast.error(message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleResendOtp() {
-    if (resendCooldown > 0) return;
-    setErr('');
-    setBusy(true);
-    try {
-      await resendOtp(mobile, 'login');
-      setResendCooldown(30);
-      setOtp(['', '', '', '', '', '']);
-      toast.success('A new OTP has been sent.');
-    } catch (ex) {
-      const message = ex.message || 'Could not resend OTP';
-      setErr(message);
-      toast.error(message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function onSubmit(e) {
     e.preventDefault();
     setErr('');
 
-    if (!otpSent) {
-      await handleSendOtp();
+    if (mobile.length !== 10) {
+      const message = 'Enter a valid 10-digit mobile number';
+      setErr(message);
+      toast.warning(message);
       return;
     }
-
-    const code = otpToString(otp);
-    if (code.length !== 6) {
-      const message = 'Enter the 6-digit OTP';
+    if (!password) {
+      const message = 'Enter your password';
       setErr(message);
       toast.warning(message);
       return;
@@ -174,12 +128,12 @@ export default function Login() {
 
     setBusy(true);
     try {
-      const data = await login(mobile, code);
+      const data = await login(mobile, password);
       if (data.user?.role === 'admin') nav('/admin/panel', { replace: true });
       else nav(redirectTo, { replace: true });
       toast.success('Welcome back! You are now signed in.');
     } catch (ex) {
-      const message = ex.message || 'Invalid OTP';
+      const message = ex.message || 'Invalid mobile number or password';
       setErr(message);
       toast.error(message);
     } finally {
@@ -222,7 +176,7 @@ export default function Login() {
           <section className="login-card-wrap" aria-label="Sign in">
             <div className="login-card">
               <h2 className="login-card__title">Welcome back</h2>
-              <p className="login-card__subtitle">Sign in with your mobile OTP</p>
+              <p className="login-card__subtitle">Sign in with your mobile number and password</p>
 
               <form onSubmit={onSubmit}>
                 <div className="login-field">
@@ -236,26 +190,37 @@ export default function Login() {
                       placeholder="9876543210"
                       value={mobile}
                       onChange={(e) => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      disabled={otpSent}
                       required
                     />
                   </div>
                 </div>
 
-                {otpSent && (
-                  <div className="login-field">
-                    <label>Enter OTP</label>
-                    <OtpInput value={otp} onChange={setOtp} disabled={busy} idPrefix="login-otp" />
+                <div className="login-field">
+                  <label htmlFor="password">Password</label>
+                  <div className="login-mobile-row">
+                    <input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      placeholder="Enter your password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
                     <button
                       type="button"
-                      className="login-resend"
-                      onClick={handleResendOtp}
-                      disabled={busy || resendCooldown > 0}
+                      className="login-eye-toggle"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((v) => !v)}
                     >
-                      {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend OTP'}
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                )}
+                </div>
+
+                <Link to="/forgot-password" className="login-forgot">
+                  Forgot password?
+                </Link>
 
                 {err && <p className="login-error">{err}</p>}
 
@@ -263,33 +228,16 @@ export default function Login() {
                   {busy ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      {otpSent ? 'Verifying…' : 'Sending OTP…'}
+                      Signing in…
                     </>
-                  ) : otpSent ? (
-                    'Verify & Sign in'
                   ) : (
-                    'Send OTP'
+                    'Sign in'
                   )}
                 </button>
-
-                {otpSent && (
-                  <button
-                    type="button"
-                    className="login-change-mobile"
-                    onClick={() => {
-                      setOtpSent(false);
-                      setOtp(['', '', '', '', '', '']);
-                      setErr('');
-                    }}
-                  >
-                    Change mobile number
-                  </button>
-                )}
               </form>
 
               <p className="login-card__footer">
-                No account?{' '}
-                <Link to="/signup">Sign up</Link>
+                No account? <Link to="/signup">Sign up</Link>
               </p>
             </div>
           </section>

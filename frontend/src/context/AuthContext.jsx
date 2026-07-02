@@ -53,8 +53,8 @@ export function AuthProvider({ children }) {
 
   const resendOtp = async (mobile, purpose) => authAPI.resendOtp(mobile, purpose);
 
-  const login = async (mobile, otp) => {
-    const payload = await authAPI.login(mobile, otp);
+  const login = async (mobile, password) => {
+    const payload = await authAPI.login(mobile, password);
     return persistSession(payload);
   };
 

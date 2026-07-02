@@ -1,5 +1,23 @@
 /* Binance-style exchange shell — matches professional trading terminal UI */
+* {
+  box-sizing: border-box;
+}
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
 .exchange-shell {
   --ex-bg: #0b121e;
   --ex-panel: #161a1e;
@@ -385,16 +403,32 @@
     display: none;
   }
 
-  .exchange-header__portfolio-label {
-    display: none;
-  }
-
   .exchange-header__menu {
     display: flex;
   }
 
+  .exchange-header__portfolio {
+    display: none;
+  }
+
+  .exchange-header {
+    padding: 0 0.75rem;
+    gap: 0.5rem;
+  }
+
   .exchange-header__left {
+    flex: 1;
+    min-width: 0;
     gap: 0.65rem;
+  }
+
+  .exchange-header__right {
+    gap: 0.5rem;
+  }
+
+  .exchange-main {
+    width: 100%;
+    overflow-x: hidden;
   }
 
   .exchange-shell--menu-open .exchange-drawer-backdrop {
@@ -409,8 +443,33 @@
 }
 
 @media (max-width: 600px) {
+  .exchange-shell {
+    min-height: 100dvh;
+  }
+
+  .exchange-header {
+    height: 56px;
+    padding: 0 0.6rem;
+  }
+
+  .exchange-header__brand {
+    max-width: 125px;
+    overflow: hidden;
+  }
+
+  .exchange-header__menu {
+    width: 36px;
+    height: 36px;
+  }
+
   .exchange-header__logout {
     display: none;
+  }
+
+  .exchange-header__avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 0.75rem;
   }
 
   .exchange-header__auth {
@@ -419,7 +478,40 @@
 
   .exchange-header__login,
   .exchange-header__signup {
-    padding: 0.3rem 0.55rem;
-    font-size: 0.7rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.68rem;
   }
+
+  .exchange-drawer {
+    width: min(280px, 86vw);
+  }
+
+  .exchange-drawer__link {
+    padding: 0.8rem 0.9rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .exchange-header__avatar {
+    display: none;
+  }
+
+  .exchange-header__brand {
+    max-width: 105px;
+  }
+
+  .exchange-drawer {
+    width: 84vw;
+  }
+}
+.exchange-header__brand,
+.exchange-header__right,
+.exchange-header__auth {
+  min-width: 0;
+}
+.exchange-header__brand {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
