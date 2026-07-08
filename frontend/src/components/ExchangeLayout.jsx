@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
+import { fmtINR } from '../utils/format.js';
 import BrandLogo from './BrandLogo.jsx';
 import './ExchangeLayout.css';
 
 const TOP_NAV = [
   { to: '/trade', label: 'Exchange', end: true },
+  { to: '/futures', label: 'Futures' },
   { to: '/wallet', label: 'Account' },
   { to: '/transactions', label: 'Transactions' },
   { to: '/dashboard', label: 'Dashboard' },
@@ -19,6 +22,7 @@ function portfolioFromWallet(wallet) {
 
 export default function ExchangeLayout() {
   const { user, logout, loading } = useAuth();
+  const { toInr } = usePlatformConfig();
   const { pathname } = useLocation();
   const [portfolio, setPortfolio] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -91,8 +95,11 @@ export default function ExchangeLayout() {
           <div className="exchange-drawer__portfolio">
             <span className="exchange-drawer__portfolio-label">Portfolio Value</span>
             <span className="exchange-drawer__portfolio-value">
-              {portfolio != null ? `${Number(portfolio).toFixed(2)} USDT` : '—'}
+              {portfolio != null ? fmtINR(toInr(portfolio)) : '—'}
             </span>
+            {portfolio != null && (
+              <span className="exchange-drawer__portfolio-usdt">≈ {Number(portfolio).toFixed(2)} USDT</span>
+            )}
           </div>
         ) : (
           <p className="exchange-drawer__guest-note">Browse markets and charts without signing in.</p>
@@ -177,8 +184,11 @@ export default function ExchangeLayout() {
               <div className="exchange-header__portfolio">
                 <span className="exchange-header__portfolio-label">Portfolio Value</span>
                 <span className="exchange-header__portfolio-value">
-                  {portfolio != null ? `${Number(portfolio).toFixed(2)} USDT` : '—'}
+                  {portfolio != null ? fmtINR(toInr(portfolio)) : '—'}
                 </span>
+                {portfolio != null && (
+                  <span className="exchange-header__portfolio-usdt">≈ {Number(portfolio).toFixed(2)} USDT</span>
+                )}
               </div>
               <div className="exchange-header__avatar" title={user?.email || displayName}>
                 {initial}

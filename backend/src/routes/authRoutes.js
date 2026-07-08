@@ -6,6 +6,7 @@ import {
   adminLoginValidators,
   forgotPasswordValidators,
   loginValidators,
+  loginOtpValidators,
   registerValidators,
   resendOtpValidators,
   resetPasswordValidators,
@@ -22,8 +23,9 @@ r.post('/otp/send', ...otpLimits, sendOtpValidators, validateRequest, auth.sendO
 r.post('/otp/resend', ...otpLimits, resendOtpValidators, validateRequest, auth.resendOtp);
 r.post('/register', registerValidators, validateRequest, auth.register);
 r.post('/login', loginValidators, validateRequest, auth.login);
+r.post('/login/otp', ...otpLimits, loginOtpValidators, validateRequest, auth.loginOtp);
 r.post('/admin/login', adminLoginValidators, validateRequest, auth.adminLogin);
-r.post('/forgot-password', forgotPasswordValidators, validateRequest, auth.forgotPassword);
+r.post('/forgot-password', ...otpLimits, forgotPasswordValidators, validateRequest, auth.forgotPassword);
 r.post('/reset-password', resetPasswordValidators, validateRequest, auth.resetPassword);
 r.post('/logout', authMiddleware, auth.logout);
 r.get('/me', authMiddleware, auth.me);

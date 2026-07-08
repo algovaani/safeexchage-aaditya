@@ -352,6 +352,52 @@ body.admin-theme #root {
   border-color: rgba(248, 113, 113, 0.35);
 }
 
+.admin-btn--danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
+}
+
+.admin-btn--xs {
+  padding: 0.28rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.admin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.admin-table-row--muted {
+  opacity: 0.55;
+}
+
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.admin-status-pill--success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.admin-status-pill--warn {
+  background: rgba(234, 179, 8, 0.12);
+  color: #fde047;
+}
+
+.admin-status-pill--muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
 .admin-content--dark {
   padding: 1.25rem 1.5rem 2rem;
   min-width: 0;
@@ -567,7 +613,8 @@ html.dark .admin-badge--cancelled {
 }
 
 .admin-field input,
-.admin-field select {
+.admin-field select,
+.admin-field textarea {
   width: 100%;
   padding: 0.55rem 0.65rem;
   border-radius: 8px;
@@ -575,10 +622,24 @@ html.dark .admin-badge--cancelled {
   background: var(--adm-surface);
   color: var(--adm-text);
   font-size: 0.88rem;
+  font-family: inherit;
+}
+
+.admin-field textarea {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.5;
+}
+
+.admin-field input::placeholder,
+.admin-field textarea::placeholder {
+  color: var(--adm-muted);
+  opacity: 1;
 }
 
 .admin-field input:focus,
-.admin-field select:focus {
+.admin-field select:focus,
+.admin-field textarea:focus {
   outline: none;
   border-color: var(--adm-gold);
   box-shadow: 0 0 0 2px var(--adm-gold-soft);
@@ -1083,5 +1144,451 @@ html.dark .admin-badge--cancelled {
 @media (max-width: 520px) {
   .admin-kyc-docs {
     grid-template-columns: 1fr;
+  }
+}
+
+.admin-coins__intro {
+  color: var(--adm-muted);
+  font-size: 0.875rem;
+  margin: 0;
+  line-height: 1.6;
+  max-width: 52rem;
+}
+
+/* Shared admin form controls — dark & light via CSS vars */
+.admin-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border);
+  background: var(--adm-surface-2);
+  color: var(--adm-text);
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.admin-shell--light .admin-input {
+  background: #fff;
+}
+
+.admin-input::placeholder {
+  color: var(--adm-muted);
+  opacity: 0.85;
+}
+
+.admin-input:focus {
+  outline: none;
+  border-color: var(--adm-gold);
+  box-shadow: 0 0 0 3px var(--adm-gold-soft);
+}
+
+.admin-input--mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+}
+
+.admin-input option {
+  background: var(--adm-surface);
+  color: var(--adm-text);
+}
+
+.admin-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--adm-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.15rem;
+}
+
+.admin-spin {
+  animation: admin-spin-keyframes 0.75s linear infinite;
+}
+
+@keyframes admin-spin-keyframes {
+  to { transform: rotate(360deg); }
+}
+
+/* Exchange Coins page */
+.admin-coins__hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.15rem;
+  border-radius: var(--adm-radius);
+  border: 1px solid var(--adm-border-gold);
+  background: linear-gradient(135deg, var(--adm-gold-soft) 0%, transparent 55%);
+}
+
+.admin-coins__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-coins__stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 5.5rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--adm-border);
+  background: var(--adm-surface);
+}
+
+.admin-coins__stat-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--adm-gold-bright);
+  line-height: 1.2;
+}
+
+.admin-coins__stat-label {
+  font-size: 0.68rem;
+  color: var(--adm-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.15rem;
+}
+
+.admin-coins__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+}
+
+.admin-coins__panel h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--adm-text);
+}
+
+.admin-coins__panel-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+}
+
+.admin-coins__panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-coins__panel-head--table {
+  margin-bottom: 0.85rem;
+}
+
+.admin-coins__panel-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  flex-shrink: 0;
+  color: var(--adm-gold-bright);
+  background: var(--adm-gold-soft);
+  border: 1px solid var(--adm-border-gold);
+}
+
+.admin-coins__panel-icon--search {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.admin-coins__panel-icon--contract {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.12);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.admin-coins__panel-icon--list {
+  color: var(--adm-gold-bright);
+}
+
+.admin-coins__panel-icon--preview {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.admin-coins__search,
+.admin-coins__contract {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.admin-coins__search {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.admin-coins__search .admin-input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.admin-coins__search .admin-btn {
+  flex-shrink: 0;
+}
+
+.admin-coins__lookup-btn {
+  margin-top: 0.25rem;
+  width: 100%;
+}
+
+.admin-coins__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  color: var(--adm-muted);
+}
+
+.admin-coins__results {
+  list-style: none;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--adm-border);
+  flex: 1;
+}
+
+.admin-coins__results li {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.35rem;
+  border-bottom: 1px solid var(--adm-border);
+  transition: background 0.12s;
+}
+
+.admin-coins__results li:hover:not(.admin-coins__empty) {
+  background: var(--adm-gold-soft);
+  border-radius: 8px;
+}
+
+.admin-coins__coin-icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: var(--adm-surface-2);
+  border: 1px solid var(--adm-border);
+}
+
+.admin-coins__coin-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-coins__coin-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.admin-coins__coin-meta strong {
+  font-size: 0.875rem;
+  color: var(--adm-text);
+}
+
+.admin-coins__coin-meta small {
+  font-size: 0.72rem;
+  color: var(--adm-muted);
+}
+
+.admin-coins__empty {
+  color: var(--adm-muted);
+  font-size: 0.84rem;
+  justify-content: center;
+  padding: 1rem !important;
+  border: none !important;
+}
+
+.admin-coins__empty--block {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.admin-coins__preview {
+  margin: 0 0 1rem;
+  border: 1px solid var(--adm-border-gold);
+  background: linear-gradient(180deg, var(--adm-gold-soft) 0%, var(--adm-surface) 40%);
+}
+
+.admin-coins__preview-head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.admin-coins__preview-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--adm-text);
+}
+
+.admin-coins__preview-img {
+  border-radius: 50%;
+  border: 2px solid var(--adm-border-gold);
+}
+
+.admin-coins__preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-coins__preview-item {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  background: var(--adm-surface-2);
+  border: 1px solid var(--adm-border);
+}
+
+.admin-shell--light .admin-coins__preview-item {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.admin-coins__preview-item--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-coins__preview-item span {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--adm-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.admin-coins__preview-item strong,
+.admin-coins__preview-item code {
+  font-size: 0.84rem;
+  color: var(--adm-text);
+  word-break: break-all;
+}
+
+.admin-coins__preview-item code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+.admin-coins__preview-actions {
+  justify-content: flex-end;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--adm-border);
+}
+
+.admin-coins__tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-coins__tag--binance {
+  background: rgba(240, 185, 11, 0.15);
+  color: var(--adm-gold-bright);
+  border: 1px solid rgba(240, 185, 11, 0.35);
+}
+
+.admin-coins__tag--coingecko {
+  background: rgba(96, 165, 250, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+}
+
+.admin-shell--light .admin-coins__tag--coingecko {
+  color: #2563eb;
+}
+
+.admin-coins__table-card .admin-coins__panel-head h2 {
+  color: var(--adm-gold-bright);
+}
+
+.admin-coins__table-card h2 {
+  margin: 0;
+}
+
+.admin-coins__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  padding: 2.5rem;
+  color: var(--adm-muted);
+  font-size: 0.875rem;
+}
+
+.admin-coins__pair {
+  color: var(--adm-gold-bright);
+}
+
+.admin-coins__cg-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--adm-muted);
+  background: var(--adm-surface-2);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+}
+
+.admin-coins__row--hidden {
+  opacity: 0.55;
+}
+
+.admin-coins__row--hidden td {
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .admin-coins__hero {
+    flex-direction: column;
+  }
+
+  .admin-coins__stats {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-coins__stat {
+    flex: 1;
+  }
+
+  .admin-coins__search {
+    flex-direction: column;
+  }
+
+  .admin-coins__search .admin-btn {
+    width: 100%;
   }
 }

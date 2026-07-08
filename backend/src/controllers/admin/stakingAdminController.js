@@ -50,10 +50,15 @@ function formatAdminPlan(plan, stats) {
     lock_days: plan.lockDays,
     min_amount: roundMoney(plan.minAmount),
     max_amount: roundMoney(plan.maxAmount),
+    has_max: Number(plan.maxAmount) > 0,
     payout_type: plan.payoutType || 'end_of_plan',
     payout_mode: plan.payoutMode || 'auto',
     requires_approval: Boolean(plan.requiresApproval),
+    terms: plan.terms || '',
+    early_withdrawal_message: plan.earlyWithdrawalMessage || '',
     is_active: plan.isActive,
+    is_deleted: Boolean(plan.deletedAt),
+    deleted_at: plan.deletedAt || null,
     currency: 'USDT',
     label: planLabel(plan.apyPercent, plan.lockDays),
     total_stakes_count: stats.total_stakes_count,
@@ -109,6 +114,8 @@ export async function createPlan(req, res, next) {
       payout_type,
       payout_mode,
       requires_approval,
+      terms,
+      early_withdrawal_message,
     } = req.body;
 
     const plan = await StakingPlan.create({
@@ -116,10 +123,13 @@ export async function createPlan(req, res, next) {
       apyPercent: roi_percent ?? apy_percent,
       lockDays: lock_days,
       minAmount: min_amount,
-      maxAmount: max_amount,
+      maxAmount: max_amount != null ? max_amount : 0,
       payoutType: payout_type || 'end_of_plan',
       payoutMode: payout_mode || 'auto',
       requiresApproval: Boolean(requires_approval),
+      terms: typeof terms === 'string' ? terms.trim() : '',
+      earlyWithdrawalMessage:
+        typeof early_withdrawal_message === 'string' ? early_withdrawal_message.trim() : '',
       isActive: true,
     });
 
@@ -140,7 +150,7 @@ export async function createPlan(req, res, next) {
 
 export async function getAllPlans(_req, res, next) {
   try {
-    const plans = await StakingPlan.find().sort({ lockDays: 1 }).lean();
+    const plans = await StakingPlan.find().sort({ deletedAt: 1, lockDays: 1 }).lean();
     const data = await Promise.all(
       plans.map(async (plan) => {
         const stats = await planStats(plan._id);
@@ -159,36 +169,77 @@ export async function updatePlan(req, res, next) {
     if (!plan) {
       return error(res, 'Plan not found', 404);
     }
+    if (plan.deletedAt) {
+      return error(res, 'Deleted plans cannot be edited', 400);
+    }
 
     const {
       name,
       apy_percent,
       roi_percent,
+      lock_days,
       min_amount,
       max_amount,
       is_active,
       payout_type,
       payout_mode,
       requires_approval,
+      terms,
+      early_withdrawal_message,
     } = req.body;
 
     if (name != null) plan.name = name;
     if (roi_percent != null || apy_percent != null) plan.apyPercent = roi_percent ?? apy_percent;
+    if (lock_days != null) plan.lockDays = lock_days;
     if (min_amount != null) plan.minAmount = min_amount;
     if (max_amount != null) plan.maxAmount = max_amount;
     if (is_active != null) plan.isActive = is_active;
     if (payout_type != null) plan.payoutType = payout_type;
     if (payout_mode != null) plan.payoutMode = payout_mode;
     if (requires_approval != null) plan.requiresApproval = requires_approval;
+    if (terms != null) plan.terms = typeof terms === 'string' ? terms.trim() : '';
+    if (early_withdrawal_message != null) {
+      plan.earlyWithdrawalMessage =
+        typeof early_withdrawal_message === 'string' ? early_withdrawal_message.trim() : '';
+    }
 
-    if (plan.maxAmount <= plan.minAmount) {
-      return error(res, 'max_amount must be greater than min_amount', 400);
+    if (Number(plan.maxAmount) > 0 && plan.maxAmount <= plan.minAmount) {
+      return error(res, 'max_amount must be greater than min_amount (or 0 for no limit)', 400);
     }
 
     await plan.save();
     const stats = await planStats(plan._id);
 
     return success(res, formatAdminPlan(plan.toObject(), stats), 'Plan updated');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function deletePlan(req, res, next) {
+  try {
+    const plan = await StakingPlan.findById(req.params.id);
+    if (!plan) {
+      return error(res, 'Plan not found', 404);
+    }
+    if (plan.deletedAt) {
+      return error(res, 'Plan is already deleted', 400);
+    }
+
+    const stats = await planStats(plan._id);
+    if (stats.active_stakes_count > 0) {
+      return error(
+        res,
+        `Cannot delete plan with ${stats.active_stakes_count} active or pending investment(s)`,
+        400
+      );
+    }
+
+    plan.deletedAt = new Date();
+    plan.isActive = false;
+    await plan.save();
+
+    return success(res, formatAdminPlan(plan.toObject(), stats), 'Investment plan deleted');
   } catch (e) {
     return next(e);
   }

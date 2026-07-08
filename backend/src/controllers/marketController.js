@@ -3,10 +3,11 @@ import {
   fetchAllPairPrices,
   fetchTicker,
   fetchTicker24h,
+  fetchDepth,
   getPriceCacheTtlMs,
   normalizeSymbol,
 } from '../services/marketDataProvider.js';
-import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
+import { ensureTradingPairCache, getTradingPairSymbolsSync, listTradingPairs } from '../services/tradingPairService.js';
 import { error, success } from '../utils/response.js';
 
 export async function allPrices(_req, res, next) {
@@ -27,9 +28,9 @@ export async function livePrices(_req, res, next) {
       res,
       {
         ...result,
-        source: result.provider || 'kraken',
+        source: result.provider || 'binance',
         pollIntervalSeconds: pollMs / 1000,
-        hint: `Prices via ${result.provider || 'kraken'} (CoinGecko fallback if needed)`,
+        hint: 'Prices via Binance public API',
       },
       'Live prices fetched'
     );
@@ -40,11 +41,13 @@ export async function livePrices(_req, res, next) {
 
 export async function singlePrice(req, res, next) {
   try {
+    await ensureTradingPairCache();
     const sym = normalizeSymbol(req.params.symbol);
-    if (!TRADING_PAIR_SYMBOLS.includes(sym)) {
+    const allowed = getTradingPairSymbolsSync();
+    if (!allowed.includes(sym)) {
       return error(
         res,
-        `Unsupported symbol. Allowed: ${TRADING_PAIR_SYMBOLS.join(', ')}`,
+        `Unsupported symbol. Allowed: ${allowed.join(', ')}`,
         400
       );
     }
@@ -76,6 +79,35 @@ export async function klines(req, res, next) {
 
     const candles = await getMergedKlines(symbol, interval, { startTime, endTime, limit });
     return success(res, { symbol, interval, candles }, 'Klines fetched');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function orderBookDepth(req, res, next) {
+  try {
+    await ensureTradingPairCache();
+    const symbol = String(req.query.symbol || 'BTCUSDT').toUpperCase();
+    if (!getTradingPairSymbolsSync().includes(symbol)) {
+      return error(res, 'Unsupported trading pair', 400);
+    }
+    const limit = Math.min(parseInt(req.query.limit || '20', 10), 100);
+    const depth = await fetchDepth(symbol, { limit });
+    if (!depth || (!depth.bids?.length && !depth.asks?.length)) {
+      return error(res, 'Order book depth unavailable', 503);
+    }
+    res.set('Cache-Control', 'no-store');
+    return success(res, { symbol, ...depth }, 'Depth fetched');
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  }
+}
+
+export async function activePairs(_req, res, next) {
+  try {
+    const rows = await listTradingPairs();
+    return success(res, { pairs: rows }, 'Active trading pairs');
   } catch (e) {
     return next(e);
   }

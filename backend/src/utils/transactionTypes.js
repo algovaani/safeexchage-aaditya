@@ -1,3 +1,11 @@
+export const FUTURES_TRANSACTION_TYPES = [
+  'futures_margin_locked',
+  'futures_margin_returned',
+  'futures_profit',
+  'futures_loss',
+  'futures_fee',
+];
+
 export const TRADE_TRANSACTION_TYPES = [
   'trade_margin_locked',
   'trade_profit',
@@ -34,8 +42,13 @@ export const TRANSACTION_TYPE_LABELS = {
   stake_principal_returned: 'Stake Returned',
   stake_reward: 'Stake Reward',
   stake_early_withdrawal: 'Early Unstake',
-  admin_credit: 'Fund Added',
+  admin_credit: 'Deposit',
   admin_debit: 'Fund Deducted',
+  futures_margin_locked: 'Futures Margin Locked',
+  futures_margin_returned: 'Futures Margin Returned',
+  futures_profit: 'Futures Profit',
+  futures_loss: 'Futures Loss',
+  futures_fee: 'Futures Fee',
 };
 
 export function transactionTypeLabel(type) {
@@ -51,6 +64,7 @@ export function transactionTypesForFilter(type) {
     trade: TRADE_TRANSACTION_TYPES,
     spot: SPOT_TRANSACTION_TYPES,
     stake: STAKE_TRANSACTION_TYPES,
+    futures: FUTURES_TRANSACTION_TYPES,
     admin: ADMIN_ADJUSTMENT_TYPES,
     admin_adjustment: ADMIN_ADJUSTMENT_TYPES,
     buy: ['trade_margin_locked'],
@@ -69,5 +83,8 @@ export function isDebitType(type) {
     'stake_early_withdrawal',
     'spot_buy',
     'admin_debit',
+    'futures_margin_locked',
+    'futures_loss',
+    'futures_fee',
   ].includes(type);
 }

@@ -18,6 +18,7 @@ import AccountProfile from './pages/AccountProfile.jsx';
 import ReferEarn from './pages/ReferEarn.jsx';
 import Transactions from './pages/Transactions.jsx';
 import Trading from './pages/Trading.jsx';
+import Futures from './pages/Futures.jsx';
 import Staking from './pages/Staking.jsx';
 import Admin from './pages/Admin.jsx';
 import AdminUserDetail from './pages/admin/AdminUserDetail.jsx';
@@ -36,6 +37,7 @@ export default function App() {
 
       <Route element={<ExchangeLayout />}>
         <Route path="/trade" element={<Trading />} />
+        <Route path="/futures" element={<Futures />} />
         <Route path="/exchange" element={<Navigate to="/trade" replace />} />
       </Route>
 

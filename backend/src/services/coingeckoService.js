@@ -1,6 +1,11 @@
 import axios from 'axios';
-import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
-import { COINGECKO_IDS, COINGECKO_ID_TO_SYMBOL, coinIdForSymbol } from '../config/coingeckoIds.js';
+import { COINGECKO_IDS, COINGECKO_ID_TO_SYMBOL, coinIdForSymbol as staticCoinIdForSymbol } from '../config/coingeckoIds.js';
+import {
+  ensureTradingPairCache,
+  getCoingeckoIdMapSync,
+  getTradingPairSymbolsSync,
+  coinIdForSymbolSync,
+} from './tradingPairService.js';
 
 const REST = (process.env.COINGECKO_API_URL || 'https://api.coingecko.com/api/v3').replace(/\/$/, '');
 const API_KEY = process.env.COINGECKO_API_KEY?.trim();
@@ -29,9 +34,15 @@ function apiHeaders() {
 
 export function normalizeSymbol(input) {
   const raw = String(input).toUpperCase().trim().replace(/\//g, '');
-  if (TRADING_PAIR_SYMBOLS.includes(raw)) return raw;
+  const symbols = getTradingPairSymbolsSync();
+  if (symbols.includes(raw)) return raw;
   const withUsdt = raw.endsWith('USDT') ? raw : `${raw}USDT`;
+  if (symbols.includes(withUsdt)) return withUsdt;
   return withUsdt;
+}
+
+export function coinIdForSymbol(symbol) {
+  return coinIdForSymbolSync(symbol) || staticCoinIdForSymbol(symbol);
 }
 
 export function toDisplayPair(symbol) {
@@ -119,7 +130,12 @@ function mapSimplePriceRow(symbol, row) {
 
 /** Primary trade-time prices — CoinGecko simple/price (lightweight, global). */
 async function fetchSimplePricesFromApi() {
-  const ids = Object.values(COINGECKO_IDS).join(',');
+  await ensureTradingPairCache();
+  const idMap = getCoingeckoIdMapSync();
+  const symbols = getTradingPairSymbolsSync().filter((sym) => idMap[sym]);
+  const ids = [...new Set(Object.values(idMap))].join(',');
+  if (!ids) return [];
+
   const { data } = await coingeckoGet(`${REST}/simple/price`, {
     params: {
       ids,
@@ -130,15 +146,19 @@ async function fetchSimplePricesFromApi() {
     },
   });
 
-  return TRADING_PAIR_SYMBOLS.map((sym) => {
-    const id = COINGECKO_IDS[sym];
-    return mapSimplePriceRow(sym, data?.[id]);
-  }).filter(Boolean);
+  return symbols
+    .map((sym) => mapSimplePriceRow(sym, data?.[idMap[sym]]))
+    .filter(Boolean);
 }
 
 /** Fallback when simple/price fails — richer 24h high/low from markets endpoint. */
 async function fetchMarketsFromApi() {
-  const ids = Object.values(COINGECKO_IDS).join(',');
+  await ensureTradingPairCache();
+  const idMap = getCoingeckoIdMapSync();
+  const symbols = getTradingPairSymbolsSync().filter((sym) => idMap[sym]);
+  const ids = [...new Set(Object.values(idMap))].join(',');
+  if (!ids) return [];
+
   const { data } = await coingeckoGet(`${REST}/coins/markets`, {
     params: {
       vs_currency: 'usd',
@@ -150,11 +170,13 @@ async function fetchMarketsFromApi() {
   });
 
   const byId = new Map((Array.isArray(data) ? data : []).map((row) => [row.id, row]));
-  return TRADING_PAIR_SYMBOLS.map((sym) => {
-    const id = COINGECKO_IDS[sym];
-    const row = byId.get(id);
-    return row ? mapMarketsRow(sym, row) : null;
-  }).filter(Boolean);
+  return symbols
+    .map((sym) => {
+      const id = idMap[sym];
+      const row = byId.get(id);
+      return row ? mapMarketsRow(sym, row) : null;
+    })
+    .filter(Boolean);
 }
 
 export function recordPriceTick(symbol, price) {
@@ -206,7 +228,8 @@ export function bucketTicksToIntervalCandles(symbol, intervalMs, maxBars = 600) 
 
 export async function fetchTicker(symbol, { force = false } = {}) {
   const sym = normalizeSymbol(symbol);
-  if (!TRADING_PAIR_SYMBOLS.includes(sym)) {
+  await ensureTradingPairCache();
+  if (!getTradingPairSymbolsSync().includes(sym)) {
     const err = new Error(`Unsupported trading pair: ${symbol}`);
     err.status = 400;
     throw err;

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Check, CheckCircle, Clock, XCircle, Loader2, ChevronDown } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
-import { api, parseApiResponse } from '../api/client.js';
+import { api, authAPI, parseApiResponse } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import Card from '../components/ui/Card.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
@@ -10,82 +10,226 @@ import Input from '../components/ui/Input.jsx';
 import FileUploadZone from '../components/ui/FileUploadZone.jsx';
 import ReferEarn from './ReferEarn.jsx';
 
+function profileInitial(profile) {
+  const name = profile?.name?.trim();
+  if (name) return name[0].toUpperCase();
+  if (profile?.email) return profile.email[0].toUpperCase();
+  if (profile?.mobile) return profile.mobile.replace(/\D/g, '').slice(-1) || '?';
+  return '?';
+}
+
+function formatMobile(mobile) {
+  if (!mobile) return '—';
+  const digits = String(mobile).replace(/\D/g, '');
+  const ten = digits.length >= 10 ? digits.slice(-10) : digits;
+  if (ten.length === 10) return `+91 ${ten.slice(0, 5)} ${ten.slice(5)}`;
+  return mobile;
+}
+
 function ProfileTab() {
-  const { user } = useAuth();
+  const toast = useToast();
+  const { refreshUser } = useAuth();
+  const [profile, setProfile] = useState(null);
   const [kycStatus, setKycStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    bnbWalletAddress: '',
+    ethWalletAddress: '',
+    trcWalletAddress: '',
+    usdtWalletAddress: '',
+  });
+
+  async function loadProfile() {
+    setLoading(true);
+    try {
+      const [userData, kyc] = await Promise.all([
+        authAPI.me(),
+        api.get('/kyc/status').then((r) => parseApiResponse(r.data)).catch(() => ({ status: 'not_submitted' })),
+      ]);
+      setProfile(userData);
+      setKycStatus(kyc);
+      setForm({
+        name: userData?.name || '',
+        bnbWalletAddress: userData?.bnbWalletAddress || '',
+        ethWalletAddress: userData?.ethWalletAddress || '',
+        trcWalletAddress: userData?.trcWalletAddress || '',
+        usdtWalletAddress: userData?.usdtWalletAddress || '',
+      });
+    } catch {
+      toast.error('Could not load profile');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    api
-      .get('/kyc/status')
-      .then((r) => setKycStatus(parseApiResponse(r.data)))
-      .catch(() => setKycStatus({ status: 'not_submitted' }));
+    loadProfile();
   }, []);
 
+  async function onSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const updated = await authAPI.updateProfile(form);
+      setProfile(updated);
+      await refreshUser();
+      toast.success('Profile updated successfully');
+    } catch (ex) {
+      toast.error(ex.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const statusKey = kycStatus?.status || 'not_submitted';
+  const memberSince = profile?.createdAt
+    ? new Date(profile.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+    : '—';
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-text-secondary">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        Loading profile…
+      </div>
+    );
+  }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <Card>
-        <div className="w-[72px] h-[72px] rounded-full bg-gradient-to-br from-accent/40 to-accent flex items-center justify-center text-2xl font-bold text-black mb-4">
-          {user?.email?.[0]?.toUpperCase() ?? user?.mobile?.[0] ?? '?'}
-        </div>
-        <div className="space-y-4 text-sm">
-          <div>
-            <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Email</p>
-            <p className="text-text-primary">{user?.email || '—'}</p>
+    <form onSubmit={onSave} className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <div className="flex items-start gap-4 mb-6">
+            <div className="w-[72px] h-[72px] rounded-full bg-gradient-to-br from-accent/40 to-accent flex items-center justify-center text-2xl font-bold text-black shrink-0">
+              {profileInitial(profile)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-lg font-medium text-text-primary truncate">
+                {form.name?.trim() || profile?.email?.split('@')[0] || 'Trader'}
+              </p>
+              <p className="text-sm text-text-secondary mt-0.5">Member since {memberSince}</p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <StatusBadge status={profile?.status || 'active'} />
+                <StatusBadge status={statusKey} />
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Mobile No.</p>
-            <p className="text-text-primary">{user?.mobile || '—'}</p>
+
+          <div className="space-y-4 text-sm">
+            <Input
+              label="Display name"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Your name"
+              maxLength={120}
+            />
+            <div>
+              <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Email</p>
+              <p className="text-text-primary">{profile?.email || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Mobile</p>
+              <p className="text-text-primary tabular-nums">{formatMobile(profile?.mobile)}</p>
+            </div>
+            {profile?.referralCode && (
+              <div>
+                <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Referral code</p>
+                <p className="text-text-primary font-mono">{profile.referralCode}</p>
+              </div>
+            )}
+            {kycStatus?.status === 'rejected' && kycStatus.adminNote && (
+              <p className="text-xs text-loss">KYC note: {kycStatus.adminNote}</p>
+            )}
           </div>
-          <div>
-            <p className="text-xs text-text-secondary uppercase tracking-wider mb-2">KYC</p>
-            <StatusBadge status={statusKey} />
+        </Card>
+
+        <Card>
+          <h3 className="text-base font-semibold text-text-primary mb-1">Withdrawal wallets</h3>
+          <p className="text-sm text-text-secondary mb-4">
+            Used for deposits and withdrawals. Keep addresses accurate for your network.
+          </p>
+          <div className="space-y-3">
+            <Input
+              label="BNB (BEP20) address"
+              value={form.bnbWalletAddress}
+              onChange={(e) => setForm((f) => ({ ...f, bnbWalletAddress: e.target.value }))}
+              placeholder="0x…"
+            />
+            <Input
+              label="ETH (ERC20) address"
+              value={form.ethWalletAddress}
+              onChange={(e) => setForm((f) => ({ ...f, ethWalletAddress: e.target.value }))}
+              placeholder="0x…"
+            />
+            <Input
+              label="TRC20 address"
+              value={form.trcWalletAddress}
+              onChange={(e) => setForm((f) => ({ ...f, trcWalletAddress: e.target.value }))}
+              placeholder="T…"
+            />
+            <Input
+              label="USDT wallet (legacy)"
+              value={form.usdtWalletAddress}
+              onChange={(e) => setForm((f) => ({ ...f, usdtWalletAddress: e.target.value }))}
+              placeholder="Optional"
+            />
           </div>
-          {kycStatus?.status === 'rejected' && kycStatus.adminNote && (
-            <p className="text-xs text-text-secondary">Note: {kycStatus.adminNote}</p>
+        </Card>
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          className="btn-primary min-w-[140px] flex items-center justify-center gap-2"
+          disabled={saving}
+        >
+          {saving ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving…
+            </>
+          ) : (
+            'Save changes'
           )}
-        </div>
-        <button
-          type="button"
-          className="mt-6 w-full py-2.5 rounded-lg bg-loss/10 text-loss border border-loss/20 text-sm font-medium opacity-50 cursor-not-allowed"
-          disabled
-        >
-          Delete User
         </button>
-      </Card>
+      </div>
+    </form>
+  );
+}
 
-      <Card>
-        <h3 className="text-base font-semibold text-text-primary mb-4">Change Password</h3>
-        <Input label="Old Password" type="password" disabled placeholder="Not available in demo" />
-        <Input label="New Password" type="password" disabled className="mt-3" />
-        <Input label="Confirm New Password" type="password" disabled className="mt-3" />
-        <button
-          type="button"
-          className="mt-4 w-full py-2.5 rounded-xl bg-bg-tertiary border border-border text-text-secondary text-sm font-medium opacity-50 cursor-not-allowed"
-          disabled
-        >
-          Change Password
-        </button>
-      </Card>
+function SecurityTab() {
+  const { user } = useAuth();
 
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
-        <h3 className="text-base font-semibold text-text-primary mb-2">Google Authentication</h3>
-        <p className="text-sm text-text-secondary mb-4">2FA setup (demo — disabled).</p>
-        <div className="w-[120px] h-[120px] bg-bg-tertiary border border-border rounded-lg flex items-center justify-center text-text-secondary font-bold mb-4">
-          QR
-        </div>
-        <p className="text-sm text-text-primary mb-4">
-          Status: <strong className="text-text-secondary">Disabled</strong>
+        <h3 className="text-base font-semibold text-text-primary mb-2">Password</h3>
+        <p className="text-sm text-text-secondary mb-4">
+          Reset your password using OTP sent to your registered mobile number.
         </p>
-        <Input label="Authentication Code" disabled placeholder="—" />
-        <button
-          type="button"
-          className="mt-4 w-full py-2.5 rounded-xl bg-bg-tertiary border border-border text-text-secondary text-sm font-medium opacity-50 cursor-not-allowed"
-          disabled
-        >
-          Enable
-        </button>
+        <Link to="/forgot-password" className="btn-primary inline-flex no-underline">
+          Reset password
+        </Link>
+      </Card>
+
+      <Card>
+        <h3 className="text-base font-semibold text-text-primary mb-4">Account security</h3>
+        <ul className="space-y-3 text-sm">
+          <li className="flex items-center justify-between gap-3">
+            <span className="text-text-secondary">Mobile verified</span>
+            <StatusBadge status={user?.mobileVerified ? 'approved' : 'pending'} />
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span className="text-text-secondary">Email verified</span>
+            <StatusBadge status={user?.emailVerified ? 'approved' : 'pending'} />
+          </li>
+          <li className="flex items-center justify-between gap-3">
+            <span className="text-text-secondary">Account status</span>
+            <StatusBadge status={user?.status || 'active'} />
+          </li>
+        </ul>
       </Card>
     </div>
   );
@@ -410,7 +554,7 @@ export default function AccountProfile() {
         <div>
           <Routes>
             <Route index element={<ProfileTab />} />
-            <Route path="security" element={<ProfileTab />} />
+            <Route path="security" element={<SecurityTab />} />
             <Route path="kyc" element={<KycTab />} />
             <Route path="notifications" element={<PlaceholderTab title="Notifications" />} />
             <Route path="api" element={<Navigate to="/account/profile" replace />} />

@@ -6,6 +6,7 @@ import {
   adminStakesListValidators,
   createPlanValidators,
   updatePlanValidators,
+  deletePlanValidators,
   reviewStakeValidators,
   releasePayoutValidators,
 } from '../../validators/stakingValidators.js';
@@ -17,6 +18,7 @@ r.use(adminMiddleware);
 r.post('/plans', createPlanValidators, validateRequest, stakingAdmin.createPlan);
 r.get('/plans', stakingAdmin.getAllPlans);
 r.patch('/plans/:id', updatePlanValidators, validateRequest, stakingAdmin.updatePlan);
+r.delete('/plans/:id', deletePlanValidators, validateRequest, stakingAdmin.deletePlan);
 r.get('/stakes', adminStakesListValidators, validateRequest, stakingAdmin.getAllStakes);
 r.patch('/stakes/:id/review', reviewStakeValidators, validateRequest, stakingAdmin.reviewStake);
 r.post('/stakes/:id/release-payout', releasePayoutValidators, validateRequest, stakingAdmin.releaseStakePayout);

@@ -23,13 +23,19 @@ import { depositRouter, depositsRouter } from './routes/depositRoutes.js';
 import { withdrawalRouter, withdrawalsRouter } from './routes/withdrawalRoutes.js';
 import tradeRoutes from './routes/tradeRoutes.js';
 import stakingRoutes from './routes/stakingRoutes.js';
+import configRoutes from './routes/configRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
+import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
+import futuresRoutes from './routes/futuresRoutes.js';
 import { ensureMarketStream, roomName } from './services/marketStreamService.js';
+import { attachUserSockets } from './services/socketService.js';
 import { startMonitor } from './services/tpslMonitor.js';
+import { startFuturesMonitor, attachFuturesMonitorIo } from './services/futuresMonitor.js';
 import { startStakingCron } from './services/stakingRewardService.js';
 import { startChainDepositWatcher } from './services/chainWatcherService.js';
 import { evmScannerStatus } from './services/evmDepositScanService.js';
+import { seedTradingPairsIfEmpty, refreshTradingPairCache } from './services/tradingPairService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
 import { installGracefulShutdown, installProcessHandlers } from './config/processStability.js';
 import { isDbConnected } from './config/db.js';
@@ -56,6 +62,9 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+
+// Per-user private rooms for realtime wallet/balance pushes.
+attachUserSockets(io);
 
 app.use(corsPreflightMiddleware);
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
@@ -121,8 +130,11 @@ app.use('/api/withdrawals', withdrawalsRouter);
 app.use('/api/orders', orderRoutes);
 app.use('/api/trades', tradeRoutes);
 app.use('/api/staking', stakingRoutes);
+app.use('/api/config', configRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/cash-in-person', cashInPersonRoutes);
+app.use('/api/futures', futuresRoutes);
 app.use('/api/market', marketRoutes);
 app.use('/api/admin', adminRoutes);
 
@@ -147,9 +159,18 @@ const PORT = Number(process.env.PORT) || 5001;
 let chainWatcherTimer = null;
 
 async function startBackgroundJobs() {
+  attachFuturesMonitorIo(io);
   startMonitor();
+  startFuturesMonitor();
   startStakingCron();
   chainWatcherTimer = startChainDepositWatcher();
+  try {
+    await seedTradingPairsIfEmpty();
+    await refreshTradingPairCache();
+    console.info('[pairs] Trading pair cache loaded');
+  } catch (err) {
+    console.warn('[pairs] Cache init failed:', err.message);
+  }
   const scan = evmScannerStatus();
   if (scan.moralis && scan.tatum) {
     console.info('[deposits] BNB/ETH: Moralis primary, Tatum fallback');
@@ -208,8 +229,10 @@ async function main() {
   installGracefulShutdown(server, {
     onShutdown: async () => {
       const { stopMonitor } = await import('./services/tpslMonitor.js');
+      const { stopFuturesMonitor } = await import('./services/futuresMonitor.js');
       const { stopStakingCron } = await import('./services/stakingRewardService.js');
       stopMonitor();
+      stopFuturesMonitor();
       stopStakingCron();
       if (chainWatcherTimer) {
         clearInterval(chainWatcherTimer);

@@ -2,13 +2,18 @@ import { UserStake } from '../models/UserStake.js';
 import { StakingPlan } from '../models/StakingPlan.js';
 import {
   calculateEarnedSoFar,
+  calculateMonthlyReward,
   daysBetween,
+  monthsForPlan,
   startOfDay,
 } from '../utils/stakingMath.js';
 import {
   creditDailyReward,
+  creditMonthlyReward,
   releaseMaturityPayout,
 } from './stakingPayoutService.js';
+
+const MONTH_DAYS = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 let timer = null;
@@ -23,6 +28,7 @@ export async function updateDailyRewards() {
   let updated = 0;
   let matured = 0;
   let dailyPaid = 0;
+  let monthlyPaid = 0;
   let autoReleased = 0;
 
   for (const row of stakes) {
@@ -35,14 +41,14 @@ export async function updateDailyRewards() {
 
     if (stake.status === 'active' && stake.startDate) {
       const daysElapsed = daysBetween(stake.startDate, today);
-      stake.rewardEarned = calculateEarnedSoFar(
-        stake.amount,
-        stake.apyPercent,
-        stake.lockDays,
-        daysElapsed
-      );
 
       if (payoutType === 'daily' && payoutMode === 'auto') {
+        stake.rewardEarned = calculateEarnedSoFar(
+          stake.amount,
+          stake.apyPercent,
+          stake.lockDays,
+          daysElapsed
+        );
         const last = stake.lastDailyPayoutAt ? startOfDay(stake.lastDailyPayoutAt) : null;
         if (!last || last < today) {
           try {
@@ -52,6 +58,26 @@ export async function updateDailyRewards() {
             console.error('[stakingCron] Daily payout error:', err.message);
           }
         }
+      } else if (payoutType === 'monthly' && payoutMode === 'auto') {
+        const monthlySlice = calculateMonthlyReward(stake.amount, stake.apyPercent, stake.lockDays);
+        const totalMonths = monthsForPlan(stake.lockDays);
+        const monthsPaid = monthlySlice > 0 ? Math.round((stake.rewardEarned || 0) / monthlySlice) : 0;
+        const lastRef = stake.lastDailyPayoutAt || stake.startDate;
+        if (monthsPaid < totalMonths && daysBetween(lastRef, today) >= MONTH_DAYS) {
+          try {
+            await creditMonthlyReward(stake, plan);
+            monthlyPaid += 1;
+          } catch (err) {
+            console.error('[stakingCron] Monthly payout error:', err.message);
+          }
+        }
+      } else {
+        stake.rewardEarned = calculateEarnedSoFar(
+          stake.amount,
+          stake.apyPercent,
+          stake.lockDays,
+          daysElapsed
+        );
       }
     }
 
@@ -82,10 +108,10 @@ export async function updateDailyRewards() {
   }
 
   console.log(
-    `[stakingCron] ${updated} updated, ${matured} matured, ${dailyPaid} daily payouts, ${autoReleased} auto-released`
+    `[stakingCron] ${updated} updated, ${matured} matured, ${dailyPaid} daily payouts, ${monthlyPaid} monthly payouts, ${autoReleased} auto-released`
   );
 
-  return { updated, matured, dailyPaid, autoReleased };
+  return { updated, matured, dailyPaid, monthlyPaid, autoReleased };
 }
 
 export function startStakingCron() {

@@ -4,6 +4,7 @@ import {
   adjustUserWalletBalance,
   formatFundAdjustment,
 } from '../services/walletAdjustmentService.js';
+import { emitWalletUpdate } from '../services/socketService.js';
 
 export async function adjustUserFunds(req, res, next) {
   try {
@@ -14,6 +15,10 @@ export async function adjustUserFunds(req, res, next) {
       action,
       amount,
       remark,
+    });
+
+    await emitWalletUpdate(req.app.get('io'), req.params.userId, {
+      reason: action === 'add' ? 'admin_credit' : 'admin_debit',
     });
 
     const label = action === 'add' ? 'Funds added' : 'Funds deducted';

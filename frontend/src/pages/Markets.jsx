@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
-import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
+import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { MARKET_POLL_MS } from '../config/marketPoll.js';
 import DataTable from '../components/DataTable.jsx';
-import { fmtINR, fmtPct, inrFromUsdt } from '../utils/format.js';
+import { fmtINR, fmtPct } from '../utils/format.js';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import './Markets.css';
 
 const CATEGORIES = ['All', 'Crypto', 'Stocks', 'Forex', 'Commodities'];
-const CRYPTO_SYMBOLS = TRADING_PAIR_SYMBOLS;
 
 const STOCK_MOCK = [
   { symbol: 'NIFTY', name: 'Nifty 50', price: 24850.3, change: 0.42, volume: '12.4B', cap: '—', type: 'stock' },
@@ -31,8 +31,8 @@ function MiniSparkline({ up }) {
   );
 }
 
-function formatPrice(row) {
-  return row.type === 'crypto' ? fmtINR(inrFromUsdt(row.price)) : `₹ ${row.price.toLocaleString()}`;
+function formatPrice(row, toInr) {
+  return row.type === 'crypto' ? fmtINR(toInr(row.price)) : `₹ ${row.price.toLocaleString()}`;
 }
 
 function AssetCell({ row }) {
@@ -48,6 +48,8 @@ function AssetCell({ row }) {
 }
 
 export default function Markets() {
+  const { toInr } = usePlatformConfig();
+  const { symbols: cryptoSymbols, pairs: tradingPairs } = useTradingPairs();
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('volume');
@@ -65,12 +67,13 @@ export default function Markets() {
         const pairs = payload?.pairs || [];
         const bySymbol = new Map(pairs.map((p) => [p.symbol, p]));
 
-        const crypto = CRYPTO_SYMBOLS.map((sym) => {
+        const crypto = cryptoSymbols.map((sym) => {
           const row = bySymbol.get(sym);
+          const meta = tradingPairs.find((p) => p.symbol === sym);
           if (!row) return null;
           return {
             symbol: sym.replace('USDT', ''),
-            name: sym.replace('USDT', ''),
+            name: meta?.name || sym.replace('USDT', ''),
             price: Number(row.price ?? 0),
             change: Number(row.change_24h ?? 0),
             volume: row.volume ? `${(Number(row.volume) / 1e6).toFixed(1)}M` : '—',
@@ -94,7 +97,7 @@ export default function Markets() {
       active = false;
       clearInterval(id);
     };
-  }, []);
+  }, [cryptoSymbols, tradingPairs]);
 
   const filtered = useMemo(() => {
     let list = rows;
@@ -133,7 +136,7 @@ export default function Markets() {
         label: 'Price',
         sortable: true,
         sortValue: (row) => row.price,
-        render: (row) => <span className="font-mono tabular-nums">{formatPrice(row)}</span>,
+        render: (row) => <span className="font-mono tabular-nums">{formatPrice(row, toInr)}</span>,
       },
       {
         key: 'change',
@@ -178,7 +181,7 @@ export default function Markets() {
         ),
       },
     ],
-    []
+    [toInr]
   );
 
   return (

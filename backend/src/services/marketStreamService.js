@@ -4,15 +4,17 @@ import { processOrdersForPrice } from './orderEngine.js';
 import {
   fetchKlines,
   fetchTicker,
+  fetchDepth,
+  fetchAggTrades,
   intervalToMs,
   recordPriceTick,
   bucketTicksToIntervalCandles,
-  syntheticOrderBook,
 } from './marketDataProvider.js';
 
-const TICK_POLL_MS = Number(process.env.COINGECKO_STREAM_POLL_MS) || 3000;
-const KLINE_POLL_MS = Number(process.env.COINGECKO_KLINE_POLL_MS) || 45_000;
-const LIVE_BAR_POLL_MS = Number(process.env.COINGECKO_LIVE_BAR_MS) || 3000;
+const TICK_POLL_MS = Number(process.env.MARKET_STREAM_POLL_MS) || 2000;
+const KLINE_POLL_MS = Number(process.env.MARKET_KLINE_POLL_MS) || 15_000;
+const LIVE_BAR_POLL_MS = Number(process.env.MARKET_LIVE_BAR_MS) || 2000;
+const DEPTH_POLL_MS = Number(process.env.MARKET_DEPTH_POLL_MS) || 2000;
 
 const activeStreams = new Map();
 const aggState = new Map();
@@ -53,19 +55,21 @@ async function persistCandle(symbol, interval, candle) {
         close: candle.close,
         volume: candle.volume,
         isFinal: candle.isFinal,
-        source: 'coingecko',
+        source: 'binance',
       },
     },
     { upsert: true }
   );
 }
 
-function startCoinGeckoTickStream({ symbol, io }) {
+function startBinanceTickStream({ symbol, io }) {
   const sym = symbol.toUpperCase();
   const room = roomName(sym, '1s');
   const key = sym;
   let timer = null;
+  let depthTimer = null;
   let stopped = false;
+  let lastTradeTime = 0;
 
   const poll = async () => {
     if (stopped) return;
@@ -96,33 +100,55 @@ function startCoinGeckoTickStream({ symbol, io }) {
       const candle = { ...st };
       emitMergedThrottled(key, io, room, sym, '1s', candle);
       await persistCandle(sym, '1s', candle);
-
-      const depth = syntheticOrderBook(price);
-      io.to(room).emit('market:depth', { symbol: sym, ...depth });
-      io.to(room).emit('market:trade', {
-        price,
-        qty: +(Math.random() * 0.5 + 0.01).toFixed(4),
-        time: Date.now(),
-        symbol: sym,
-        isBuyerMaker: Math.random() > 0.5,
-      });
     } catch (err) {
-      console.error(`[coingeckoStream] tick ${sym}:`, err.message);
+      console.error(`[binanceStream] tick ${sym}:`, err.message);
+    }
+  };
+
+  const pollDepthAndTrades = async () => {
+    if (stopped) return;
+    try {
+      const [depth, trades] = await Promise.all([
+        fetchDepth(sym, { limit: 20 }),
+        fetchAggTrades(sym, { limit: 20 }),
+      ]);
+
+      if (depth && (depth.bids.length || depth.asks.length)) {
+        io.to(room).emit('market:depth', { symbol: sym, ...depth });
+      }
+
+      for (const t of trades) {
+        if (t.time <= lastTradeTime) continue;
+        lastTradeTime = t.time;
+        io.to(room).emit('market:trade', {
+          price: t.price,
+          qty: t.qty,
+          time: t.time,
+          symbol: sym,
+          isBuyerMaker: t.isBuyerMaker,
+        });
+      }
+    } catch (err) {
+      console.error(`[binanceStream] depth/trades ${sym}:`, err.message);
     }
   };
 
   poll();
+  pollDepthAndTrades();
   timer = setInterval(poll, TICK_POLL_MS);
+  depthTimer = setInterval(pollDepthAndTrades, DEPTH_POLL_MS);
   timer.unref?.();
+  depthTimer.unref?.();
 
   return () => {
     stopped = true;
     if (timer) clearInterval(timer);
+    if (depthTimer) clearInterval(depthTimer);
     aggState.delete(key);
   };
 }
 
-function startCoinGeckoKlineStream({ symbol, interval, io }) {
+function startBinanceKlineStreamInternal({ symbol, interval, io }) {
   const sym = symbol.toUpperCase();
   const room = roomName(sym, interval);
   let historyTimer = null;
@@ -146,7 +172,7 @@ function startCoinGeckoKlineStream({ symbol, interval, io }) {
       const latest = candles[candles.length - 1];
       await emitCandle(latest);
     } catch (err) {
-      console.error(`[coingeckoStream] kline ${sym} ${interval}:`, err.message);
+      console.error(`[binanceStream] kline ${sym} ${interval}:`, err.message);
     }
   };
 
@@ -161,7 +187,7 @@ function startCoinGeckoKlineStream({ symbol, interval, io }) {
         await emitCandle({ ...latest, isFinal: false });
       }
     } catch (err) {
-      console.error(`[coingeckoStream] live bar ${sym} ${interval}:`, err.message);
+      console.error(`[binanceStream] live bar ${sym} ${interval}:`, err.message);
     }
   };
 
@@ -188,8 +214,8 @@ export function ensureMarketStream(io, symbol, interval) {
 
   const stop =
     interval === '1s'
-      ? startCoinGeckoTickStream({ symbol: sym, io })
-      : startCoinGeckoKlineStream({ symbol: sym, interval, io });
+      ? startBinanceTickStream({ symbol: sym, io })
+      : startBinanceKlineStreamInternal({ symbol: sym, interval, io });
 
   activeStreams.set(key, stop);
 }

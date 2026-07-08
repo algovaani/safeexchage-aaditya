@@ -280,8 +280,44 @@
     top: 0;
   }
 
+  .ex-side-stack.ex-zone--book {
+    height: calc(100dvh - 72px);
+    max-height: calc(100dvh - 72px);
+  }
+
+  .ex-panel--depth {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .ex-panel--depth .ex-book {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .ex-panel--depth .ex-book__side {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .ex-panel--depth .ex-book__mid {
+    flex-shrink: 0;
+  }
+
   .ex-book {
     max-height: 360px;
+  }
+
+  .ex-panel--depth .ex-book {
+    max-height: none;
   }
 
   .ex-tape {
@@ -347,6 +383,30 @@
 
   .ex-side-stack.is-active {
     gap: 0.35rem;
+    flex: 1;
+    min-height: calc(100dvh - 120px);
+  }
+
+  .ex-side-stack.is-active .ex-panel--depth {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .ex-side-stack.is-active .ex-panel--depth .ex-book {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .ex-side-stack.is-active .ex-panel--depth .ex-book__side {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   .ex-chart-toolbar__tools--desktop {
@@ -1029,6 +1089,12 @@
   text-decoration: underline;
 }
 
+.ex-balance-line__inr {
+  font-size: 0.7rem;
+  color: var(--ex-muted);
+  font-weight: 500;
+}
+
 .ex-my-orders__guest {
   display: flex;
   flex-direction: column;
@@ -1109,6 +1175,11 @@
   .ex-my-orders__scroll {
     max-height: 360px;
     overflow: auto;
+  }
+
+  .ex-panel--depth .ex-book {
+    max-height: none;
+    overflow: hidden;
   }
 
   .ex-my-orders__table-wrap,

@@ -5,7 +5,7 @@ import { UserOrder } from '../models/UserOrder.js';
 import { AdminTrade } from '../models/AdminTrade.js';
 import { UserStake } from '../models/UserStake.js';
 import { StakingPlan } from '../models/StakingPlan.js';
-import { fetchPriceMap } from '../services/coingeckoService.js';
+import { fetchPriceMap } from '../services/marketDataProvider.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';

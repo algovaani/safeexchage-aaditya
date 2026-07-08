@@ -466,6 +466,66 @@
   color: #4ade80;
 }
 
+.deposit-modal__info {
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 8px;
+}
+
+.deposit-modal__footer {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.deposit-modal__footer-cancel {
+  flex: 0 0 auto;
+  min-width: 6.5rem;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.deposit-modal__footer-cancel:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.deposit-modal__footer .deposit-modal__submit {
+  flex: 1;
+  margin-top: 0;
+}
+
+.cash-in-person-modal {
+  max-width: 480px;
+}
+
+.cash-in-person-modal__icon {
+  background: linear-gradient(135deg, #f59e0b, #fbbf24) !important;
+}
+
+.cash-in-person-modal__success-box {
+  padding: 1rem 0 0.5rem;
+  text-align: center;
+}
+
+.cash-in-person-modal__success-sub {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
 .deposit-modal__scan-hint {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;

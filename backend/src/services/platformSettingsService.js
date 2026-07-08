@@ -59,6 +59,7 @@ export function formatPublicSettings(doc) {
     hasTrcPrivateKey: Boolean(doc.trcPrivateKey),
     hasEvmMnemonic: canUseUniqueAddressDerivation(doc),
     referralRewardUsdt: roundMoney(Number(doc.referralRewardUsdt ?? 0)),
+    usdtInrRate: roundMoney(Number(doc.usdtInrRate ?? 83.5)),
     updatedAt: doc.updatedAt,
   };
 }
@@ -96,6 +97,7 @@ export async function updatePlatformSettings(adminUserId, body) {
     'trcPrivateKey',
     'evmMnemonic',
     'referralRewardUsdt',
+    'usdtInrRate',
   ];
 
   const update = { updatedBy: adminUserId };
@@ -105,6 +107,11 @@ export async function updatePlatformSettings(adminUserId, body) {
     if (key === 'referralRewardUsdt') {
       const num = Number(body[key]);
       update[key] = roundMoney(Number.isFinite(num) && num > 0 ? num : 0);
+      continue;
+    }
+    if (key === 'usdtInrRate') {
+      const num = Number(body[key]);
+      update[key] = roundMoney(Number.isFinite(num) && num >= 1 ? num : 83.5);
       continue;
     }
     if (key === 'depositMode') {

@@ -1,0 +1,669 @@
+.fut-page {
+  --fut-bg: #0b0e11;
+  --fut-panel: #161a1e;
+  --fut-panel-2: #1e2329;
+  --fut-border: #2b3139;
+  --fut-text: #eaecef;
+  --fut-muted: #848e9c;
+  --fut-accent: #f0b90b;
+  --fut-buy: #0ecb81;
+  --fut-sell: #f6465d;
+  --fut-chart-h: min(52vh, 520px);
+  --fut-book-w: 300px;
+  --fut-order-w: 320px;
+
+  min-height: calc(100vh - 56px);
+  background: var(--fut-bg);
+  color: var(--fut-text);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fut-banner {
+  padding: 0.55rem 1rem;
+  font-size: 0.82rem;
+  background: rgba(240, 185, 11, 0.1);
+  border-bottom: 1px solid rgba(240, 185, 11, 0.25);
+  color: var(--fut-accent);
+}
+
+.fut-pos { color: var(--fut-buy) !important; }
+.fut-neg { color: var(--fut-sell) !important; }
+
+/* —— Header ticker —— */
+.fut-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.55rem 0.85rem;
+  background: var(--fut-panel);
+  border-bottom: 1px solid var(--fut-border);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.fut-header__pair {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.fut-select {
+  background: transparent;
+  border: none;
+  color: var(--fut-text);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.15rem 0;
+}
+
+.fut-header__perp {
+  font-size: 0.68rem;
+  color: var(--fut-muted);
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
+.fut-header__price {
+  font-size: 1.35rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  min-width: 5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.fut-header__stats {
+  display: flex;
+  gap: 1.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.fut-header__stats div,
+.fut-header__wallet {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex-shrink: 0;
+}
+
+.fut-header__stats span,
+.fut-header__wallet span {
+  font-size: 0.68rem;
+  color: var(--fut-muted);
+}
+
+.fut-header__stats strong,
+.fut-header__wallet strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fut-header__wallet {
+  margin-left: auto;
+  text-align: right;
+}
+
+/* —— Main workspace —— */
+.fut-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--fut-book-w) var(--fut-order-w);
+  gap: 1px;
+  background: var(--fut-border);
+  min-height: 0;
+  flex: 1;
+}
+
+.fut-panel {
+  background: var(--fut-panel);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fut-panel--chart {
+  min-width: 0;
+}
+
+.fut-panel--book {
+  overflow: hidden;
+}
+
+.fut-panel--order {
+  padding: 0.65rem;
+  overflow-y: auto;
+}
+
+/* —— Chart —— */
+.fut-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-bottom: 1px solid var(--fut-border);
+  flex-shrink: 0;
+}
+
+.fut-toolbar__intervals {
+  display: flex;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.fut-toolbar__intervals button {
+  background: transparent;
+  border: none;
+  color: var(--fut-muted);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.fut-toolbar__intervals button.is-active {
+  color: var(--fut-accent);
+  background: var(--fut-panel-2);
+}
+
+.fut-toolbar__pair {
+  font-size: 0.72rem;
+  color: var(--fut-muted);
+}
+
+.fut-chart-body {
+  flex: 1;
+  min-height: var(--fut-chart-h);
+  position: relative;
+}
+
+.fut-chart-wrap,
+.fut-chart-body .chart-wrap {
+  height: var(--fut-chart-h) !important;
+  min-height: 280px !important;
+  width: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.fut-chart-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--fut-muted);
+  font-size: 0.85rem;
+  background: rgba(10, 14, 19, 0.72);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* —— Order book + trades —— */
+.fut-panel__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--fut-border);
+  flex-shrink: 0;
+}
+
+.fut-panel__tabs button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--fut-muted);
+  font-size: 0.78rem;
+  padding: 0.55rem;
+  cursor: pointer;
+}
+
+.fut-panel__tabs button.is-active {
+  color: var(--fut-text);
+  box-shadow: inset 0 -2px 0 var(--fut-accent);
+}
+
+.fut-panel__tabs button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.fut-book {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.72rem;
+  overflow: hidden;
+}
+
+.fut-book__head,
+.fut-tape__head {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.35rem 0.55rem;
+  color: var(--fut-muted);
+  border-bottom: 1px solid var(--fut-border);
+}
+
+.fut-book__asks,
+.fut-book__bids {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.fut-book__asks {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.fut-book__bids {
+  flex: 1;
+}
+
+.fut-book__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.12rem 0.55rem;
+  contain: layout style;
+}
+
+.fut-book__row--ask span:first-child { color: var(--fut-sell); }
+.fut-book__row--bid span:first-child { color: var(--fut-buy); }
+
+.fut-book__mid {
+  text-align: center;
+  padding: 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-top: 1px solid var(--fut-border);
+  border-bottom: 1px solid var(--fut-border);
+  flex-shrink: 0;
+}
+
+.fut-tape {
+  border-top: 1px solid var(--fut-border);
+  max-height: 180px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.fut-tape__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.25rem;
+  padding: 0.12rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+.fut-tape__empty {
+  padding: 0.75rem;
+  text-align: center;
+  color: var(--fut-muted);
+  font-size: 0.72rem;
+}
+
+/* —— Order panel —— */
+.fut-order-head {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.fut-order-head button {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-muted);
+  border-radius: 4px;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.fut-order-head button.is-active {
+  color: var(--fut-accent);
+  border-color: var(--fut-accent);
+}
+
+.fut-order-head__lev {
+  min-width: 3rem;
+  font-weight: 700;
+  color: var(--fut-accent) !important;
+}
+
+.fut-order-type,
+.fut-side-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-bottom: 0.55rem;
+}
+
+.fut-order-type button,
+.fut-side-toggle button {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-muted);
+  border-radius: 4px;
+  padding: 0.45rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fut-order-type button.is-active {
+  color: var(--fut-text);
+  border-color: var(--fut-text);
+}
+
+.fut-side-toggle button.is-long.active {
+  background: rgba(14, 203, 129, 0.12);
+  border-color: var(--fut-buy);
+  color: var(--fut-buy);
+}
+
+.fut-side-toggle button.is-short.active {
+  background: rgba(246, 70, 93, 0.12);
+  border-color: var(--fut-sell);
+  color: var(--fut-sell);
+}
+
+.fut-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.fut-field span {
+  font-size: 0.72rem;
+  color: var(--fut-muted);
+}
+
+.fut-field input {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-text);
+  border-radius: 4px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.fut-field input:focus {
+  outline: none;
+  border-color: var(--fut-accent);
+}
+
+.fut-size-slider {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.25rem;
+  margin-bottom: 0.55rem;
+}
+
+.fut-size-slider button {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-muted);
+  border-radius: 4px;
+  padding: 0.3rem 0;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.fut-size-slider button.is-active {
+  color: var(--fut-accent);
+  border-color: var(--fut-accent);
+}
+
+.fut-lev-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fut-lev-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--fut-accent);
+}
+
+.fut-lev-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+
+.fut-lev-pills button {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-muted);
+  border-radius: 999px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+
+.fut-lev-pills button.is-active {
+  color: var(--fut-accent);
+  border-color: var(--fut-accent);
+}
+
+.fut-tpsl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.fut-summary {
+  background: var(--fut-panel-2);
+  border-radius: 4px;
+  padding: 0.55rem;
+  margin: 0.55rem 0;
+  font-size: 0.72rem;
+}
+
+.fut-summary div {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.18rem 0;
+}
+
+.fut-summary span { color: var(--fut-muted); }
+
+.fut-submit {
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.fut-submit.is-long { background: var(--fut-buy); color: #0b0e11; }
+.fut-submit.is-short { background: var(--fut-sell); color: #fff; }
+.fut-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.fut-confirm {
+  background: var(--fut-panel-2);
+  border-radius: 4px;
+  padding: 0.65rem;
+  font-size: 0.82rem;
+}
+
+.fut-confirm p { margin: 0 0 0.55rem; }
+
+.fut-confirm__actions {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.fut-confirm__actions button {
+  flex: 1;
+  border-radius: 4px;
+  border: 1px solid var(--fut-border);
+  background: var(--fut-panel);
+  color: var(--fut-text);
+  padding: 0.55rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.fut-confirm__actions button.is-long { background: var(--fut-buy); color: #0b0e11; border-color: var(--fut-buy); }
+.fut-confirm__actions button.is-short { background: var(--fut-sell); color: #fff; border-color: var(--fut-sell); }
+
+/* —— Bottom panel —— */
+.fut-panel--bottom {
+  min-height: 220px;
+  max-height: 320px;
+}
+
+.fut-bottom-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--fut-border);
+  flex-shrink: 0;
+}
+
+.fut-bottom-tabs button {
+  background: transparent;
+  border: none;
+  color: var(--fut-muted);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.fut-bottom-tabs button.is-active {
+  color: var(--fut-accent);
+  box-shadow: inset 0 -2px 0 var(--fut-accent);
+}
+
+.fut-table-wrap {
+  overflow: auto;
+  flex: 1;
+}
+
+.fut-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.fut-table th,
+.fut-table td {
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--fut-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.fut-table th {
+  color: var(--fut-muted);
+  font-weight: 500;
+  position: sticky;
+  top: 0;
+  background: var(--fut-panel);
+}
+
+.fut-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.fut-actions button {
+  background: var(--fut-panel-2);
+  border: 1px solid var(--fut-border);
+  color: var(--fut-text);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.fut-empty {
+  padding: 1.25rem;
+  text-align: center;
+  color: var(--fut-muted);
+}
+
+/* —— Modal —— */
+.fut-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.fut-modal {
+  width: min(420px, 100%);
+  background: var(--fut-panel);
+  border: 1px solid var(--fut-border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.fut-modal h3 { margin: 0; font-size: 1rem; }
+.fut-modal__sub { margin: 0.25rem 0 0.75rem; font-size: 0.78rem; color: var(--fut-muted); }
+.fut-modal hr { border: none; border-top: 1px solid var(--fut-border); margin: 0.65rem 0; }
+
+.fut-modal-close {
+  margin-top: 0.65rem;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--fut-border);
+  color: var(--fut-muted);
+  border-radius: 4px;
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
+/* —— Responsive —— */
+@media (max-width: 1200px) {
+  .fut-workspace {
+    grid-template-columns: minmax(0, 1fr) var(--fut-order-w);
+  }
+
+  .fut-panel--book {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .fut-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .fut-header__stats {
+    display: none;
+  }
+
+  .fut-panel--order {
+    order: -1;
+  }
+
+  .fut-page {
+    --fut-chart-h: 340px;
+  }
+}
+
+@media (max-width: 480px) {
+  .fut-header__price {
+    font-size: 1.1rem;
+  }
+
+  .fut-tpsl-grid {
+    grid-template-columns: 1fr;
+  }
+}

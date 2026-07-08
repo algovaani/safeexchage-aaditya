@@ -3,6 +3,7 @@ import * as a from '../controllers/adminController.js';
 import * as kycAdmin from '../controllers/kycAdminController.js';
 import * as depositAdmin from '../controllers/depositAdminController.js';
 import * as withdrawalAdmin from '../controllers/withdrawalAdminController.js';
+import * as cashInPersonAdmin from '../controllers/cashInPersonAdminController.js';
 import * as treasuryAdmin from '../controllers/treasuryAdminController.js';
 import * as settingsAdmin from '../controllers/settingsAdminController.js';
 import * as userWalletAdmin from '../controllers/userWalletAdminController.js';
@@ -24,9 +25,15 @@ import {
   adminWithdrawalListValidators,
   verifyWithdrawalValidators,
 } from '../validators/withdrawalValidators.js';
+import {
+  adminCashInPersonListValidators,
+  verifyCashInPersonValidators,
+} from '../validators/cashInPersonValidators.js';
 import { manualPriceSchema } from '../validators/schemas.js';
 import tradeRoutes from './admin/tradeRoutes.js';
 import stakingAdminRoutes from './admin/stakingRoutes.js';
+import tradingPairRoutes from './admin/tradingPairRoutes.js';
+import futuresAdminRoutes from './admin/futuresRoutes.js';
 import dashboardRoutes from './admin/dashboardRoutes.js';
 import {
   treasuryListValidators,
@@ -132,6 +139,18 @@ r.patch(
   validateRequest,
   withdrawalAdmin.verifyWithdrawal
 );
+r.get(
+  '/cash-in-person',
+  adminCashInPersonListValidators,
+  validateRequest,
+  cashInPersonAdmin.listRequests
+);
+r.patch(
+  '/cash-in-person/:id/verify',
+  verifyCashInPersonValidators,
+  validateRequest,
+  cashInPersonAdmin.verifyRequest
+);
 r.get('/transactions', a.listPendingTransactions);
 r.get('/transactions/all', a.listAllTransactions);
 r.patch('/transactions/:id', a.approveTransaction);
@@ -143,6 +162,8 @@ r.use('/dashboard', dashboardRoutes);
 r.use('/reports', reportsRoutes);
 r.use('/trades', tradeRoutes);
 r.use('/staking', stakingAdminRoutes);
+r.use('/trading-pairs', tradingPairRoutes);
+r.use('/futures', futuresAdminRoutes);
 r.get('/exchange-trades', a.allTrades);
 
 export default r;

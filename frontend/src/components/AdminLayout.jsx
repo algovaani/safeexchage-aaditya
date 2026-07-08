@@ -13,13 +13,16 @@ const SECTIONS = [
   { id: 'kyc', label: 'KYC', icon: '✓' },
   { id: 'wallets', label: 'Wallets', icon: '💼' },
   { id: 'deposits', label: 'Deposits', icon: '💳' },
+  { id: 'cashInPerson', label: 'Cash in Person', icon: '🤝' },
   // { id: 'treasury', label: 'Treasury', icon: '🏦' },
-  { id: 'settings', label: 'Settings', icon: '⚙️' },
+  // { id: 'settings', label: 'Settings', icon: '⚙️' },
   { id: 'withdrawals', label: 'Withdrawals', icon: '🏧' },
   // { id: 'wallet', label: 'Wallet', icon: '💰' },
   { id: 'orders', label: 'Orders', icon: '📋' },
   { id: 'staking', label: 'Investments', icon: '📊' },
   { id: 'prices', label: 'Prices', icon: '📈' },
+  { id: 'coins', label: 'Exchange Coins', icon: '🪙' },
+  { id: 'futures', label: 'Futures', icon: '⚡' },
 ];
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));
@@ -57,9 +60,9 @@ export default function AdminLayout() {
         <div className="admin-sidebar__top">
           <div className="admin-brand">
             <BrandLogo size="sm" />
-            <div>
+            {/* <div>
               <p className="admin-brand__sub">Admin Control</p>
-            </div>
+            </div> */}
           </div>
           <button
             type="button"

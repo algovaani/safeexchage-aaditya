@@ -1,5 +1,5 @@
 import { AdminTrade } from '../models/AdminTrade.js';
-import { fetchPriceMap } from './coingeckoService.js';
+import { fetchPriceMap } from './marketDataProvider.js';
 import { settleAllOrdersForTrade } from './settlementService.js';
 
 const INTERVAL_MS = 30_000;

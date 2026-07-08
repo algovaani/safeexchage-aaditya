@@ -12,7 +12,7 @@ import {
   toIndianMobile10,
 } from '../utils/identifier.js';
 import { error, success } from '../utils/response.js';
-import { sendSmsOtp } from '../services/sms.service.js';
+import { sendSmsOtp, isNinzaSmsConfigured } from '../services/sms.service.js';
 import { blacklistToken, signToken } from '../utils/token.js';
 import { findUserByReferralCode, normalizeReferralCode } from '../utils/referral.js';
 import { creditReferrerForSignup, getReferralRewardAmount } from '../services/referralRewardService.js';
@@ -80,23 +80,26 @@ async function verifyStoredOtp(mobile, purpose, otp) {
   return { ok: true, identifier };
 }
 
-async function dispatchOtpSms(mobile, otp) {
-  // Local development में SMS मत भेजो
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[LOCAL] OTP for ${normalizeIndianMobile(mobile)}: ${otp}`);
+async function dispatchOtpSms(mobile, otp, { purpose = 'otp' } = {}) {
+  const normalized = normalizeIndianMobile(mobile) || toIndianMobile10(mobile);
+
+  if (!isNinzaSmsConfigured()) {
+    console.log(`[OTP] NinzaSMS not configured (${purpose}). OTP for ${normalized}: ${otp}`);
+    if (process.env.NODE_ENV === 'production') {
+      return false;
+    }
     return true;
   }
 
   try {
-    const result = await sendSmsOtp(mobile, otp);
-
-    if (result.skipped) {
-      console.log(`[auth] Dev OTP for ${normalizeIndianMobile(mobile)}: ${otp}`);
-    }
-
+    await sendSmsOtp(mobile, otp);
     return true;
   } catch (smsErr) {
-    console.error('[auth] NinzaSMS send failed:', smsErr.message);
+    console.error(`[auth] NinzaSMS send failed (${purpose}):`, smsErr.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`[OTP] Fallback dev OTP for ${normalized}: ${otp}`);
+      return true;
+    }
     return false;
   }
 }
@@ -131,7 +134,7 @@ export async function sendOtp(req, res, next) {
     const otp = generateOtp();
     await storeOtp(mobile, purpose, otp);
 
-    const sent = await dispatchOtpSms(mobile, otp);
+    const sent = await dispatchOtpSms(mobile, otp, { purpose });
     if (!sent) {
       return error(res, 'Could not send OTP SMS. Try again later.', 503);
     }
@@ -283,6 +286,46 @@ export async function login(req, res, next) {
   }
 }
 
+/**
+ * Login flow: Mobile + OTP (no password).
+ */
+export async function loginOtp(req, res, next) {
+  try {
+    const { otp } = req.body;
+    const mobile = normalizeIndianMobile(req.body.mobile);
+
+    if (!mobile || !toIndianMobile10(mobile)) {
+      return error(res, 'Valid 10-digit Indian mobile number is required', 400);
+    }
+
+    const user = await findUserByMobile(mobile);
+    if (!user) {
+      return error(res, 'No account found for this mobile number', 404);
+    }
+
+    if (user.status === 'blocked') {
+      return error(res, 'Your account has been blocked. Contact support.', 403);
+    }
+
+    const otpCheck = await verifyStoredOtp(mobile, 'login', otp);
+    if (!otpCheck.ok) {
+      return error(res, otpCheck.message, 400);
+    }
+
+    const token = signToken(user);
+    return success(
+      res,
+      {
+        token,
+        user: publicUser(user),
+      },
+      'Login successful'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
 export async function adminLogin(req, res, next) {
   try {
     const { email, password } = req.body;
@@ -344,10 +387,12 @@ export async function forgotPassword(req, res, next) {
     const channel = normalized.includes('@') ? 'email' : 'mobile';
 
     if (channel === 'mobile' && user.mobile) {
-      const sent = await dispatchOtpSms(user.mobile, otp);
+      const sent = await dispatchOtpSms(user.mobile, otp, { purpose: 'password_reset' });
       if (!sent) {
         return error(res, 'Could not send OTP SMS. Try again later.', 503);
       }
+    } else if (channel === 'mobile') {
+      return error(res, 'No mobile number on file for this account', 400);
     } else {
       console.log(
         `[auth] Password reset OTP for ${channel} ${normalized}: ${otp} (expires in 10 minutes)`

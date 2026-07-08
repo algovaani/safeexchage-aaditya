@@ -4,7 +4,9 @@ import { TrendingUp, TrendingDown, Inbox } from 'lucide-react';
 import { api, dashboardAPI, parseApiResponse } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
-import { fmtINR, fmtUSD, fmtPct, inrFromUsdt } from '../utils/format.js';
+import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
+import { useRealtime } from '../context/RealtimeContext.jsx';
 
 const ASSETS = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '5m', '15m', '1H', '4H', '1D'];
@@ -22,6 +24,8 @@ const MOCK_LOSERS = [
 ];
 
 export default function Dashboard() {
+  const { toInr } = usePlatformConfig();
+  const { walletVersion } = useRealtime();
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +47,7 @@ export default function Dashboard() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [walletVersion]);
 
   useEffect(() => {
     let active = true;
@@ -64,25 +68,33 @@ export default function Dashboard() {
     return () => { active = false; };
   }, [symbol, timeframe]);
 
-  const balance = summary?.wallet_balance ?? summary?.total_balance ?? 0;
-  const pnl = summary?.total_pnl ?? summary?.pnl ?? 0;
-  const openPos = summary?.open_positions ?? summary?.open_positions_count ?? 0;
-  const winRate = summary?.win_rate ?? 62.4;
+  const balance =
+    summary?.wallet?.balance_usdt ??
+    summary?.wallet_balance ??
+    summary?.total_balance ??
+    0;
+  const pnl = summary?.stats?.total_pnl ?? summary?.total_pnl ?? summary?.pnl ?? 0;
+  const openPos =
+    summary?.stats?.open_positions_count ??
+    summary?.open_positions ??
+    summary?.open_positions_count ??
+    0;
+  const winRate = summary?.stats?.win_rate ?? summary?.win_rate ?? 62.4;
   const pnlUp = Number(pnl) >= 0;
 
   const stats = useMemo(
     () => [
-      { label: 'Total Balance', value: fmtINR(inrFromUsdt(balance)), sub: `≈ ${fmtUSD(balance)}` },
+      { label: 'Total Balance', value: fmtINR(toInr(balance)), sub: `≈ ${fmtUSD(balance)}` },
       {
         label: "Today's P&L",
-        value: fmtINR(inrFromUsdt(pnl)),
+        value: fmtINR(toInr(pnl)),
         colored: true,
         up: pnlUp,
       },
       { label: 'Open Positions', value: String(openPos) },
       { label: 'Win Rate', value: `${Number(winRate).toFixed(1)}%` },
     ],
-    [balance, pnl, openPos, winRate, pnlUp]
+    [balance, pnl, openPos, winRate, pnlUp, toInr]
   );
 
   return (
@@ -136,7 +148,7 @@ export default function Dashboard() {
             <div className="flex items-center gap-3">
               <div>
                 <span className="text-2xl font-medium tabular-nums">
-                  {ticker?.lastPrice ? fmtINR(inrFromUsdt(ticker.lastPrice)) : '—'}
+                  {ticker?.lastPrice ? fmtINR(toInr(ticker.lastPrice)) : '—'}
                 </span>
                 {ticker?.priceChangePercent != null && (
                   <span className={`badge ml-2 ${Number(ticker.priceChangePercent) >= 0 ? 'badge-green' : 'badge-red'}`}>

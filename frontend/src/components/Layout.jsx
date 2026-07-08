@@ -17,7 +17,10 @@ import {
   Landmark,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useRealtime } from '../context/RealtimeContext.jsx';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { api, parseApiResponse } from '../api/client.js';
+import { fmtINR } from '../utils/format.js';
 import ThemeToggle from './ThemeToggle.jsx';
 import BrandLogo from './BrandLogo.jsx';
 import './AppShell.css';
@@ -46,6 +49,8 @@ function isNavActive(pathname, item) {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { toInr } = usePlatformConfig();
+  const { wallet: liveWallet, walletVersion } = useRealtime();
   const { pathname } = useLocation();
   const fullWidth = false;
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -67,7 +72,13 @@ export default function Layout() {
         setPortfolio(wallet?.balance_usdt ?? wallet?.balance ?? 0);
       })
       .catch(() => setPortfolio(null));
-  }, [user, pathname]);
+  }, [user, pathname, walletVersion]);
+
+  useEffect(() => {
+    if (liveWallet) {
+      setPortfolio(liveWallet.balance_usdt ?? liveWallet.balance ?? 0);
+    }
+  }, [liveWallet]);
 
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'Trader';
   const initial = displayName[0]?.toUpperCase() || 'S';
@@ -131,9 +142,10 @@ export default function Layout() {
 
           <div className="app-navbar__actions">
             {portfolio != null && (
-              <div className="app-navbar__balance hidden sm:flex">
+              <div className="app-navbar__balance hidden sm:flex flex-col items-end">
                 <span className="text-[11px] uppercase tracking-wider text-text-secondary">Balance</span>
-                <span className="text-sm font-medium tabular-nums">{Number(portfolio).toFixed(2)} USDT</span>
+                <span className="text-sm font-medium tabular-nums">{fmtINR(toInr(portfolio))}</span>
+                <span className="text-[10px] text-text-muted tabular-nums">≈ {Number(portfolio).toFixed(2)} USDT</span>
               </div>
             )}
             <button type="button" className="app-navbar__icon-btn" aria-label="Notifications">

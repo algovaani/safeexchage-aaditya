@@ -58,6 +58,11 @@ export function AuthProvider({ children }) {
     return persistSession(payload);
   };
 
+  const loginWithOtp = async (mobile, otp) => {
+    const payload = await authAPI.loginOtp(mobile, otp);
+    return persistSession(payload);
+  };
+
   const adminLogin = async (email, password) => {
     const payload = await authAPI.adminLogin(email, password);
     return persistSession(payload);
@@ -79,6 +84,13 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const { data } = await api.get('/auth/me');
+    const profile = parseApiResponse(data);
+    setUser(profile);
+    return profile;
+  };
+
   const value = useMemo(
     () => ({
       token,
@@ -87,9 +99,11 @@ export function AuthProvider({ children }) {
       sendOtp,
       resendOtp,
       login,
+      loginWithOtp,
       adminLogin,
       register,
       logout,
+      refreshUser,
       isAdmin: user?.role === 'admin',
     }),
     [token, user, loading]

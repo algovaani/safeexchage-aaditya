@@ -69,6 +69,11 @@ export const loginValidators = [
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
+export const loginOtpValidators = [
+  mobileValidator('mobile'),
+  otpValidator,
+];
+
 export const adminLoginValidators = [
   body('email').trim().isEmail().withMessage('Valid admin email is required').normalizeEmail(),
   body('password').notEmpty().withMessage('Password is required'),

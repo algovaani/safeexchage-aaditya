@@ -10,11 +10,16 @@ export default function AdminLogin() {
   const { adminLogin, logout } = useAuth();
   const toast = useToast();
   const nav = useNavigate();
-  const [email, setEmail] = useState('admin@safexchange.io');
-  const [password, setPassword] = useState('Admin123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [fieldsLocked, setFieldsLocked] = useState(true);
+
+  function unlockFields() {
+    if (fieldsLocked) setFieldsLocked(false);
+  }
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -58,14 +63,21 @@ export default function AdminLogin() {
           <h1 className="admin-login-card__title">Admin Login</h1>
           <p className="admin-login-card__subtitle">Restricted area — authorized personnel only</p>
 
-          <form onSubmit={onSubmit}>
+          <form onSubmit={onSubmit} autoComplete="off">
+            <input type="text" name="fakeusernameremembered" className="admin-login-hidden-field" tabIndex={-1} aria-hidden="true" />
+            <input type="password" name="fakepasswordremembered" className="admin-login-hidden-field" tabIndex={-1} aria-hidden="true" />
+
             <div className="admin-login-field">
               <label htmlFor="admin-email">Admin Email</label>
               <input
                 id="admin-email"
+                name="admin-email-field"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onFocus={unlockFields}
+                readOnly={fieldsLocked}
+                autoComplete="off"
                 required
               />
             </div>
@@ -74,9 +86,13 @@ export default function AdminLogin() {
               <label htmlFor="admin-password">Password</label>
               <input
                 id="admin-password"
+                name="admin-password-field"
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onFocus={unlockFields}
+                readOnly={fieldsLocked}
+                autoComplete="new-password"
                 required
               />
               <button type="button" className="admin-login-field__toggle" onClick={() => setShowPw((v) => !v)} aria-label="Toggle password">

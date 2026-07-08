@@ -14,7 +14,7 @@ export async function persistMarketKlines(symbol, interval, candles) {
           close: c.close,
           volume: c.volume,
           isFinal: c.isFinal,
-          source: 'coingecko',
+          source: 'binance',
         },
       },
       upsert: true,

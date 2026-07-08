@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { api, parseApiResponse } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { TRADING_PAIR_SYMBOLS } from '../config/tradingPairs.js';
-import { MARKET_POLL_MS } from '../config/marketPoll.js';
+import { fmtINR } from '../utils/format.js';
+import { useTradingPairs } from '../context/TradingPairsContext.jsx';
+import { MARKET_POLL_MS, DEPTH_POLL_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
 import { notifyWalletUpdated } from '../utils/walletEvents.js';
 import './Trading.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
-
-const WATCHLIST = TRADING_PAIR_SYMBOLS;
 
 const CHART_INTERVALS = [
   { id: '1m', label: '1m' },
@@ -46,12 +46,14 @@ function useDebounced(value, delay = 400) {
 export default function Trading() {
   const toast = useToast();
   const { user } = useAuth();
+  const { toInr } = usePlatformConfig();
+  const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
   const loginReturn = { from: { pathname: '/trade' } };
   const [symbol, setSymbol] = useState('BNBUSDT');
   const [marketTab, setMarketTab] = useState('USDT');
   const [search, setSearch] = useState('');
-  const [chartInterval, setChartInterval] = useState('1m');
+  const [chartInterval, setChartInterval] = useState('4h');
   const [candles, setCandles] = useState([]);
   const [tableRows, setTableRows] = useState([]);
   const [tableTotal, setTableTotal] = useState(0);
@@ -61,6 +63,8 @@ export default function Trading() {
   const [tableSearch, setTableSearch] = useState('');
   const [tableLoading, setTableLoading] = useState(false);
   const [ticker, setTicker] = useState(null);
+  const [priceDir, setPriceDir] = useState('up');
+  const prevPriceRef = useRef(null);
   const [balances, setBalances] = useState(null);
   const [depth, setDepth] = useState({ bids: [], asks: [], mid: null });
   const [tape, setTape] = useState([]);
@@ -99,8 +103,8 @@ export default function Trading() {
 
   const filteredList = useMemo(() => {
     const q = search.trim().toUpperCase();
-    return WATCHLIST.filter((p) => p.includes('USDT') && (!q || p.includes(q)));
-  }, [search]);
+    return watchlistSymbols.filter((p) => p.includes('USDT') && (!q || p.includes(q)));
+  }, [search, watchlistSymbols]);
 
   const tableFromRow = tableTotal === 0 ? 0 : (tablePage - 1) * tablePageSize + 1;
   const tableToRow = Math.min(tablePage * tablePageSize, tableTotal);
@@ -130,10 +134,13 @@ export default function Trading() {
       bySym[row.symbol] = {
         symbol: row.symbol,
         lastPrice: row.price,
+        openPrice: row.open_24h,
         priceChangePercent: row.change_24h,
+        priceChange: row.change_24h_abs,
         highPrice: row.high_24h,
         lowPrice: row.low_24h,
         volume: row.volume,
+        quoteVolume: row.quoteVolume,
       };
     }
 
@@ -166,6 +173,10 @@ export default function Trading() {
   }, []);
 
   useEffect(() => {
+    setChartInterval('4h');
+  }, [symbol]);
+
+  useEffect(() => {
     let active = true;
     (async () => {
       const { data } = await api.get('/market/klines', {
@@ -189,7 +200,7 @@ export default function Trading() {
   }, []);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
     const sym = symbol.toUpperCase();
 
     socket.emit('market:subscribe', { symbol: sym, interval: chartInterval });
@@ -264,6 +275,39 @@ export default function Trading() {
     };
   }, [symbol, chartInterval, refreshBalance, user]);
 
+  // REST fallback for order book — works on live even when WebSocket depth events fail.
+  useEffect(() => {
+    const sym = symbol.toUpperCase();
+    let active = true;
+
+    async function loadDepth() {
+      try {
+        const { data } = await api.get('/market/depth', { params: { symbol: sym, limit: 20 } });
+        if (!active) return;
+        const payload = parseApiResponse(data);
+        if (!payload || payload.symbol !== sym) return;
+        setDepth((prev) => {
+          const next = {
+            bids: payload.bids || [],
+            asks: payload.asks || [],
+            mid: payload.mid ?? prev.mid,
+          };
+          if (!next.bids.length && !next.asks.length) return prev;
+          return next;
+        });
+      } catch {
+        /* keep socket data if REST fails */
+      }
+    }
+
+    loadDepth();
+    const id = setInterval(loadDepth, DEPTH_POLL_MS);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [symbol]);
+
   const fetchTableData = useCallback(async () => {
     if (!user) {
       setTableRows([]);
@@ -325,6 +369,15 @@ export default function Trading() {
     return () => clearInterval(id);
   }, [refreshBalance, user]);
 
+  useEffect(() => {
+    if (!user) return undefined;
+    const onWallet = (e) => {
+      if (e.detail) setBalances(e.detail);
+    };
+    window.addEventListener('wallet:updated', onWallet);
+    return () => window.removeEventListener('wallet:updated', onWallet);
+  }, [user]);
+
   function requireLogin() {
     navigate('/login', { state: loginReturn });
   }
@@ -372,8 +425,41 @@ export default function Trading() {
     }
   }
 
-  const changePct = ticker?.priceChangePercent ?? 0;
-  const up = changePct >= 0;
+  useEffect(() => {
+    prevPriceRef.current = null;
+    setPriceDir('up');
+  }, [symbol]);
+
+  useEffect(() => {
+    const p = Number(ticker?.lastPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    const prev = prevPriceRef.current;
+    if (prev != null && p !== prev) {
+      setPriceDir(p > prev ? 'up' : 'down');
+    }
+    prevPriceRef.current = p;
+  }, [ticker?.lastPrice]);
+
+  const lastNum = Number(ticker?.lastPrice);
+  const openNum = Number(ticker?.openPrice);
+  const hasLiveChange = Number.isFinite(openNum) && openNum > 0 && Number.isFinite(lastNum);
+  const changePct = hasLiveChange
+    ? ((lastNum - openNum) / openNum) * 100
+    : Number(ticker?.priceChangePercent ?? 0);
+  const changeAbs = hasLiveChange
+    ? lastNum - openNum
+    : Number(ticker?.priceChange ?? NaN);
+  const changeUp = changePct >= 0;
+  const priceUp = priceDir !== 'down';
+  const high24h = Number.isFinite(lastNum)
+    ? Math.max(Number(ticker?.highPrice) || lastNum, lastNum)
+    : Number(ticker?.highPrice);
+  const low24h = Number.isFinite(lastNum)
+    ? Math.min(Number(ticker?.lowPrice) || lastNum, lastNum)
+    : Number(ticker?.lowPrice);
+  const quoteVol = Number.isFinite(Number(ticker?.quoteVolume))
+    ? Number(ticker.quoteVolume)
+    : Number(ticker?.volume) * (Number.isFinite(lastNum) ? lastNum : 0);
 
   function orderDisplayPrice(o) {
     if (o.avgFillPrice != null && Number.isFinite(Number(o.avgFillPrice))) {
@@ -415,37 +501,42 @@ export default function Trading() {
         <div className="ex-ticker__stats">
           <div className="ex-ticker__stat-block ex-ticker__stat-block--price">
           <span className="ex-ticker__stat-label">Last Price</span>
-          <span className={`ex-ticker__price ${up ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
+          <span className={`ex-ticker__price ${priceUp ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
             {ticker ? fmtLocale(ticker.lastPrice, { maximumFractionDigits: 4 }) : '—'}
           </span>
           </div>
 
-          <div className={`ex-ticker__stat-block ${up ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
+          <div className={`ex-ticker__stat-block ${changeUp ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
           <span className="ex-ticker__stat-label">24h Change</span>
           <span>
             {ticker
               ? `${
-                  ticker.priceChange != null && Number.isFinite(Number(ticker.priceChange))
-                    ? `${Number(ticker.priceChange) >= 0 ? '+' : ''}${fmtNum(ticker.priceChange, 2)} `
+                  Number.isFinite(changeAbs)
+                    ? `${changeAbs >= 0 ? '+' : ''}${fmtNum(changeAbs, 2)} `
                     : ''
-                }(${fmtNum(changePct, 2)}%)`
+                }(${changePct >= 0 ? '+' : ''}${fmtNum(changePct, 2)}%)`
               : '—'}
           </span>
         </div>
 
         <div className="ex-ticker__stat-block">
           <span className="ex-ticker__stat-label">24h High</span>
-          <span>{ticker ? fmtNum(ticker.highPrice, 2) : '—'}</span>
+          <span>{ticker ? fmtNum(high24h, 2) : '—'}</span>
         </div>
 
         <div className="ex-ticker__stat-block">
           <span className="ex-ticker__stat-label">24h Low</span>
-          <span>{ticker ? fmtNum(ticker.lowPrice, 2) : '—'}</span>
+          <span>{ticker ? fmtNum(low24h, 2) : '—'}</span>
         </div>
 
         <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h Volume</span>
+          <span className="ex-ticker__stat-label">24h Volume({base})</span>
           <span>{ticker ? fmtLocale(ticker.volume, { maximumFractionDigits: 2 }) : '—'}</span>
+        </div>
+
+        <div className="ex-ticker__stat-block">
+          <span className="ex-ticker__stat-label">24h Volume(USDT)</span>
+          <span>{ticker ? fmtLocale(quoteVol, { maximumFractionDigits: 2 }) : '—'}</span>
         </div>
 
         <div className="ex-ticker__stat-block ex-ticker__stat-block--clock">
@@ -530,11 +621,39 @@ export default function Trading() {
               {user ? (
                 <>
                   <strong>{balances != null ? usdtBalance.toFixed(2) : '—'}</strong> USDT available
+                  {balances != null && (
+                    <span className="ex-balance-line__inr"> ({fmtINR(toInr(usdtBalance))})</span>
+                  )}
                 </>
               ) : (
                 <Link to="/login" state={loginReturn} className="ex-markets__login-link">
                   Log in to view balance
                 </Link>
+              )}
+            </div>
+          </div>
+          <div className="ex-panel">
+            <div className="ex-panel__head">Recent Trades</div>
+            <div className="ex-tape">
+              <div className="ex-tape__header">
+                <span>Price</span>
+                <span>Amount</span>
+                <span>Pair</span>
+                <span>Time</span>
+              </div>
+              {tape.map((t) => (
+                <div
+                  key={t._id}
+                  className={`ex-tape__row ${t.isBuyerMaker ? 'ex-tape__row--sell' : 'ex-tape__row--buy'}`}
+                >
+                  <span>{t.price.toFixed(4)}</span>
+                  <span>{t.qty.toFixed(5)}</span>
+                  <span>{base}/USDT</span>
+                  <span>{formatMarketTime(t.time)}</span>
+                </div>
+              ))}
+              {!tape.length && (
+                <div className="ex-tape__empty">Waiting for trades…</div>
               )}
             </div>
           </div>
@@ -582,7 +701,12 @@ export default function Trading() {
               <div className="ex-order-card__head">
                 <h3>Buy {base}</h3>
                 <p className="ex-balance-line">
-                  {user ? `USDT: ${usdtBalance.toFixed(2)}` : (
+                  {user ? (
+                    <>
+                      USDT: {usdtBalance.toFixed(2)}
+                      <span className="ex-balance-line__inr"> ({fmtINR(toInr(usdtBalance))})</span>
+                    </>
+                  ) : (
                     <Link to="/login" state={loginReturn} className="ex-balance-line__link">Log in for balance</Link>
                   )}
                 </p>
@@ -661,7 +785,7 @@ export default function Trading() {
         </section>
 
         <aside className={`ex-side-stack ex-zone ex-zone--book${mobileView === 'book' ? ' is-active' : ''}`}>
-          <div className="ex-panel">
+          <div className="ex-panel ex-panel--depth">
             <div className="ex-panel__head">Market Depth</div>
             <div className="ex-book">
               <div className="ex-book__header">
@@ -678,7 +802,7 @@ export default function Trading() {
                   </div>
                 ))}
               </div>
-              <div className={`ex-book__mid ${up ? 'ex-book__mid--up' : 'ex-book__mid--down'}`}>
+              <div className={`ex-book__mid ${priceUp ? 'ex-book__mid--up' : 'ex-book__mid--down'}`}>
                 {depth.mid != null
                   ? depth.mid.toLocaleString(undefined, { maximumFractionDigits: 4 })
                   : ticker?.lastPrice?.toLocaleString() ?? '—'}
@@ -695,31 +819,7 @@ export default function Trading() {
             </div>
           </div>
 
-          <div className="ex-panel">
-            <div className="ex-panel__head">Recent Trades</div>
-            <div className="ex-tape">
-              <div className="ex-tape__header">
-                <span>Price</span>
-                <span>Amount</span>
-                <span>Pair</span>
-                <span>Time</span>
-              </div>
-              {tape.map((t) => (
-                <div
-                  key={t._id}
-                  className={`ex-tape__row ${t.isBuyerMaker ? 'ex-tape__row--sell' : 'ex-tape__row--buy'}`}
-                >
-                  <span>{t.price.toFixed(4)}</span>
-                  <span>{t.qty.toFixed(5)}</span>
-                  <span>{base}/USDT</span>
-                  <span>{formatMarketTime(t.time)}</span>
-                </div>
-              ))}
-              {!tape.length && (
-                <div className="ex-tape__empty">Waiting for trades…</div>
-              )}
-            </div>
-          </div>
+         
         </aside>
       </div>
 

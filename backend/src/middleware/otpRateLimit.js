@@ -12,7 +12,7 @@ function otpRateLimitResponse(res, message) {
 }
 
 function otpKey(req) {
-  const mobile = toIndianMobile10(req.body?.mobile || '');
+  const mobile = toIndianMobile10(req.body?.mobile || req.body?.identifier || '');
   if (mobile) return `otp-mobile:${mobile}`;
   return `otp-ip:${req.ip}`;
 }

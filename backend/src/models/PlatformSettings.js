@@ -19,6 +19,8 @@ const platformSettingsSchema = new mongoose.Schema(
     trcPrivateKey: { type: String, default: '', select: false },
     evmMnemonic: { type: String, default: '', select: false },
     referralRewardUsdt: { type: Number, default: 0, min: 0 },
+    /** 1 USDT = X INR — used for balance display across the app */
+    usdtInrRate: { type: Number, default: 83.5, min: 1, max: 500 },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true, collection: 'platform_settings' }

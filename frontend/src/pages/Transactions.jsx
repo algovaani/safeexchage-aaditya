@@ -4,7 +4,8 @@ import { Download, Inbox, Loader2, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
-import { fmtINR, fmtUSD, inrFromUsdt } from '../utils/format.js';
+import { fmtINR, fmtUSD } from '../utils/format.js';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 
 function useDebounced(value, delay = 400) {
   const [debounced, setDebounced] = useState(value);
@@ -36,6 +37,7 @@ const STATUS_FILTERS = [
 
 export default function Transactions() {
   const toast = useToast();
+  const { toInr } = usePlatformConfig();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -206,7 +208,7 @@ export default function Transactions() {
                         {isDebit ? '−' : '+'}
                         {fmtUSD(Math.abs(Number(t.amount)))}
                         <span className="text-text-muted text-xs ml-1">
-                          ({fmtINR(inrFromUsdt(Math.abs(Number(t.amount))))})
+                          ({fmtINR(toInr(Math.abs(Number(t.amount))))})
                         </span>
                       </td>
                       <td className="tabular-nums text-text-secondary">

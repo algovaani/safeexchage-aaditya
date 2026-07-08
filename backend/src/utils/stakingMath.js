@@ -38,6 +38,17 @@ export function calculateDailyReward(amount, roiPercent, lockDays) {
   return storeMoney(total / lockDays);
 }
 
+/** Number of monthly payout periods for a plan (30-day months, at least 1). */
+export function monthsForPlan(lockDays) {
+  return Math.max(1, Math.round(Number(lockDays) / 30));
+}
+
+/** Monthly payout slice for monthly plans. */
+export function calculateMonthlyReward(amount, roiPercent, lockDays) {
+  const total = calculateMaturityReward(amount, roiPercent, lockDays);
+  return storeMoney(total / monthsForPlan(lockDays));
+}
+
 /** Earned reward for elapsed days (daily accrual view). */
 export function calculateEarnedSoFar(amount, roiPercent, lockDays, daysElapsed) {
   const daily = calculateDailyReward(amount, roiPercent, lockDays);

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Deposit } from '../models/Deposit.js';
 import { UserDepositAddress } from '../models/UserDepositAddress.js';
@@ -10,6 +11,7 @@ import { enrichDepositRow } from '../services/depositEnrichmentService.js';
 import { createTreasuryWithdrawalFromDeposit } from '../services/treasuryService.js';
 import { normalizeChainFromNetwork } from '../services/userDepositAddressService.js';
 import { getPlatformSettings } from '../services/platformSettingsService.js';
+import { emitWalletUpdate } from '../services/socketService.js';
 import { error, success } from '../utils/response.js';
 import {
   buildDateRangeFilter,
@@ -88,7 +90,9 @@ export async function listDeposits(req, res, next) {
       Deposit.countDocuments(filter),
     ]);
 
-    const userIds = [...new Set(rows.map((r) => String(r.userId?._id || r.userId)))];
+    const userIds = [...new Set(rows.map((r) => String(r.userId?._id || r.userId || '')))].filter(
+      (id) => mongoose.Types.ObjectId.isValid(id)
+    );
     const [settings, addressRows] = await Promise.all([
       getPlatformSettings({ includeSecrets: true }),
       UserDepositAddress.find({ userId: { $in: userIds } }).lean(),
@@ -123,9 +127,10 @@ export async function getDeposit(req, res, next) {
     }
 
     const settings = await getPlatformSettings({ includeSecrets: true });
-    const addresses = await UserDepositAddress.find({
-      userId: row.userId?._id || row.userId,
-    }).lean();
+    const ownerId = row.userId?._id || row.userId;
+    const addresses = mongoose.Types.ObjectId.isValid(ownerId)
+      ? await UserDepositAddress.find({ userId: ownerId }).lean()
+      : [];
     const addressMap = new Map(
       addresses.map((a) => [`${String(a.userId)}:${a.chain}`, a.address])
     );
@@ -153,6 +158,7 @@ export async function verifyDeposit(req, res, next) {
         updated.chain = normalizeChainFromNetwork(updated.network) || '';
         await updated.save();
       }
+      await emitWalletUpdate(req.app.get('io'), updated.userId, { reason: 'deposit_approved' });
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -166,6 +172,7 @@ export async function verifyDeposit(req, res, next) {
         return error(res, 'Deposit is already rejected', 400);
       }
       const updated = await rejectDepositWithReversal(deposit, req.userId, note || (action === 'cancel' ? 'Cancelled by admin' : ''));
+      await emitWalletUpdate(req.app.get('io'), updated.userId, { reason: 'deposit_rejected' });
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -195,6 +202,7 @@ export async function bulkDepositAction(req, res, next) {
           continue;
         }
         await creditWalletForDeposit(deposit, req.userId);
+        await emitWalletUpdate(req.app.get('io'), deposit.userId, { reason: 'deposit_approved' });
         results.approved += 1;
       } catch (err) {
         results.failed += 1;
@@ -223,6 +231,7 @@ export async function bulkRejectDeposits(req, res, next) {
           continue;
         }
         await rejectDepositWithReversal(deposit, req.userId, note);
+        await emitWalletUpdate(req.app.get('io'), deposit.userId, { reason: 'deposit_rejected' });
         results.rejected += 1;
       } catch {
         results.failed += 1;

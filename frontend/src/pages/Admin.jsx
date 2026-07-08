@@ -4,7 +4,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { api, parseApiResponse } from '../api/client.js';
 import AdminDataTable from '../components/AdminDataTable.jsx';
 import StakingAdminSection from './admin/StakingAdminSection.jsx';
+import TradingPairsAdminSection from './admin/TradingPairsAdminSection.jsx';
+import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
+import { useDialog } from '../context/DialogContext.jsx';
 import './Admin.css';
 
 function asArray(value) {
@@ -62,6 +65,7 @@ const SECTION_TITLES = {
   users: 'Users',
   kyc: 'KYC Review',
   deposits: 'Deposits',
+  cashInPerson: 'Cash in Person',
   wallets: 'Wallet Management',
   treasury: 'Treasury',
   settings: 'Settings',
@@ -69,6 +73,7 @@ const SECTION_TITLES = {
   wallet: 'Wallet & Transactions',
   orders: 'Orders',
   prices: 'Manual Prices',
+  coins: 'Exchange Coins',
   staking: 'Investment Plans',
 };
 
@@ -598,8 +603,8 @@ function UserFundDrawer({ user, onClose, onSuccess }) {
           </div>
           <div className="admin-field">
             <label>Remark (required)</label>
-            <textarea
-              rows={3}
+            <input
+              type="text"
               value={form.remark}
               onChange={(e) => setForm((f) => ({ ...f, remark: e.target.value }))}
               placeholder="Reason shown in user transaction history"
@@ -658,6 +663,7 @@ function UserFundDrawer({ user, onClose, onSuccess }) {
 }
 
 export default function Admin() {
+  const dialog = useDialog();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('section') || 'overview';
 
@@ -666,6 +672,7 @@ export default function Admin() {
     pendingKyc: 0,
     pendingDeposits: 0,
     pendingWithdrawals: 0,
+    pendingCashInPerson: 0,
     pendingTx: 0,
     openOrders: 0,
     pendingTreasurySweeps: 0,
@@ -695,6 +702,7 @@ export default function Admin() {
     bankBranch: '',
     bankAccountHolder: '',
     referralRewardUsdt: '',
+    usdtInrRate: '83.5',
     bnbPrivateKey: '',
     ethPrivateKey: '',
     trcPrivateKey: '',
@@ -756,8 +764,18 @@ export default function Admin() {
   async function reviewKyc(id, action) {
     let note = '';
     if (action === 'reject') {
-      note = window.prompt('Rejection reason (required):') || '';
-      if (!note.trim()) return;
+      const result = await dialog.prompt({
+        title: 'Reject KYC',
+        message: 'Provide a rejection reason for the user.',
+        label: 'Rejection reason',
+        placeholder: 'Reason for rejection',
+        required: true,
+        confirmLabel: 'Reject',
+        cancelLabel: 'Cancel',
+        variant: 'danger',
+      });
+      if (result === null || !String(result).trim()) return;
+      note = String(result).trim();
     }
     await api.patch(`/admin/kyc/${id}/review`, { action, note });
     setSelectedKyc(null);
@@ -773,9 +791,18 @@ export default function Admin() {
   }
 
   async function rejectDeposit(id) {
-    const note = window.prompt('Rejection reason (required):') || '';
-    if (!note.trim()) return;
-    await verifyDeposit(id, 'reject', note);
+    const note = await dialog.prompt({
+      title: 'Reject deposit',
+      message: 'Provide a rejection reason for the user.',
+      label: 'Rejection reason',
+      placeholder: 'Reason for rejection',
+      required: true,
+      confirmLabel: 'Reject',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (note === null || !String(note).trim()) return;
+    await verifyDeposit(id, 'reject', String(note).trim());
   }
 
   async function bulkDepositSelected() {
@@ -788,14 +815,35 @@ export default function Admin() {
 
   async function bulkWithdrawSelected() {
     if (!selectedDepositIds.length) return;
-    const admin_wallet_address = window.prompt('Admin wallet address:', defaultAdminWallet) || '';
-    if (!admin_wallet_address.trim()) return;
-    const outbound_txn_hash = window.prompt('Outbound transaction hash (your transfer to admin wallet):') || '';
-    if (!outbound_txn_hash.trim()) return;
+    const result = await dialog.prompt({
+      title: 'Treasury withdraw',
+      message: 'Enter admin wallet and outbound transaction details.',
+      fields: [
+        {
+          key: 'admin_wallet_address',
+          label: 'Admin wallet address',
+          defaultValue: defaultAdminWallet,
+          required: true,
+        },
+        {
+          key: 'outbound_txn_hash',
+          label: 'Outbound transaction hash',
+          placeholder: 'Your transfer to admin wallet',
+          required: true,
+        },
+      ],
+      confirmLabel: 'Submit',
+      cancelLabel: 'Cancel',
+      variant: 'primary',
+    });
+    if (!result) return;
+    const admin_wallet_address = String(result.admin_wallet_address || '').trim();
+    const outbound_txn_hash = String(result.outbound_txn_hash || '').trim();
+    if (!admin_wallet_address || !outbound_txn_hash) return;
     await api.post('/admin/deposits/bulk/treasury-withdraw', {
       ids: selectedDepositIds,
-      admin_wallet_address: admin_wallet_address.trim(),
-      outbound_txn_hash: outbound_txn_hash.trim(),
+      admin_wallet_address,
+      outbound_txn_hash,
     });
     bumpTables();
     setSelectedDepositIds([]);
@@ -815,6 +863,7 @@ export default function Admin() {
       bankBranch: String(form.bankBranch || '').trim(),
       bankAccountHolder: String(form.bankAccountHolder || '').trim(),
       referralRewardUsdt: Number(form.referralRewardUsdt || 0),
+      usdtInrRate: Number(form.usdtInrRate || 83.5),
     };
     for (const key of ['bnbPrivateKey', 'ethPrivateKey', 'trcPrivateKey', 'evmMnemonic']) {
       const val = String(form[key] || '').trim();
@@ -842,6 +891,7 @@ export default function Admin() {
       bankBranch: s.bankBranch || s.bank?.branch || '',
       bankAccountHolder: s.bankAccountHolder || s.bank?.holder || '',
       referralRewardUsdt: s.referralRewardUsdt != null ? String(s.referralRewardUsdt) : '',
+      usdtInrRate: s.usdtInrRate != null ? String(s.usdtInrRate) : '83.5',
       bnbPrivateKey: s.bnbPrivateKey || '',
       ethPrivateKey: s.ethPrivateKey || '',
       trcPrivateKey: s.trcPrivateKey || '',
@@ -863,6 +913,7 @@ export default function Admin() {
       const { data } = await api.put('/admin/settings', payload);
       const saved = parseApiResponse(data) || {};
       applySettingsResponse(saved);
+      window.dispatchEvent(new CustomEvent('platform:config-updated'));
     } catch {
       /* toast handled globally */
     } finally {
@@ -905,10 +956,62 @@ export default function Admin() {
   async function verifyWithdrawal(id, action) {
     let note = '';
     if (action === 'reject') {
-      note = window.prompt('Rejection reason (required):') || '';
-      if (!note.trim()) return;
+      const result = await dialog.prompt({
+        title: 'Reject withdrawal',
+        message: 'Provide a rejection reason for the user.',
+        label: 'Rejection reason',
+        placeholder: 'Reason for rejection',
+        required: true,
+        confirmLabel: 'Reject',
+        cancelLabel: 'Cancel',
+        variant: 'danger',
+      });
+      if (result === null || !String(result).trim()) return;
+      note = String(result).trim();
     }
     await api.patch(`/admin/withdrawals/${id}/verify`, { action, note });
+    bumpTables();
+    await refresh();
+  }
+
+  async function verifyCashInPerson(row, action) {
+    const id = row.id || row._id;
+    if (action === 'approve') {
+      const defaultAmount = row.requestedAmount != null ? String(row.requestedAmount) : '';
+      const result = await dialog.prompt({
+        title: 'Approve cash in person',
+        message: `Credit wallet for ${row.userLabel || row.mobile || 'user'}. Enter the USDT amount received in person.`,
+        fields: [
+          {
+            key: 'amount',
+            label: 'Amount to credit (USDT)',
+            type: 'number',
+            defaultValue: defaultAmount,
+            placeholder: 'e.g. 5000',
+            required: true,
+          },
+        ],
+        confirmLabel: 'Approve & credit',
+        cancelLabel: 'Cancel',
+      });
+      if (result === null) return;
+      const amount = parseFloat(result.amount);
+      if (!(amount > 0)) return;
+      await api.patch(`/admin/cash-in-person/${id}/verify`, { action: 'approve', amount });
+    } else {
+      const result = await dialog.prompt({
+        title: 'Reject request',
+        message: 'Provide a rejection reason (optional).',
+        label: 'Rejection reason',
+        placeholder: 'Reason for rejection',
+        confirmLabel: 'Reject',
+        cancelLabel: 'Cancel',
+        variant: 'danger',
+      });
+      if (result === null) return;
+      const note = typeof result === 'string' ? result.trim() : '';
+      await api.patch(`/admin/cash-in-person/${id}/verify`, { action: 'reject', note });
+    }
     bumpTables();
     await refresh();
   }
@@ -1288,6 +1391,64 @@ export default function Admin() {
     []
   );
 
+  const cashInPersonColumns = useMemo(
+    () => [
+      {
+        key: 'user',
+        label: 'User',
+        render: (row) => {
+          const u = row.user || {};
+          const uid = row.userId || u.id;
+          const label = u.mobile || u.email || row.userLabel || row.mobile || 'User';
+          if (!uid) return label;
+          return (
+            <Link to={`/admin/users/${uid}`} className="admin-link admin-user-link">
+              {label}
+            </Link>
+          );
+        },
+      },
+      { key: 'mobile', label: 'Mobile', render: (row) => row.mobile || '—' },
+      { key: 'city', label: 'City', render: (row) => row.city || '—' },
+      {
+        key: 'requestedAmount',
+        label: 'Requested',
+        render: (row) =>
+          row.requestedAmount != null ? `${Number(row.requestedAmount).toFixed(2)} USDT` : '—',
+      },
+      {
+        key: 'creditedAmount',
+        label: 'Credited',
+        render: (row) =>
+          row.creditedAmount != null ? `${Number(row.creditedAmount).toFixed(2)} USDT` : '—',
+      },
+      {
+        key: 'date',
+        label: 'Submitted',
+        render: (row) => formatAdminDate(row.createdAt || row.submittedAt),
+      },
+      { key: 'status', label: 'Status', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+      {
+        key: 'actions',
+        label: 'Action',
+        render: (row) =>
+          row.status === 'pending' ? (
+            <div className="admin-actions">
+              <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => verifyCashInPerson(row, 'approve')}>
+                Approve
+              </button>
+              <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => verifyCashInPerson(row, 'reject')}>
+                Reject
+              </button>
+            </div>
+          ) : (
+            <span className="text-xs text-text-muted">{row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString() : '—'}</span>
+          ),
+      },
+    ],
+    []
+  );
+
   const orderColumns = useMemo(
     () => [
       { key: 'userLabel', label: 'User', render: (o) => o.userLabel || '—' },
@@ -1333,6 +1494,10 @@ export default function Admin() {
             <div className="admin-stat">
               <p className="admin-stat__label">Pending Withdrawals</p>
               <p className="admin-stat__value admin-stat__value--warn">{stats.pendingWithdrawals}</p>
+            </div>
+            <div className="admin-stat">
+              <p className="admin-stat__label">Cash in Person</p>
+              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingCashInPerson}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Pending Tx</p>
@@ -1482,6 +1647,22 @@ export default function Admin() {
           </p>
           <form className="admin-form-grid" onSubmit={saveSettings}>
             <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
+              <label>USDT price in INR (1 USDT = ? INR)</label>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                step="0.01"
+                value={settingsForm.usdtInrRate}
+                onChange={(e) => setSettingsForm((f) => ({ ...f, usdtInrRate: e.target.value }))}
+                placeholder="e.g. 83.5"
+                required
+              />
+              <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
+                Used across the app to show wallet balances and USDT amounts in INR. Update whenever the exchange rate changes.
+              </p>
+            </div>
+            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
               <label>Deposit mode</label>
               <select
                 value={settingsForm.depositMode}
@@ -1560,6 +1741,22 @@ export default function Admin() {
             Shared deposit addresses disable auto-credit for safety.
           </p>
           <form className="admin-form-grid" onSubmit={saveSettings}>
+            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
+              <label>USDT price in INR (1 USDT = ? INR)</label>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                step="0.01"
+                value={settingsForm.usdtInrRate}
+                onChange={(e) => setSettingsForm((f) => ({ ...f, usdtInrRate: e.target.value }))}
+                placeholder="e.g. 83.5"
+                required
+              />
+              <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
+                Wallet balances, dashboard, markets, and trade page show INR using this rate.
+              </p>
+            </div>
             <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
               <label>Referral reward (USDT per signup)</label>
               <input
@@ -1759,6 +1956,31 @@ export default function Admin() {
             exportFilename="withdrawals.csv"
             refreshKey={tableRefreshKey}
             emptyMessage="No withdrawal requests."
+          />
+        </>
+      )}
+
+      {activeTab === 'cashInPerson' && (
+        <>
+          <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+            Users request cash-in-person deposits with their mobile and city. Approve to credit their wallet instantly
+            with the USDT amount received.
+          </p>
+          <AdminDataTable
+            title="Cash in person requests"
+            endpoint="/admin/cash-in-person"
+            columns={cashInPersonColumns}
+            filters={[
+              { key: 'status', label: 'Status', options: [
+                { value: '', label: 'All' },
+                { value: 'pending', label: 'Pending' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'rejected', label: 'Rejected' },
+              ]},
+            ]}
+            exportFilename="cash-in-person.csv"
+            refreshKey={tableRefreshKey}
+            emptyMessage="No cash in person requests yet."
           />
         </>
       )}
@@ -1965,6 +2187,10 @@ export default function Admin() {
       {activeTab === 'staking' && (
         <StakingAdminSection refreshKey={tableRefreshKey} onMutate={bumpTables} />
       )}
+
+      {activeTab === 'coins' && <TradingPairsAdminSection />}
+
+      {activeTab === 'futures' && <FuturesAdminSection refreshKey={tableRefreshKey} />}
 
       {treasuryDeposit && (
         <TreasurySweepDrawer

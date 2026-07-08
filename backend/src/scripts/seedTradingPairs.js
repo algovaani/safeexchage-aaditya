@@ -2,6 +2,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
 import { TRADING_PAIRS } from '../config/tradingPairs.js';
+import { COINGECKO_IDS } from '../config/coingeckoIds.js';
 import { TradingPair } from '../models/TradingPair.js';
 
 async function run() {
@@ -19,6 +20,9 @@ async function run() {
         baseAsset: p.baseAsset,
         quoteAsset: p.quoteAsset,
         displayPair: p.displayPair,
+        name: p.baseAsset,
+        coingeckoId: COINGECKO_IDS[p.symbol] || '',
+        priceSource: 'binance',
         isActive: true,
         sortOrder: i + 1,
       },

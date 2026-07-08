@@ -47,6 +47,7 @@ function clearAuthAndRedirect() {
     path === '/login' ||
     path === '/signup' ||
     path === '/trade' ||
+    path === '/futures' ||
     path.startsWith('/admin/login');
 
   if (!isPublicAuth) {
@@ -179,6 +180,7 @@ export const authAPI = {
   resendOtp: (mobile, purpose) => unwrap(api.post('/auth/otp/resend', { mobile, purpose })),
   register: (body) => unwrap(api.post('/auth/register', body)),
   login: (mobile, password) => unwrap(api.post('/auth/login', { mobile, password })),
+  loginOtp: (mobile, otp) => unwrap(api.post('/auth/login/otp', { mobile, otp })),
   adminLogin: (email, password) => unwrap(api.post('/auth/admin/login', { email, password })),
   logout: () => unwrap(api.post('/auth/logout')),
   me: () => unwrap(api.get('/auth/me')),
@@ -203,6 +205,11 @@ export const withdrawalAPI = {
   getHistory: () => unwrap(api.get('/withdrawals/history')),
 };
 
+export const cashInPersonAPI = {
+  submit: (body) => unwrap(api.post('/cash-in-person/submit', body)),
+  getHistory: () => unwrap(api.get('/cash-in-person/history')),
+};
+
 export const depositAPI = {
   getPlatformInfo: () => unwrap(api.get('/deposit/platform-info')),
   getAddresses: (chain) =>
@@ -223,6 +230,20 @@ export const marketAPI = {
   getAllPrices: () => unwrap(api.get('/market/prices')),
   getPairPrice: (symbol) => unwrap(api.get(`/market/prices/${encodeURIComponent(symbol)}`)),
   getLivePrices: () => unwrap(api.get('/market/prices/live')),
+  getPairs: () => unwrap(api.get('/market/pairs')),
+  getDepth: (symbol, limit = 20) =>
+    unwrap(api.get('/market/depth', { params: { symbol, limit } })),
+};
+
+export const adminTradingPairsAPI = {
+  list: (params) => unwrap(api.get('/admin/trading-pairs', { params })),
+  searchCoins: (q) => unwrap(api.get('/admin/trading-pairs/coins/search', { params: { q } })),
+  lookupContract: (address, chain) =>
+    unwrap(api.get('/admin/trading-pairs/coins/contract', { params: { address, chain } })),
+  previewCoinGecko: (id) => unwrap(api.get('/admin/trading-pairs/coins/coingecko', { params: { id } })),
+  create: (body) => unwrap(api.post('/admin/trading-pairs', body)),
+  update: (id, body) => unwrap(api.patch(`/admin/trading-pairs/${id}`, body)),
+  remove: (id) => unwrap(api.delete(`/admin/trading-pairs/${id}`)),
 };
 
 export const tradeAPI = {
@@ -244,6 +265,7 @@ export const adminStakingAPI = {
   getPlans: () => unwrap(api.get('/admin/staking/plans')),
   createPlan: (body) => unwrap(api.post('/admin/staking/plans', body)),
   updatePlan: (id, body) => unwrap(api.patch(`/admin/staking/plans/${id}`, body)),
+  deletePlan: (id) => unwrap(api.delete(`/admin/staking/plans/${id}`)),
   getStakes: (params) => unwrap(api.get('/admin/staking/stakes', { params })),
   reviewStake: (id, body) => unwrap(api.patch(`/admin/staking/stakes/${id}/review`, body)),
   releasePayout: (id) => unwrap(api.post(`/admin/staking/stakes/${id}/release-payout`)),

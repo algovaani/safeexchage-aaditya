@@ -25,9 +25,12 @@ function formatPlan(plan) {
     lock_days: plan.lockDays,
     min_amount: roundMoney(plan.minAmount),
     max_amount: roundMoney(plan.maxAmount),
+    has_max: Number(plan.maxAmount) > 0,
     payout_type: plan.payoutType || 'end_of_plan',
     payout_mode: plan.payoutMode || 'auto',
     requires_approval: Boolean(plan.requiresApproval),
+    terms: plan.terms || '',
+    early_withdrawal_message: plan.earlyWithdrawalMessage || '',
     currency: 'USDT',
     label: planLabel(plan.apyPercent, plan.lockDays),
   };
@@ -90,6 +93,7 @@ function formatStakeRow(stake, plan) {
     is_matured: isMatured,
     can_claim: canClaim,
     can_early_withdraw: stake.status === 'active' && !isMatured,
+    early_withdrawal_message: plan?.earlyWithdrawalMessage || '',
     awaiting_admin_release: awaitingAdminRelease,
     admin_note: stake.adminNote || '',
   };
@@ -97,7 +101,7 @@ function formatStakeRow(stake, plan) {
 
 export async function getPlans(_req, res, next) {
   try {
-    const plans = await StakingPlan.find({ isActive: true }).sort({ lockDays: 1 }).lean();
+    const plans = await StakingPlan.find({ isActive: true, deletedAt: null }).sort({ lockDays: 1 }).lean();
     return success(res, plans.map(formatPlan), 'Investment plans fetched');
   } catch (e) {
     return next(e);
@@ -112,19 +116,23 @@ export async function createStake(req, res, next) {
     const { plan_id, amount } = req.body;
     const stakeAmount = storeMoney(amount);
 
-    const plan = await StakingPlan.findOne({ _id: plan_id, isActive: true }).session(session);
+    const plan = await StakingPlan.findOne({
+      _id: plan_id,
+      isActive: true,
+      deletedAt: null,
+    }).session(session);
     if (!plan) {
       await session.abortTransaction();
       return error(res, 'Investment plan not found or inactive', 400);
     }
 
-    if (stakeAmount < plan.minAmount || stakeAmount > plan.maxAmount) {
+    const hasMax = Number(plan.maxAmount) > 0;
+    if (stakeAmount < plan.minAmount || (hasMax && stakeAmount > plan.maxAmount)) {
       await session.abortTransaction();
-      return error(
-        res,
-        `Amount must be between ${roundMoney(plan.minAmount)} and ${roundMoney(plan.maxAmount)} USDT`,
-        400
-      );
+      const rangeMsg = hasMax
+        ? `Amount must be between ${roundMoney(plan.minAmount)} and ${roundMoney(plan.maxAmount)} USDT`
+        : `Amount must be at least ${roundMoney(plan.minAmount)} USDT`;
+      return error(res, rangeMsg, 400);
     }
 
     const wallet = await Wallet.findOne({ userId: req.userId }).session(session);

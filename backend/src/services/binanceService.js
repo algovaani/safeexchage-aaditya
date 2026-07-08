@@ -1,5 +1,5 @@
 /**
- * Market data facade — Kraken + CoinGecko (no Binance).
+ * Market data facade — Binance public REST (single source of truth).
  */
 export {
   normalizeSymbol,
@@ -14,6 +14,7 @@ export {
   fetchTicker24h,
   fetchKlines,
   fetchAggTrades,
+  fetchDepth,
   bucketTradesToSecondCandles,
   parseKlineEvent,
   syntheticOrderBook,

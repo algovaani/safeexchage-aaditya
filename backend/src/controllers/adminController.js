@@ -7,6 +7,7 @@ import { Order } from '../models/Order.js';
 import { KycSubmission } from '../models/KycSubmission.js';
 import { Deposit } from '../models/Deposit.js';
 import { Withdrawal } from '../models/Withdrawal.js';
+import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { mergeCandles } from '../services/mergeService.js';
 import { fetchKlines } from '../services/marketDataProvider.js';
 import { error, success } from '../utils/response.js';
@@ -56,12 +57,13 @@ function buildUserFilter(query, search) {
 
 export async function overviewStats(_req, res, next) {
   try {
-    const [users, pendingKyc, pendingDeposits, pendingWithdrawals, pendingTx, openOrders, pendingTreasurySweeps] =
+    const [users, pendingKyc, pendingDeposits, pendingWithdrawals, pendingCashInPerson, pendingTx, openOrders, pendingTreasurySweeps] =
       await Promise.all([
         User.countDocuments(),
         KycSubmission.countDocuments({ status: 'pending' }),
         Deposit.countDocuments({ status: 'pending' }),
         Withdrawal.countDocuments({ status: 'pending' }),
+        CashInPersonRequest.countDocuments({ status: 'pending' }),
         Transaction.countDocuments({ status: 'pending' }),
         Order.countDocuments({ status: 'open' }),
         Deposit.countDocuments({
@@ -78,6 +80,7 @@ export async function overviewStats(_req, res, next) {
         pendingKyc,
         pendingDeposits,
         pendingWithdrawals,
+        pendingCashInPerson,
         pendingTx,
         openOrders,
         pendingTreasurySweeps,

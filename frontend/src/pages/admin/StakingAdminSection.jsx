@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, parseApiResponse } from '../../api/client.js';
+import { useDialog } from '../../context/DialogContext.jsx';
 import AdminDataTable from '../../components/AdminDataTable.jsx';
 
 const EMPTY_PLAN = {
@@ -11,6 +12,8 @@ const EMPTY_PLAN = {
   payout_type: 'end_of_plan',
   payout_mode: 'auto',
   requires_approval: false,
+  terms: '',
+  early_withdrawal_message: '',
 };
 
 function usdt(n) {
@@ -20,9 +23,12 @@ function usdt(n) {
 }
 
 export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
+  const dialog = useDialog();
   const [plans, setPlans] = useState([]);
   const [planForm, setPlanForm] = useState(EMPTY_PLAN);
+  const [editingPlanId, setEditingPlanId] = useState(null);
   const [planBusy, setPlanBusy] = useState(false);
+  const [deletingPlanId, setDeletingPlanId] = useState(null);
   const [stakesRefresh, setStakesRefresh] = useState(0);
 
   const loadPlans = useCallback(async () => {
@@ -47,13 +53,20 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
         roi_percent: Number(planForm.roi_percent),
         lock_days: Number(planForm.lock_days),
         min_amount: Number(planForm.min_amount),
-        max_amount: Number(planForm.max_amount),
+        max_amount: planForm.max_amount === '' ? 0 : Number(planForm.max_amount),
         payout_type: planForm.payout_type,
         payout_mode: planForm.payout_mode,
         requires_approval: planForm.requires_approval,
+        terms: planForm.terms.trim(),
+        early_withdrawal_message: planForm.early_withdrawal_message.trim(),
       };
-      await api.post('/admin/staking/plans', body);
+      if (editingPlanId) {
+        await api.patch(`/admin/staking/plans/${editingPlanId}`, body);
+      } else {
+        await api.post('/admin/staking/plans', body);
+      }
       setPlanForm(EMPTY_PLAN);
+      setEditingPlanId(null);
       await loadPlans();
       onMutate?.();
     } catch {
@@ -63,16 +76,83 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
     }
   }
 
+  function startEditPlan(plan) {
+    setEditingPlanId(plan.id);
+    setPlanForm({
+      name: plan.name || '',
+      roi_percent: String(plan.roi_percent ?? plan.apy_percent ?? ''),
+      lock_days: String(plan.lock_days ?? '30'),
+      min_amount: String(plan.min_amount ?? ''),
+      max_amount: plan.has_max ? String(plan.max_amount ?? '') : '',
+      payout_type: plan.payout_type || 'end_of_plan',
+      payout_mode: plan.payout_mode || 'auto',
+      requires_approval: Boolean(plan.requires_approval),
+      terms: plan.terms || '',
+      early_withdrawal_message: plan.early_withdrawal_message || '',
+    });
+  }
+
+  function cancelEditPlan() {
+    setEditingPlanId(null);
+    setPlanForm(EMPTY_PLAN);
+  }
+
   async function togglePlan(plan) {
     await api.patch(`/admin/staking/plans/${plan.id}`, { is_active: !plan.is_active });
     await loadPlans();
     onMutate?.();
   }
 
+  async function softDeletePlan(plan) {
+    if (plan.is_deleted) return;
+    if (plan.active_stakes_count > 0) {
+      await dialog.alert({
+        title: 'Cannot delete plan',
+        message: `This plan has ${plan.active_stakes_count} active or pending investment(s) and cannot be deleted yet.`,
+        variant: 'warning',
+        confirmLabel: 'OK',
+      });
+      return;
+    }
+
+    const confirmed = await dialog.confirm({
+      title: 'Soft delete plan',
+      message: `Soft delete "${plan.name}"? It will be hidden from users but existing history is kept.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setDeletingPlanId(plan.id);
+    try {
+      await api.delete(`/admin/staking/plans/${plan.id}`);
+      if (editingPlanId === plan.id) {
+        cancelEditPlan();
+      }
+      await loadPlans();
+      onMutate?.();
+    } catch {
+      /* toast */
+    } finally {
+      setDeletingPlanId(null);
+    }
+  }
+
   async function reviewStake(id, action) {
     let note = '';
     if (action === 'reject') {
-      note = window.prompt('Rejection note (optional):') || '';
+      const result = await dialog.prompt({
+        title: 'Reject investment',
+        message: 'Add an optional note for the user.',
+        label: 'Rejection note',
+        placeholder: 'Reason for rejection (optional)',
+        confirmLabel: 'Reject',
+        cancelLabel: 'Cancel',
+        variant: 'danger',
+      });
+      if (result === null) return;
+      note = result;
     }
     await api.patch(`/admin/staking/stakes/${id}/review`, { action, note });
     setStakesRefresh((k) => k + 1);
@@ -80,7 +160,14 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
   }
 
   async function releasePayout(id) {
-    if (!window.confirm('Release maturity payout to user wallet?')) return;
+    const confirmed = await dialog.confirm({
+      title: 'Release payout',
+      message: 'Release maturity payout to user wallet?',
+      confirmLabel: 'Release',
+      cancelLabel: 'Cancel',
+      variant: 'primary',
+    });
+    if (!confirmed) return;
     await api.post(`/admin/staking/stakes/${id}/release-payout`);
     setStakesRefresh((k) => k + 1);
     onMutate?.();
@@ -158,7 +245,7 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
       </p>
 
       <div className="admin-card" style={{ marginBottom: '1.25rem' }}>
-        <h2>Create investment plan</h2>
+        <h2>{editingPlanId ? 'Edit investment plan' : 'Create investment plan'}</h2>
         <form className="admin-form-grid" onSubmit={createPlan}>
           <div className="admin-field">
             <label>Plan name</label>
@@ -170,7 +257,7 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
             />
           </div>
           <div className="admin-field">
-            <label>ROI % (full period)</label>
+            <label>Total ROI % (over full period)</label>
             <input
               type="number"
               min="0.1"
@@ -203,14 +290,14 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
             />
           </div>
           <div className="admin-field">
-            <label>Max investment (USDT)</label>
+            <label>Max investment (USDT) — leave blank for no limit</label>
             <input
               type="number"
-              min="0.01"
+              min="0"
               step="0.01"
               value={planForm.max_amount}
               onChange={(e) => setPlanForm((f) => ({ ...f, max_amount: e.target.value }))}
-              required
+              placeholder="No limit"
             />
           </div>
           <div className="admin-field">
@@ -221,6 +308,7 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
             >
               <option value="end_of_plan">End of plan</option>
               <option value="daily">Daily earnings</option>
+              <option value="monthly">Monthly earnings</option>
             </select>
           </div>
           <div className="admin-field">
@@ -234,6 +322,26 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
             </select>
           </div>
           <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
+            <label>Terms &amp; conditions (shown to user before investing)</label>
+            <textarea
+              rows={4}
+              value={planForm.terms}
+              onChange={(e) => setPlanForm((f) => ({ ...f, terms: e.target.value }))}
+              placeholder="e.g. Funds are locked for the full duration. ROI is paid at maturity…"
+              maxLength={5000}
+            />
+          </div>
+          <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
+            <label>Early withdrawal message (shown when user exits before maturity)</label>
+            <textarea
+              rows={3}
+              value={planForm.early_withdrawal_message}
+              onChange={(e) => setPlanForm((f) => ({ ...f, early_withdrawal_message: e.target.value }))}
+              placeholder="e.g. Early withdrawal returns principal only — no profit. Are you sure you want to continue?"
+              maxLength={2000}
+            />
+          </div>
+          <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
             <label className="admin-checkbox">
               <input
                 type="checkbox"
@@ -243,10 +351,15 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
               Require admin approval before investment starts
             </label>
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <button type="submit" className="admin-btn admin-btn--primary" disabled={planBusy}>
-              {planBusy ? 'Creating…' : 'Create plan'}
+              {planBusy ? 'Saving…' : editingPlanId ? 'Update plan' : 'Create plan'}
             </button>
+            {editingPlanId && (
+              <button type="button" className="admin-btn admin-btn--ghost" onClick={cancelEditPlan} disabled={planBusy}>
+                Cancel edit
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -267,17 +380,17 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
                   <th>Payout</th>
                   <th>Stakes</th>
                   <th>Status</th>
-                  <th />
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {plans.map((p) => (
-                  <tr key={p.id}>
+                  <tr key={p.id} className={p.is_deleted ? 'admin-table-row--muted' : undefined}>
                     <td>{p.name}</td>
                     <td>{p.roi_percent ?? p.apy_percent}%</td>
                     <td>{p.lock_days}</td>
                     <td>
-                      {usdt(p.min_amount)} / {usdt(p.max_amount)}
+                      {usdt(p.min_amount)} / {p.has_max ? usdt(p.max_amount) : 'No limit'}
                     </td>
                     <td>
                       {p.payout_type} · {p.payout_mode}
@@ -288,15 +401,49 @@ export default function StakingAdminSection({ refreshKey = 0, onMutate }) {
                       <br />
                       <small>{usdt(p.total_amount_staked)} staked</small>
                     </td>
-                    <td>{p.is_active ? 'Active' : 'Disabled'}</td>
                     <td>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--ghost admin-btn--xs"
-                        onClick={() => togglePlan(p)}
-                      >
-                        {p.is_active ? 'Disable' : 'Enable'}
-                      </button>
+                      {p.is_deleted ? (
+                        <span className="admin-status-pill admin-status-pill--muted">Deleted</span>
+                      ) : p.is_active ? (
+                        <span className="admin-status-pill admin-status-pill--success">Active</span>
+                      ) : (
+                        <span className="admin-status-pill admin-status-pill--warn">Disabled</span>
+                      )}
+                    </td>
+                    <td>
+                      {p.is_deleted ? (
+                        <span style={{ color: 'var(--adm-muted)', fontSize: '0.75rem' }}>—</span>
+                      ) : (
+                        <div className="admin-row-actions">
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--xs"
+                            onClick={() => startEditPlan(p)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--xs"
+                            onClick={() => togglePlan(p)}
+                          >
+                            {p.is_active ? 'Disable' : 'Enable'}
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--danger admin-btn--xs"
+                            disabled={deletingPlanId === p.id || p.active_stakes_count > 0}
+                            title={
+                              p.active_stakes_count > 0
+                                ? 'Cannot delete while active or pending investments exist'
+                                : 'Soft delete plan'
+                            }
+                            onClick={() => softDeletePlan(p)}
+                          >
+                            {deletingPlanId === p.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

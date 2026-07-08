@@ -191,9 +191,42 @@
 }
 
 .login-card__subtitle {
-  margin: 0 0 1.5rem;
+  margin: 0 0 1rem;
   font-size: 0.8125rem;
   color: var(--login-muted);
+}
+
+.login-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem;
+  border-radius: var(--login-radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--login-border-subtle);
+}
+
+.login-mode-tabs__btn {
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--login-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--login-transition), background var(--login-transition), box-shadow var(--login-transition);
+}
+
+.login-mode-tabs__btn:hover {
+  color: var(--login-text);
+}
+
+.login-mode-tabs__btn.is-active {
+  background: var(--login-card);
+  color: var(--login-gold);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .login-field {

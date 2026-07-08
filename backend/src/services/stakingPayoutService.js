@@ -6,6 +6,7 @@ import { StakingPlan } from '../models/StakingPlan.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 import {
   calculateDailyReward,
+  calculateMonthlyReward,
   calculateMaturityReward,
   calculateMaturityAmount,
   startOfDay,
@@ -43,6 +44,39 @@ export async function creditDailyReward(stake, plan, session) {
   return daily;
 }
 
+export async function creditMonthlyReward(stake, plan, session) {
+  void plan;
+  const monthly = calculateMonthlyReward(stake.amount, stake.apyPercent, stake.lockDays);
+  if (!(monthly > 0)) return 0;
+
+  const wallet = await Wallet.findOne({ userId: stake.userId }).session(session);
+  if (!wallet) throw new Error('Wallet not found');
+
+  wallet.balance = storeMoney(wallet.balance + monthly);
+  stake.rewardEarned = storeMoney((stake.rewardEarned || 0) + monthly);
+  stake.lastDailyPayoutAt = startOfDay();
+
+  await wallet.save({ session });
+  await stake.save({ session });
+
+  await Transaction.create(
+    [
+      {
+        userId: stake.userId,
+        type: 'stake_reward',
+        amount: roundMoney(monthly),
+        balanceAfter: roundMoney(wallet.balance),
+        currency: 'USDT',
+        status: 'completed',
+        reference: `stake_monthly:${stake._id}:${stake.lastDailyPayoutAt.toISOString().slice(0, 10)}`,
+      },
+    ],
+    { session }
+  );
+
+  return monthly;
+}
+
 export async function releaseMaturityPayout(stake, { session, markWithdrawn = true } = {}) {
   if (!['active', 'matured'].includes(stake.status)) {
     throw Object.assign(new Error('Stake is not eligible for payout'), { status: 400 });
@@ -61,8 +95,10 @@ export async function releaseMaturityPayout(stake, { session, markWithdrawn = tr
 
   const totalReward = calculateMaturityReward(stake.amount, stake.apyPercent, stake.lockDays);
   const alreadyPaid = storeMoney(stake.rewardEarned || 0);
-  const remainingReward =
-    payoutType === 'daily' ? storeMoney(Math.max(0, totalReward - alreadyPaid)) : totalReward;
+  const paysDuringTerm = payoutType === 'daily' || payoutType === 'monthly';
+  const remainingReward = paysDuringTerm
+    ? storeMoney(Math.max(0, totalReward - alreadyPaid))
+    : totalReward;
 
   const returnAmount = storeMoney(stake.amount + remainingReward);
 

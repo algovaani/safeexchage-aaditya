@@ -16,4 +16,5 @@ export const platformSettingsValidators = [
   body('trcPrivateKey').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 512 }),
   body('evmMnemonic').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 1024 }),
   body('referralRewardUsdt').optional({ values: 'falsy' }).isFloat({ min: 0, max: 1_000_000 }),
+  body('usdtInrRate').optional({ values: 'falsy' }).isFloat({ min: 1, max: 500 }),
 ];

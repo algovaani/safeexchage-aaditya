@@ -4,10 +4,13 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { WALLET_ASSETS } from '../theme/assets.js';
 import DepositModal from '../components/DepositModal.jsx';
 import WithdrawModal from '../components/WithdrawModal.jsx';
-import { fmtINR, fmtUSD, inrFromUsdt } from '../utils/format.js';
+import CashInPersonModal from '../components/CashInPersonModal.jsx';
+import { fmtINR, fmtUSD } from '../utils/format.js';
+import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 
 export default function Account() {
   const { user } = useAuth();
+  const { toInr } = usePlatformConfig();
   const [spotUsdt, setSpotUsdt] = useState(null);
   const [lockedUsdt, setLockedUsdt] = useState(0);
   const [hideZero, setHideZero] = useState(false);
@@ -16,6 +19,7 @@ export default function Account() {
   const [loading, setLoading] = useState(true);
   const [depositCoin, setDepositCoin] = useState(null);
   const [withdrawCoin, setWithdrawCoin] = useState(null);
+  const [cashInPersonOpen, setCashInPersonOpen] = useState(false);
   const [platformInfo, setPlatformInfo] = useState(null);
   const [walletForm, setWalletForm] = useState({
     bnbWalletAddress: '',
@@ -124,23 +128,26 @@ export default function Account() {
         <div>
           <p className="stat-card__label">Total Balance</p>
           <p className="text-3xl font-medium tabular-nums text-text-primary mt-1">
-            {loading ? '…' : fmtINR(inrFromUsdt(portfolio ?? 0))}
+            {loading ? '…' : fmtINR(toInr(portfolio ?? 0))}
           </p>
           <p className="text-sm text-text-muted mt-1">
-            ≈ {portfolio != null ? fmtUSD(portfolio) : '—'} USD
+            ≈ {portfolio != null ? fmtUSD(portfolio) : '—'} USDT
           </p>
           {!loading && lockedUsdt > 0 && (
             <p className="text-xs text-text-secondary mt-1">
-              Available: {available.toFixed(2)} USDT · Locked: {Number(lockedUsdt).toFixed(2)} USDT
+              Available: {fmtINR(toInr(available))} · Locked: {fmtINR(toInr(lockedUsdt))}
             </p>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3 wallet-action-row">
           <button type="button" className="btn-primary" onClick={() => onDeposit('USDT')}>
             Deposit
           </button>
           <button type="button" className="btn-secondary" onClick={() => onWithdraw('USDT')}>
             Withdraw
+          </button>
+          <button type="button" className="btn-cash-in-person" onClick={() => setCashInPersonOpen(true)}>
+            Cash in Person
           </button>
         </div>
       </div>
@@ -212,7 +219,7 @@ export default function Account() {
                   <td className="tabular-nums">{r.spot.toFixed(8)}</td>
                   <td className="tabular-nums text-text-muted">0</td>
                   <td className="tabular-nums">
-                    {r.symbol === 'USDT' ? fmtINR(inrFromUsdt(r.total)) : '—'}
+                    {r.symbol === 'USDT' ? fmtINR(toInr(r.total)) : '—'}
                   </td>
                   <td>
                     <div className="flex flex-wrap gap-3">
@@ -285,6 +292,14 @@ export default function Account() {
           platformInfo={platformInfo}
           availableBalance={available}
           onClose={() => setWithdrawCoin(null)}
+          onSuccess={refresh}
+        />
+      )}
+
+      {cashInPersonOpen && (
+        <CashInPersonModal
+          userMobile={user?.mobile || ''}
+          onClose={() => setCashInPersonOpen(false)}
           onSuccess={refresh}
         />
       )}

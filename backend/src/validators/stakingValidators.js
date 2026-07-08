@@ -31,16 +31,19 @@ export const createPlanValidators = [
   body('roi_percent').optional().isFloat({ min: 0.1, max: 500 }).toFloat(),
   body('lock_days').isInt({ min: 1, max: 3650 }).toInt(),
   body('min_amount').isFloat({ gt: 0 }).toFloat(),
-  body('max_amount').isFloat({ gt: 0 }).toFloat(),
-  body('payout_type').optional().isIn(['end_of_plan', 'daily']),
+  body('max_amount').optional({ nullable: true }).isFloat({ min: 0 }).toFloat(),
+  body('payout_type').optional().isIn(['end_of_plan', 'daily', 'monthly']),
   body('payout_mode').optional().isIn(['auto', 'manual']),
   body('requires_approval').optional().isBoolean().toBoolean(),
+  body('terms').optional({ nullable: true }).isString().isLength({ max: 5000 }),
+  body('early_withdrawal_message').optional({ nullable: true }).isString().isLength({ max: 2000 }),
   body().custom((_, { req }) => {
     if (req.body.roi_percent == null && req.body.apy_percent == null) {
       throw new Error('roi_percent or apy_percent is required');
     }
-    if (req.body.max_amount <= req.body.min_amount) {
-      throw new Error('max_amount must be greater than min_amount');
+    const max = Number(req.body.max_amount);
+    if (max > 0 && max <= Number(req.body.min_amount)) {
+      throw new Error('max_amount must be greater than min_amount (or 0 for no limit)');
     }
     return true;
   }),
@@ -51,13 +54,18 @@ export const updatePlanValidators = [
   body('name').optional().trim().notEmpty().isLength({ max: 120 }),
   body('apy_percent').optional().isFloat({ min: 0.1, max: 500 }).toFloat(),
   body('roi_percent').optional().isFloat({ min: 0.1, max: 500 }).toFloat(),
+  body('lock_days').optional().isInt({ min: 1, max: 3650 }).toInt(),
   body('min_amount').optional().isFloat({ gt: 0 }).toFloat(),
-  body('max_amount').optional().isFloat({ gt: 0 }).toFloat(),
+  body('max_amount').optional({ nullable: true }).isFloat({ min: 0 }).toFloat(),
   body('is_active').optional().isBoolean().toBoolean(),
-  body('payout_type').optional().isIn(['end_of_plan', 'daily']),
+  body('payout_type').optional().isIn(['end_of_plan', 'daily', 'monthly']),
   body('payout_mode').optional().isIn(['auto', 'manual']),
   body('requires_approval').optional().isBoolean().toBoolean(),
+  body('terms').optional({ nullable: true }).isString().isLength({ max: 5000 }),
+  body('early_withdrawal_message').optional({ nullable: true }).isString().isLength({ max: 2000 }),
 ];
+
+export const deletePlanValidators = [...planIdValidator];
 
 export const adminStakesListValidators = [
   query('status').optional().isIn(['pending', 'active', 'rejected', 'matured', 'withdrawn', 'all']),

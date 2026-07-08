@@ -170,6 +170,18 @@ html.light {
     background: var(--bg-tertiary);
   }
 
+  .btn-cash-in-person {
+    @apply inline-flex items-center justify-center gap-2 h-[42px] px-4 rounded-btn text-sm font-medium transition-all duration-150;
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+    border: 0.5px solid rgba(245, 158, 11, 0.35);
+  }
+
+  .btn-cash-in-person:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.2);
+    border-color: rgba(245, 158, 11, 0.55);
+  }
+
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 h-[42px] px-4 rounded-btn text-sm font-medium transition-all duration-150;
     background: rgba(239, 68, 68, 0.15);

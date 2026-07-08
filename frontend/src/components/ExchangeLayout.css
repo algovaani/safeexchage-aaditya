@@ -150,6 +150,13 @@ canvas {
   color: var(--ex-text);
 }
 
+.exchange-header__portfolio-usdt,
+.exchange-drawer__portfolio-usdt {
+  font-size: 0.65rem;
+  color: var(--ex-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .exchange-header__avatar {
   width: 36px;
   height: 36px;
