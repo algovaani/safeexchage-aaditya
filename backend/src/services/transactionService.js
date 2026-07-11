@@ -1,4 +1,6 @@
 import { Deposit } from '../models/Deposit.js';
+import { Order } from '../models/Order.js';
+import { Trade } from '../models/Trade.js';
 import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { Withdrawal } from '../models/Withdrawal.js';
@@ -84,6 +86,78 @@ export async function backfillOrphanFinancialRecords(userId) {
       updatedAt: withdrawal.updatedAt,
     });
     await Withdrawal.updateOne({ _id: withdrawal._id }, { transactionId: transaction._id });
+  }
+}
+
+/** Create report rows for spot trades that filled before transaction logging existed. */
+export async function backfillSpotTradeTransactions(userId) {
+  const trades = await Trade.find({
+    $or: [{ buyerUserId: userId }, { sellerUserId: userId }],
+  })
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean();
+
+  for (const trade of trades) {
+    const order = await Order.findById(trade.buyOrderId).select('side userId').lean();
+    const side =
+      order && String(order.userId) === String(userId)
+        ? order.side
+        : String(trade.buyerUserId) === String(userId)
+          ? 'buy'
+          : 'sell';
+    const existing = await Transaction.findOne({ userId, spotTradeId: trade._id }).lean();
+    if (existing) continue;
+
+    const notional = trade.price * trade.quantity;
+    const fee = trade.fee || 0;
+    const amount = side === 'buy' ? notional + fee : notional - fee;
+
+    await Transaction.create({
+      userId,
+      type: side === 'buy' ? 'spot_buy' : 'spot_sell',
+      amount: roundMoney(amount),
+      balanceAfter: null,
+      currency: 'USDT',
+      status: 'completed',
+      method: 'gateway',
+      reference: `${trade.symbol} ${side} ${trade.quantity} @ ${trade.price}`,
+      spotTradeId: trade._id,
+      createdAt: trade.createdAt,
+      updatedAt: trade.updatedAt,
+    });
+  }
+}
+
+/** Pending spot order rows for open / partially filled orders missing from reports. */
+export async function backfillOpenSpotOrderTransactions(userId) {
+  const openOrders = await Order.find({
+    userId,
+    status: { $in: ['open', 'partially_filled'] },
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+
+  for (const order of openOrders) {
+    const existing = await Transaction.findOne({ userId, spotOrderId: order._id }).lean();
+    if (existing) continue;
+
+    const estPrice = order.price || order.avgFillPrice || 0;
+    const notional = estPrice * order.quantity;
+    const amount = order.side === 'buy' ? notional * 1.001 : notional * 0.999;
+
+    await Transaction.create({
+      userId,
+      type: order.side === 'buy' ? 'spot_buy' : 'spot_sell',
+      amount: roundMoney(amount || 0),
+      currency: 'USDT',
+      status: 'pending',
+      method: 'gateway',
+      reference: `${order.symbol} ${order.side} ${order.quantity} (${order.orderType})`,
+      spotOrderId: order._id,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+    });
   }
 }
 

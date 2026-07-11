@@ -19,7 +19,6 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
-import { api, parseApiResponse } from '../api/client.js';
 import { fmtINR } from '../utils/format.js';
 import ThemeToggle from './ThemeToggle.jsx';
 import BrandLogo from './BrandLogo.jsx';
@@ -65,20 +64,10 @@ export default function Layout() {
       setPortfolio(null);
       return;
     }
-    api
-      .get('/wallet/balance')
-      .then((r) => {
-        const wallet = parseApiResponse(r.data);
-        setPortfolio(wallet?.balance_usdt ?? wallet?.balance ?? 0);
-      })
-      .catch(() => setPortfolio(null));
-  }, [user, pathname, walletVersion]);
-
-  useEffect(() => {
     if (liveWallet) {
       setPortfolio(liveWallet.balance_usdt ?? liveWallet.balance ?? 0);
     }
-  }, [liveWallet]);
+  }, [user, liveWallet, walletVersion]);
 
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'Trader';
   const initial = displayName[0]?.toUpperCase() || 'S';

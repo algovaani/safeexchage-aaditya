@@ -30,5 +30,23 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       open: true,
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/lightweight-charts')) return 'charts';
+            if (id.includes('node_modules/socket.io-client')) return 'socket';
+            if (
+              id.includes('node_modules/react-router') ||
+              id.includes('node_modules/react-dom') ||
+              id.includes('node_modules/react/')
+            ) {
+              return 'vendor';
+            }
+            if (id.includes('node_modules/lucide-react')) return 'icons';
+          },
+        },
+      },
+    },
   };
 });

@@ -19,14 +19,29 @@ import {
   parseDatatableQuery,
 } from '../utils/datatable.js';
 
-function formatUserTrade(trade, userId) {
+function formatUserTrade(trade, userId, orderById = new Map()) {
   const uid = String(userId);
-  const isBuyer = String(trade.buyerUserId) === uid;
+  const order =
+    orderById.get(String(trade.buyOrderId)) ||
+    orderById.get(String(trade.sellOrderId)) ||
+    null;
+
+  let side;
+  if (order && String(order.userId) === uid) {
+    side = order.side;
+  } else if (String(trade.buyerUserId) === uid && String(trade.sellerUserId) !== uid) {
+    side = 'buy';
+  } else if (String(trade.sellerUserId) === uid && String(trade.buyerUserId) !== uid) {
+    side = 'sell';
+  } else {
+    side = String(trade.buyerUserId) === uid ? 'buy' : 'sell';
+  }
+
   const total = trade.price * trade.quantity;
   return {
     id: trade._id,
     symbol: trade.symbol,
-    side: isBuyer ? 'buy' : 'sell',
+    side,
     price: trade.price,
     quantity: trade.quantity,
     fee: trade.fee,
@@ -197,13 +212,21 @@ export async function listUserTrades(req, res, next) {
     }
 
     const dt = parseDatatableQuery(req.query);
-    let filter;
-    if (req.query.side === 'buy') {
-      filter = { buyerUserId: userId };
-    } else if (req.query.side === 'sell') {
-      filter = { sellerUserId: userId };
-    } else {
-      filter = { $or: [{ buyerUserId: userId }, { sellerUserId: userId }] };
+    let filter = { $or: [{ buyerUserId: userId }, { sellerUserId: userId }] };
+    if (req.query.side === 'buy' || req.query.side === 'sell') {
+      const orderIds = await Order.find({ userId, side: req.query.side }).distinct('_id');
+      if (!orderIds.length) {
+        return success(
+          res,
+          paginatedPayload({ rows: [], total: 0, page: dt.page, pageSize: dt.pageSize }),
+          'User trades fetched'
+        );
+      }
+      const sideMatch =
+        req.query.side === 'buy'
+          ? { buyOrderId: { $in: orderIds } }
+          : { sellOrderId: { $in: orderIds } };
+      filter = { $and: [filter, sideMatch] };
     }
 
     const [rows, total] = await Promise.all([
@@ -211,7 +234,15 @@ export async function listUserTrades(req, res, next) {
       Trade.countDocuments(filter),
     ]);
 
-    const data = rows.map((t) => formatUserTrade(t, userId));
+    const orderIds = [
+      ...new Set(rows.flatMap((t) => [String(t.buyOrderId), String(t.sellOrderId)].filter(Boolean))),
+    ];
+    const orders = orderIds.length
+      ? await Order.find({ _id: { $in: orderIds } }).select('_id side userId').lean()
+      : [];
+    const orderById = new Map(orders.map((o) => [String(o._id), o]));
+
+    const data = rows.map((t) => formatUserTrade(t, userId, orderById));
 
     return success(
       res,

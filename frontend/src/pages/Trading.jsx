@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, parseApiResponse } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
+import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { fmtINR } from '../utils/format.js';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
-import { MARKET_POLL_MS, DEPTH_POLL_MS } from '../config/marketPoll.js';
+import { DEPTH_POLL_MS, TRADE_MARKET_POLL_MS, CLOCK_TICK_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
 import { notifyWalletUpdated } from '../utils/walletEvents.js';
 import './Trading.css';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
 
 const CHART_INTERVALS = [
   { id: '1m', label: '1m' },
@@ -34,6 +32,37 @@ function fmtLocale(value, options) {
   return Number.isFinite(n) ? n.toLocaleString(undefined, options) : '—';
 }
 
+function pairMeta(symbol, pairs) {
+  return pairs.find((p) => p.symbol === symbol) || null;
+}
+
+function pairBase(symbol, pairs) {
+  const row = pairMeta(symbol, pairs);
+  if (row?.baseAsset) return row.baseAsset;
+  const sym = String(symbol || '').toUpperCase();
+  if (sym.endsWith('INR')) return sym.replace(/INR$/, '');
+  return sym.replace(/USDT$/, '');
+}
+
+function pairQuote(symbol, pairs) {
+  const row = pairMeta(symbol, pairs);
+  if (row?.quoteAsset) return row.quoteAsset;
+  const sym = String(symbol || '').toUpperCase();
+  return sym.endsWith('INR') ? 'INR' : 'USDT';
+}
+
+function orderPairLabel(sym, pairs) {
+  const meta = pairMeta(sym, pairs);
+  return meta?.displayPair || `${pairBase(sym, pairs)}/${pairQuote(sym, pairs)}`;
+}
+
+function formatTradePrice(value, quoteAsset) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  if (quoteAsset === 'INR') return fmtINR(n);
+  return fmtLocale(n, { maximumFractionDigits: n < 1 ? 6 : 4 });
+}
+
 function useDebounced(value, delay = 400) {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -46,9 +75,10 @@ function useDebounced(value, delay = 400) {
 export default function Trading() {
   const toast = useToast();
   const { user } = useAuth();
-  const { toInr } = usePlatformConfig();
+  const { toInr, usdtInrRate } = usePlatformConfig();
   const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const loginReturn = { from: { pathname: '/trade' } };
   const [symbol, setSymbol] = useState('BNBUSDT');
   const [marketTab, setMarketTab] = useState('USDT');
@@ -92,7 +122,12 @@ export default function Trading() {
       Math.max(0, Number(balances?.balance_usdt ?? balances?.balance ?? 0) - Number(balances?.locked_balance ?? 0))
   );
 
-  const base = symbol.replace('USDT', '');
+  const base = pairBase(symbol, tradingPairs);
+  const quoteAsset = pairQuote(symbol, tradingPairs);
+  const isInrPair = quoteAsset === 'INR';
+  const pairLabel = pairMeta(symbol, tradingPairs)?.displayPair || `${base}/${quoteAsset}`;
+  const unitLabel = isInrPair ? (pairMeta(symbol, tradingPairs)?.unit || 'g') : base;
+  const priceDigits = isInrPair ? 2 : Number(ticker?.lastPrice) < 1 ? 6 : 4;
 
   const baseBalance = useMemo(() => {
     const assets = balances?.assets || [];
@@ -103,8 +138,9 @@ export default function Trading() {
 
   const filteredList = useMemo(() => {
     const q = search.trim().toUpperCase();
-    return watchlistSymbols.filter((p) => p.includes('USDT') && (!q || p.includes(q)));
-  }, [search, watchlistSymbols]);
+    const suffix = marketTab === 'INR' ? 'INR' : 'USDT';
+    return watchlistSymbols.filter((p) => p.endsWith(suffix) && (!q || p.includes(q)));
+  }, [search, watchlistSymbols, marketTab]);
 
   const tableFromRow = tableTotal === 0 ? 0 : (tablePage - 1) * tablePageSize + 1;
   const tableToRow = Math.min(tablePage * tablePageSize, tableTotal);
@@ -123,6 +159,35 @@ export default function Trading() {
     return (p * q).toFixed(2);
   }, [sellType, sellPrice, sellQty, ticker?.lastPrice]);
 
+  const buyTotalUsdtHint = useMemo(() => {
+    if (!isInrPair) return '';
+    const inr = parseFloat(buyTotal);
+    if (!Number.isFinite(inr) || !usdtInrRate) return '';
+    return (inr / usdtInrRate).toFixed(2);
+  }, [buyTotal, isInrPair, usdtInrRate]);
+
+  const sellTotalUsdtHint = useMemo(() => {
+    if (!isInrPair) return '';
+    const inr = parseFloat(sellTotal);
+    if (!Number.isFinite(inr) || !usdtInrRate) return '';
+    return (inr / usdtInrRate).toFixed(2);
+  }, [sellTotal, isInrPair, usdtInrRate]);
+
+  useEffect(() => {
+    const param = searchParams.get('symbol')?.toUpperCase();
+    if (param && watchlistSymbols.includes(param)) {
+      setSymbol(param);
+      setMarketTab(param.endsWith('INR') ? 'INR' : 'USDT');
+    }
+  }, [searchParams, watchlistSymbols]);
+
+  useEffect(() => {
+    if (isInrPair) {
+      setBuyQty('1');
+      setSellQty('1');
+    }
+  }, [symbol, isInrPair]);
+
   const loadLivePrices = useCallback(async () => {
     const { data } = await api.get('/market/prices/live');
     const payload = parseApiResponse(data);
@@ -131,9 +196,10 @@ export default function Trading() {
 
     for (const row of pairs) {
       if (!row?.symbol) continue;
+      const lastPrice = row.price_inr ?? row.price;
       bySym[row.symbol] = {
         symbol: row.symbol,
-        lastPrice: row.price,
+        lastPrice,
         openPrice: row.open_24h,
         priceChangePercent: row.change_24h,
         priceChange: row.change_24h_abs,
@@ -141,6 +207,7 @@ export default function Trading() {
         lowPrice: row.low_24h,
         volume: row.volume,
         quoteVolume: row.quoteVolume,
+        quoteAsset: row.quote_asset || (row.symbol.endsWith('INR') ? 'INR' : 'USDT'),
       };
     }
 
@@ -162,13 +229,13 @@ export default function Trading() {
 
   useEffect(() => {
     loadLivePrices().catch(() => {});
-    const id = setInterval(() => loadLivePrices().catch(() => {}), MARKET_POLL_MS);
+    const id = setInterval(() => loadLivePrices().catch(() => {}), TRADE_MARKET_POLL_MS);
     return () => clearInterval(id);
   }, [loadLivePrices]);
 
   useEffect(() => {
     setLiveClock(formatLiveClock());
-    const id = setInterval(() => setLiveClock(formatLiveClock()), MARKET_POLL_MS);
+    const id = setInterval(() => setLiveClock(formatLiveClock()), CLOCK_TICK_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -199,14 +266,22 @@ export default function Trading() {
     return wallet;
   }, []);
 
-  useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
-    const sym = symbol.toUpperCase();
+  const socketRef = useRef(null);
 
-    socket.emit('market:subscribe', { symbol: sym, interval: chartInterval });
-    if (chartInterval !== '1s') {
-      socket.emit('market:subscribe', { symbol: sym, interval: '1s' });
-    }
+  useEffect(() => {
+    const socket = acquireMarketSocket();
+    socketRef.current = socket;
+    return () => {
+      releaseMarketSocket();
+      socketRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return undefined;
+
+    const sym = symbol.toUpperCase();
 
     const onMerged = (payload) => {
       if (!payload?.candle || payload.symbol !== sym || payload.interval !== chartInterval) return;
@@ -262,6 +337,11 @@ export default function Trading() {
     socket.on('market:depth', onDepth);
     socket.on('market:trade', onTrade);
 
+    socket.emit('market:subscribe', { symbol: sym, interval: chartInterval });
+    if (chartInterval !== '1s') {
+      socket.emit('market:subscribe', { symbol: sym, interval: '1s' });
+    }
+
     return () => {
       socket.emit('market:unsubscribe', { symbol: sym, interval: chartInterval });
       if (chartInterval !== '1s') {
@@ -271,7 +351,6 @@ export default function Trading() {
       socket.off('market:manual:updated', onManual);
       socket.off('market:depth', onDepth);
       socket.off('market:trade', onTrade);
-      socket.close();
     };
   }, [symbol, chartInterval, refreshBalance, user]);
 
@@ -365,18 +444,12 @@ export default function Trading() {
       return undefined;
     }
     refreshBalance().catch(() => {});
-    const id = setInterval(() => refreshBalance().catch(() => {}), 5000);
-    return () => clearInterval(id);
-  }, [refreshBalance, user]);
-
-  useEffect(() => {
-    if (!user) return undefined;
     const onWallet = (e) => {
       if (e.detail) setBalances(e.detail);
     };
     window.addEventListener('wallet:updated', onWallet);
     return () => window.removeEventListener('wallet:updated', onWallet);
-  }, [user]);
+  }, [refreshBalance, user]);
 
   function requireLogin() {
     navigate('/login', { state: loginReturn });
@@ -418,6 +491,7 @@ export default function Trading() {
         await refreshBalance();
       }
       await fetchTableData();
+      window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch {
       /* API error toast handled globally */
     } finally {
@@ -462,21 +536,29 @@ export default function Trading() {
     : Number(ticker?.volume) * (Number.isFinite(lastNum) ? lastNum : 0);
 
   function orderDisplayPrice(o) {
+    const q = pairQuote(o.symbol, tradingPairs);
     if (o.avgFillPrice != null && Number.isFinite(Number(o.avgFillPrice))) {
-      return fmtNum(o.avgFillPrice, Number(o.avgFillPrice) < 1 ? 6 : 4);
+      return formatTradePrice(o.avgFillPrice, q);
     }
-    if (o.price != null) return o.price;
+    if (o.price != null) return formatTradePrice(o.price, q);
     return 'Market';
   }
 
   function orderDisplayTotal(o) {
     const p = o.avgFillPrice ?? o.price;
-    if (p != null && o.quantity) return (Number(p) * Number(o.quantity)).toFixed(2);
+    const q = pairQuote(o.symbol, tradingPairs);
+    if (p != null && o.quantity) {
+      const total = Number(p) * Number(o.quantity);
+      return q === 'INR' ? fmtINR(total) : total.toFixed(2);
+    }
     return '—';
   }
 
   function selectSymbol(next) {
     setSymbol(next);
+    setSearchParams({ symbol: next }, { replace: true });
+    if (next.endsWith('INR')) setMarketTab('INR');
+    else if (next.endsWith('USDT')) setMarketTab('USDT');
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
       setMobileView('chart');
     }
@@ -495,14 +577,14 @@ export default function Trading() {
       )}
       <div className="ex-ticker ex-ticker--scroll">
         <div className="ex-ticker__pair-wrap">
-          <span className="ex-ticker__pair">{base}/USDT</span>
+          <span className="ex-ticker__pair">{pairLabel}{isInrPair ? ' · per g' : ''}</span>
         </div>
 
         <div className="ex-ticker__stats">
           <div className="ex-ticker__stat-block ex-ticker__stat-block--price">
           <span className="ex-ticker__stat-label">Last Price</span>
           <span className={`ex-ticker__price ${priceUp ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
-            {ticker ? fmtLocale(ticker.lastPrice, { maximumFractionDigits: 4 }) : '—'}
+            {ticker ? formatTradePrice(ticker.lastPrice, quoteAsset) : '—'}
           </span>
           </div>
 
@@ -530,12 +612,7 @@ export default function Trading() {
         </div>
 
         <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h Volume({base})</span>
-          <span>{ticker ? fmtLocale(ticker.volume, { maximumFractionDigits: 2 }) : '—'}</span>
-        </div>
-
-        <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h Volume(USDT)</span>
+          <span className="ex-ticker__stat-label">24h Volume({quoteAsset})</span>
           <span>{ticker ? fmtLocale(quoteVol, { maximumFractionDigits: 2 }) : '—'}</span>
         </div>
 
@@ -571,6 +648,9 @@ export default function Trading() {
             <button type="button" className={marketTab === 'USDT' ? 'is-active' : ''} onClick={() => setMarketTab('USDT')}>
               USDT
             </button>
+            <button type="button" className={marketTab === 'INR' ? 'is-active' : ''} onClick={() => setMarketTab('INR')}>
+              INR
+            </button>
             <button type="button" className={marketTab === 'BNB' ? 'is-active' : ''} onClick={() => setMarketTab('BNB')} disabled>
               BNB
             </button>
@@ -593,6 +673,8 @@ export default function Trading() {
               const w = watchPrices[p];
               const active = p === symbol;
               const pct = w?.priceChangePercent ?? 0;
+              const rowQuote = pairQuote(p, tradingPairs);
+              const rowLabel = pairMeta(p, tradingPairs)?.displayPair || `${pairBase(p, tradingPairs)}/${rowQuote}`;
               return (
                 <div
                   key={p}
@@ -602,10 +684,10 @@ export default function Trading() {
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && selectSymbol(p)}
                 >
-                  <span className="ex-markets__pair">{p.replace('USDT', '')}/USDT</span>
+                  <span className="ex-markets__pair">{rowLabel}</span>
                   <span>
                     {w?.lastPrice != null
-                      ? fmtNum(w.lastPrice, Number(w.lastPrice) < 1 ? 6 : 2)
+                      ? formatTradePrice(w.lastPrice, rowQuote)
                       : '—'}
                   </span>
                   <span className={pct >= 0 ? 'ex-change--up' : 'ex-change--down'}>
@@ -646,9 +728,9 @@ export default function Trading() {
                   key={t._id}
                   className={`ex-tape__row ${t.isBuyerMaker ? 'ex-tape__row--sell' : 'ex-tape__row--buy'}`}
                 >
-                  <span>{t.price.toFixed(4)}</span>
+                  <span>{formatTradePrice(t.price, quoteAsset)}</span>
                   <span>{t.qty.toFixed(5)}</span>
-                  <span>{base}/USDT</span>
+                  <span>{pairLabel}</span>
                   <span>{formatMarketTime(t.time)}</span>
                 </div>
               ))}
@@ -663,7 +745,7 @@ export default function Trading() {
           <div className={`ex-panel ex-chart-area ex-zone ex-zone--chart${mobileView === 'chart' ? ' is-active' : ''}`}>
             <div className="ex-chart-toolbar">
               <div className="ex-chart-toolbar__left">
-                <span className="ex-chart-toolbar__symbol">{base}/USDT</span>
+                <span className="ex-chart-toolbar__symbol">{pairLabel}</span>
                 <span className="ex-chart-toolbar__dot">·</span>
                 <span className="ex-chart-toolbar__exchange">SafeXchange</span>
               </div>
@@ -720,7 +802,7 @@ export default function Trading() {
                 </button>
               </div>
               <div className="field">
-                <label>Price (USDT)</label>
+                <label>Price ({quoteAsset}{isInrPair ? '/g' : ''})</label>
                 <input
                   className="ex-input"
                   disabled={buyType === 'market'}
@@ -729,12 +811,15 @@ export default function Trading() {
                 />
               </div>
               <div className="field">
-                <label>Amount ({base})</label>
+                <label>Amount ({isInrPair ? `${base} (${unitLabel})` : base})</label>
                 <input className="ex-input" value={buyQty} onChange={(e) => setBuyQty(e.target.value)} />
               </div>
               <div className="field">
-                <label>Total (USDT)</label>
+                <label>Total ({quoteAsset})</label>
                 <input className="ex-input" readOnly value={buyTotal} placeholder="0.00" />
+                {isInrPair && buyTotalUsdtHint ? (
+                  <small className="ex-balance-line__inr">≈ {buyTotalUsdtHint} USDT from wallet</small>
+                ) : null}
               </div>
               <button type="button" className="ex-btn-buy" disabled={orderBusy} onClick={() => place('buy', buyType)}>
                 {orderBusy ? 'Placing…' : user ? `Buy ${base}` : 'Log in to Buy'}
@@ -761,7 +846,7 @@ export default function Trading() {
                 </button>
               </div>
               <div className="field">
-                <label>Price (USDT)</label>
+                <label>Price ({quoteAsset}{isInrPair ? '/g' : ''})</label>
                 <input
                   className="ex-input"
                   disabled={sellType === 'market'}
@@ -770,12 +855,15 @@ export default function Trading() {
                 />
               </div>
               <div className="field">
-                <label>Amount ({base})</label>
+                <label>Amount ({isInrPair ? `${base} (${unitLabel})` : base})</label>
                 <input className="ex-input" value={sellQty} onChange={(e) => setSellQty(e.target.value)} />
               </div>
               <div className="field">
-                <label>Total (USDT)</label>
+                <label>Total ({quoteAsset})</label>
                 <input className="ex-input" readOnly value={sellTotal} placeholder="0.00" />
+                {isInrPair && sellTotalUsdtHint ? (
+                  <small className="ex-balance-line__inr">≈ {sellTotalUsdtHint} USDT to wallet</small>
+                ) : null}
               </div>
               <button type="button" className="ex-btn-sell" disabled={orderBusy} onClick={() => place('sell', sellType)}>
                 {orderBusy ? 'Placing…' : user ? `Sell ${base}` : 'Log in to Sell'}
@@ -791,7 +879,7 @@ export default function Trading() {
               <div className="ex-book__header">
                 <span>Price</span>
                 <span>Qty</span>
-                <span>Total (USDT)</span>
+                <span>Total ({quoteAsset})</span>
               </div>
               <div className="ex-book__side ex-book__side--asks">
                 {[...(depth.asks || [])].reverse().slice(0, 12).map((r, i) => (
@@ -899,8 +987,8 @@ export default function Trading() {
                     <td>
                       <span className={`ex-status-badge ex-status-badge--${t.side}`}>{t.side}</span>
                     </td>
-                    <td>{t.symbol?.replace('USDT', '')}/USDT</td>
-                    <td>{fmtNum(t.price, Number(t.price) < 1 ? 6 : 4)}</td>
+                    <td>{orderPairLabel(t.symbol, tradingPairs)}</td>
+                    <td>{formatTradePrice(t.price, pairQuote(t.symbol, tradingPairs))}</td>
                     <td>{t.quantity}</td>
                     <td>{t.total ?? fmtNum(Number(t.price) * Number(t.quantity), 2)}</td>
                     <td>{t.fee != null ? fmtNum(t.fee, 4) : '—'}</td>
@@ -934,7 +1022,7 @@ export default function Trading() {
               {tableRows.map((o) => {
                 return (
                   <tr key={o._id || o.id}>
-                    <td>{o.symbol?.replace('USDT', '')}/USDT</td>
+                    <td>{orderPairLabel(o.symbol, tradingPairs)}</td>
                     <td>{orderDisplayPrice(o)}</td>
                     <td>{o.quantity}</td>
                     <td>{orderDisplayTotal(o)}</td>

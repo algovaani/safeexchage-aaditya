@@ -3,19 +3,75 @@ import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
-import { MARKET_POLL_MS } from '../config/marketPoll.js';
+import { TRADING_PAIRS } from '../config/tradingPairs.js';
+import { LIST_MARKET_POLL_MS } from '../config/marketPoll.js';
 import DataTable from '../components/DataTable.jsx';
 import { fmtINR, fmtPct } from '../utils/format.js';
+import { coinIconFallbackLabel, resolveCoinIconUrl } from '../utils/coinIcon.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import './Markets.css';
 
-const CATEGORIES = ['All', 'Crypto', 'Stocks', 'Forex', 'Commodities'];
+const CATEGORIES = ['All', 'Crypto', 'Commodities'];
 
-const STOCK_MOCK = [
-  { symbol: 'NIFTY', name: 'Nifty 50', price: 24850.3, change: 0.42, volume: '12.4B', cap: '—', type: 'stock' },
-  { symbol: 'SENSEX', name: 'BSE Sensex', price: 81432.15, change: -0.18, volume: '8.1B', cap: '—', type: 'stock' },
-  { symbol: 'RELIANCE', name: 'Reliance', price: 2945.5, change: 1.22, volume: '2.1B', cap: '19.8T', type: 'stock' },
-];
+const COMMODITY_DEFAULTS = TRADING_PAIRS.filter(
+  (p) => p.category === 'commodity' || p.symbol.endsWith('INR')
+).map((p) => ({
+  symbol: p.baseAsset || p.displayPair.split('/')[0],
+  tradeSymbol: p.symbol,
+  name: p.name || p.displayPair.split('/')[0],
+  price: 0,
+  change: 0,
+  volume: '—',
+  cap: '—',
+  type: 'commodity',
+  unit: p.unit || 'g',
+}));
+
+function isCommodityPair(meta, liveRow) {
+  return (
+    meta?.category === 'commodity' ||
+    meta?.quoteAsset === 'INR' ||
+    meta?.priceSource === 'commodity_inr' ||
+    liveRow?.category === 'commodity' ||
+    liveRow?.provider === 'commodity_inr' ||
+    String(meta?.symbol || liveRow?.symbol || '').endsWith('INR')
+  );
+}
+
+function mapLiveRow(liveRow, tradingPairs) {
+  const sym = liveRow.symbol;
+  const meta = tradingPairs.find((p) => p.symbol === sym);
+  const commodity = isCommodityPair(meta, liveRow);
+
+  if (commodity) {
+    return {
+      symbol: meta?.baseAsset || sym.replace(/INR$/, ''),
+      tradeSymbol: sym,
+      name: meta?.name || liveRow.name || sym.replace(/INR$/, ''),
+      price: Number(liveRow.price_inr ?? liveRow.price ?? 0),
+      change: Number(liveRow.change_24h ?? 0),
+      volume: '—',
+      cap: '—',
+      type: 'commodity',
+      unit: meta?.unit || liveRow.unit || 'g',
+      imageUrl: meta?.imageUrl || '',
+      coingeckoId: meta?.coingeckoId || '',
+    };
+  }
+
+  return {
+    symbol: meta?.baseAsset || sym.replace(/USDT$/, ''),
+    tradeSymbol: sym,
+    name: meta?.name || meta?.baseAsset || sym.replace(/USDT$/, ''),
+    price: Number(liveRow.price ?? 0),
+    change: Number(liveRow.change_24h ?? 0),
+    volume: liveRow.volume ? `${(Number(liveRow.volume) / 1e6).toFixed(1)}M` : '—',
+    cap: '—',
+    type: 'crypto',
+    imageUrl: meta?.imageUrl || '',
+    coingeckoId: meta?.coingeckoId || '',
+  };
+}
 
 function MiniSparkline({ up }) {
   const color = up ? '#22c55e' : '#ef4444';
@@ -32,16 +88,40 @@ function MiniSparkline({ up }) {
 }
 
 function formatPrice(row, toInr) {
-  return row.type === 'crypto' ? fmtINR(toInr(row.price)) : `₹ ${row.price.toLocaleString()}`;
+  if (!row.price) return '—';
+  if (row.type === 'commodity') return fmtINR(row.price);
+  if (row.type === 'crypto') return fmtINR(toInr(row.price));
+  return '—';
+}
+
+function AssetIcon({ row }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const iconUrl = imgFailed ? null : resolveCoinIconUrl(row);
+  const fallback = coinIconFallbackLabel(row);
+  const isCommodity = row.type === 'commodity';
+
+  return (
+    <span
+      className={`markets-dt__icon${isCommodity ? ' markets-dt__icon--commodity' : ''}${iconUrl ? ' markets-dt__icon--img' : ''}`}
+    >
+      {iconUrl ? (
+        <img src={iconUrl} alt="" loading="lazy" onError={() => setImgFailed(true)} />
+      ) : (
+        fallback
+      )}
+    </span>
+  );
 }
 
 function AssetCell({ row }) {
   return (
     <div className="markets-dt__asset">
-      <span className="markets-dt__icon">{row.symbol.slice(0, 2)}</span>
+      <AssetIcon row={row} />
       <div className="min-w-0">
         <p className="markets-dt__name">{row.name}</p>
-        <p className="markets-dt__symbol">{row.symbol}</p>
+        <p className="markets-dt__symbol">
+          {row.type === 'commodity' ? `${row.symbol}/INR · per ${row.unit || 'g'}` : row.symbol}
+        </p>
       </div>
     </div>
   );
@@ -49,7 +129,7 @@ function AssetCell({ row }) {
 
 export default function Markets() {
   const { toInr } = usePlatformConfig();
-  const { symbols: cryptoSymbols, pairs: tradingPairs } = useTradingPairs();
+  const { pairs: tradingPairs } = useTradingPairs();
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('volume');
@@ -59,57 +139,92 @@ export default function Markets() {
   useEffect(() => {
     let active = true;
 
-    async function loadCryptoPrices() {
+    async function fetchCommodityPrice(symbol) {
+      try {
+        const { data } = await api.get(`/market/prices/${symbol}`);
+        return parseApiResponse(data);
+      } catch {
+        return null;
+      }
+    }
+
+    async function loadPrices() {
       try {
         const { data } = await api.get('/market/prices/live');
         if (!active) return;
+
         const payload = parseApiResponse(data);
-        const pairs = payload?.pairs || [];
-        const bySymbol = new Map(pairs.map((p) => [p.symbol, p]));
+        const livePairs = payload?.pairs || [];
+        const bySymbol = new Map(livePairs.map((p) => [p.symbol, p]));
 
-        const crypto = cryptoSymbols.map((sym) => {
-          const row = bySymbol.get(sym);
-          const meta = tradingPairs.find((p) => p.symbol === sym);
-          if (!row) return null;
-          return {
-            symbol: sym.replace('USDT', ''),
-            name: meta?.name || sym.replace('USDT', ''),
-            price: Number(row.price ?? 0),
-            change: Number(row.change_24h ?? 0),
-            volume: row.volume ? `${(Number(row.volume) / 1e6).toFixed(1)}M` : '—',
-            cap: '—',
-            type: 'crypto',
-          };
-        }).filter(Boolean);
+        const nextRows = livePairs.map((row) => mapLiveRow(row, tradingPairs));
 
-        setRows([...crypto, ...STOCK_MOCK]);
+        const missing = COMMODITY_DEFAULTS.filter(
+          (c) => !nextRows.some((r) => r.tradeSymbol === c.tradeSymbol)
+        );
+
+        if (missing.length) {
+          const tickers = await Promise.all(
+            missing.map(async (commodity) => {
+              const live = bySymbol.get(commodity.tradeSymbol);
+              if (live) return mapLiveRow(live, tradingPairs);
+              const ticker = await fetchCommodityPrice(commodity.tradeSymbol);
+              return {
+                ...commodity,
+                price: Number(ticker?.price_inr ?? ticker?.price ?? 0),
+                change: Number(ticker?.change_24h ?? 0),
+              };
+            })
+          );
+          if (!active) return;
+          nextRows.push(...tickers.filter(Boolean));
+        }
+
+        if (active) setRows(nextRows);
+      } catch {
+        if (!active) return;
+        const fallbackRows = COMMODITY_DEFAULTS.map((c) => ({ ...c }));
+        setRows(fallbackRows);
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    loadCryptoPrices().catch(() => {
-      if (active) setLoading(false);
+    loadPrices().catch(() => {
+      if (active) {
+        setRows(COMMODITY_DEFAULTS.map((c) => ({ ...c })));
+        setLoading(false);
+      }
     });
-    const id = setInterval(() => loadCryptoPrices().catch(() => {}), MARKET_POLL_MS);
 
+    const id = setInterval(() => loadPrices().catch(() => {}), LIST_MARKET_POLL_MS);
     return () => {
       active = false;
       clearInterval(id);
     };
-  }, [cryptoSymbols, tradingPairs]);
+  }, [tradingPairs]);
 
   const filtered = useMemo(() => {
     let list = rows;
     if (category === 'Crypto') list = list.filter((r) => r.type === 'crypto');
-    else if (category === 'Stocks') list = list.filter((r) => r.type === 'stock');
-    else if (category !== 'All') list = [];
+    else if (category === 'Commodities') list = list.filter((r) => r.type === 'commodity');
 
     const q = search.trim().toUpperCase();
-    if (q) list = list.filter((r) => r.symbol.includes(q) || r.name.toUpperCase().includes(q));
+    if (q) {
+      list = list.filter(
+        (r) =>
+          r.symbol.toUpperCase().includes(q) ||
+          r.name.toUpperCase().includes(q) ||
+          String(r.tradeSymbol || '').toUpperCase().includes(q)
+      );
+    }
 
     if (sort === 'volume') {
-      list = [...list].sort((a, b) => String(b.volume).localeCompare(String(a.volume)));
+      list = [...list].sort((a, b) => {
+        const av = a.volume === '—' ? -1 : parseFloat(a.volume) || 0;
+        const bv = b.volume === '—' ? -1 : parseFloat(b.volume) || 0;
+        return bv - av;
+      });
     } else if (sort === 'change') {
       list = [...list].sort((a, b) => b.change - a.change);
     }
@@ -174,8 +289,11 @@ export default function Markets() {
       {
         key: 'action',
         label: 'Action',
-        render: () => (
-          <Link to="/trade" className="btn-outline-accent no-underline">
+        render: (row) => (
+          <Link
+            to={row.tradeSymbol ? `/trade?symbol=${row.tradeSymbol}` : '/trade'}
+            className="btn-outline-accent no-underline"
+          >
             Trade
           </Link>
         ),
@@ -188,7 +306,7 @@ export default function Markets() {
     <div className="markets-page space-y-5 md:space-y-6">
       <div>
         <h1 className="text-lg md:text-xl font-medium text-text-primary mb-1">Markets</h1>
-        <p className="text-sm text-text-secondary">Browse and trade global assets</p>
+        <p className="text-sm text-text-secondary">Browse and trade crypto &amp; commodities (Gold/Silver in INR)</p>
       </div>
 
       <div className="markets-page__toolbar">
@@ -233,7 +351,7 @@ export default function Markets() {
           columns={columns}
           data={filtered}
           loading={loading}
-          rowKey="symbol"
+          rowKey="tradeSymbol"
           emptyMessage="No assets match your filters"
           defaultPageSize={20}
           pageSizeOptions={[10, 20, 50, 100]}

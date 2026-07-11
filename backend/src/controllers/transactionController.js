@@ -2,7 +2,9 @@ import { Transaction } from '../models/Transaction.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import {
+  backfillOpenSpotOrderTransactions,
   backfillOrphanFinancialRecords,
+  backfillSpotTradeTransactions,
   ensureOpeningBalanceTransaction,
 } from '../services/transactionService.js';
 import {
@@ -43,6 +45,8 @@ export async function listTransactions(req, res, next) {
     const userId = req.userId;
 
     await backfillOrphanFinancialRecords(userId);
+    await backfillSpotTradeTransactions(userId);
+    await backfillOpenSpotOrderTransactions(userId);
     await ensureOpeningBalanceTransaction(userId);
 
     const filter = { userId, ...buildDateRangeFilter(req.query) };

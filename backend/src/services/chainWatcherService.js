@@ -217,6 +217,10 @@ async function completeStuckPendingDeposit(deposit) {
 }
 
 export async function processIncomingChainDeposit({ chain, userId, address, tx }) {
+  // AUTO WALLET CREDIT DISABLED — incoming on-chain transfers are not auto-credited.
+  // Re-enable startChainDepositWatcher() in server.js and remove this return to restore.
+  return;
+
   const settings = await getPlatformSettings();
   if (isManualDepositMode(settings)) {
     return;
@@ -354,6 +358,9 @@ async function scanAddress(row) {
 }
 
 export async function runChainDepositWatcher() {
+  // AUTO WALLET CREDIT DISABLED — skip Moralis/Tatum/TRON scans.
+  return;
+
   if (watcherRunning) return;
   watcherRunning = true;
   try {

@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
-import { api, parseApiResponse } from '../api/client.js';
+import { useRealtime } from '../context/RealtimeContext.jsx';
 import { fmtINR } from '../utils/format.js';
 import BrandLogo from './BrandLogo.jsx';
 import './ExchangeLayout.css';
@@ -23,6 +23,7 @@ function portfolioFromWallet(wallet) {
 export default function ExchangeLayout() {
   const { user, logout, loading } = useAuth();
   const { toInr } = usePlatformConfig();
+  const { wallet: liveWallet, walletVersion } = useRealtime();
   const { pathname } = useLocation();
   const [portfolio, setPortfolio] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -32,20 +33,17 @@ export default function ExchangeLayout() {
   const initial = displayName[0]?.toUpperCase() || 'G';
   const loginState = { from: { pathname } };
 
-  const loadPortfolio = useCallback(() => {
+  useEffect(() => {
     if (!user) {
       setPortfolio(null);
       return;
     }
-    api
-      .get('/wallet/balance')
-      .then((r) => setPortfolio(portfolioFromWallet(parseApiResponse(r.data))))
-      .catch(() => setPortfolio(null));
-  }, [user]);
-
-  useEffect(() => {
-    loadPortfolio();
-  }, [loadPortfolio, pathname]);
+    if (liveWallet) {
+      setPortfolio(portfolioFromWallet(liveWallet));
+      return;
+    }
+    setPortfolio(null);
+  }, [user, liveWallet, walletVersion]);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -57,15 +55,6 @@ export default function ExchangeLayout() {
       document.body.style.overflow = '';
     };
   }, [menuOpen]);
-
-  useEffect(() => {
-    const onWalletUpdated = (e) => {
-      const next = portfolioFromWallet(e.detail);
-      if (next != null) setPortfolio(next);
-    };
-    window.addEventListener('wallet:updated', onWalletUpdated);
-    return () => window.removeEventListener('wallet:updated', onWalletUpdated);
-  }, []);
 
   return (
     <div className={`exchange-shell${menuOpen ? ' exchange-shell--menu-open' : ''}`}>

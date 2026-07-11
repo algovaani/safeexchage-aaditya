@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { COINGECKO_IDS as DEFAULT_CG_IDS } from '../config/coingeckoIds.js';
 import { TRADING_PAIRS as DEFAULT_PAIRS } from '../config/tradingPairs.js';
+import { COMMODITY_PAIRS } from '../config/commodityPairs.js';
 import { TradingPair } from '../models/TradingPair.js';
 
 const CACHE_MS = 30_000;
@@ -58,7 +59,7 @@ export function normalizeContractChain(chain) {
 }
 
 function defaultPairRows() {
-  return DEFAULT_PAIRS.map((p, i) => ({
+  const crypto = DEFAULT_PAIRS.map((p, i) => ({
     symbol: p.symbol,
     baseAsset: p.baseAsset,
     quoteAsset: p.quoteAsset,
@@ -66,9 +67,15 @@ function defaultPairRows() {
     name: p.baseAsset,
     coingeckoId: DEFAULT_CG_IDS[p.symbol] || '',
     priceSource: 'binance',
+    category: 'crypto',
     isActive: true,
     sortOrder: i + 1,
   }));
+  const commodities = COMMODITY_PAIRS.map((p) => ({
+    ...p,
+    isActive: true,
+  }));
+  return [...crypto, ...commodities];
 }
 
 function applyCache(rows) {
@@ -111,8 +118,10 @@ export function getActivePairsSync() {
 
 export function getPairSync(symbol) {
   const sym = String(symbol || '').toUpperCase().replace(/\//g, '');
-  const normalized = sym.endsWith('USDT') ? sym : `${sym}USDT`;
-  return cache.bySymbol.get(normalized) || null;
+  if (cache.bySymbol.has(sym)) return cache.bySymbol.get(sym) || null;
+  if (sym.endsWith('INR')) return cache.bySymbol.get(sym) || null;
+  const withUsdt = sym.endsWith('USDT') ? sym : `${sym}USDT`;
+  return cache.bySymbol.get(withUsdt) || null;
 }
 
 export function getCoingeckoIdMapSync() {
@@ -139,6 +148,8 @@ export function formatPairRow(doc) {
     contractAddress: doc.contractAddress || '',
     contractChain: doc.contractChain || '',
     priceSource: doc.priceSource || 'binance',
+    category: doc.category || 'crypto',
+    unit: doc.unit || '',
     isActive: Boolean(doc.isActive),
     sortOrder: doc.sortOrder ?? 0,
     createdAt: doc.createdAt,
@@ -163,6 +174,31 @@ export async function seedTradingPairsIfEmpty() {
   );
   await refreshTradingPairCache();
   return rows.length;
+}
+
+/** Upsert Gold/Silver INR pairs (safe to run on every server start). */
+export async function ensureCommodityPairs() {
+  for (const p of COMMODITY_PAIRS) {
+    await TradingPair.findOneAndUpdate(
+      { symbol: p.symbol },
+      {
+        $set: {
+          baseAsset: p.baseAsset,
+          quoteAsset: p.quoteAsset,
+          displayPair: p.displayPair,
+          name: p.name,
+          coingeckoId: p.coingeckoId,
+          priceSource: p.priceSource,
+          category: p.category,
+          unit: p.unit,
+          sortOrder: p.sortOrder,
+          isActive: true,
+        },
+      },
+      { upsert: true }
+    );
+  }
+  invalidateTradingPairCache();
 }
 
 async function detectBinanceSymbol(baseAsset) {

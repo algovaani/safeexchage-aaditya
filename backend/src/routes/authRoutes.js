@@ -14,6 +14,7 @@ import {
 } from '../validators/authValidators.js';
 import { userWalletProfileValidators } from '../validators/depositValidators.js';
 import { otpIpRateLimit, otpMobileRateLimit } from '../middleware/otpRateLimit.js';
+import { authLoginRateLimit } from '../middleware/apiRateLimit.js';
 
 const r = Router();
 
@@ -22,9 +23,9 @@ const otpLimits = [otpIpRateLimit, otpMobileRateLimit];
 r.post('/otp/send', ...otpLimits, sendOtpValidators, validateRequest, auth.sendOtp);
 r.post('/otp/resend', ...otpLimits, resendOtpValidators, validateRequest, auth.resendOtp);
 r.post('/register', registerValidators, validateRequest, auth.register);
-r.post('/login', loginValidators, validateRequest, auth.login);
+r.post('/login', authLoginRateLimit, loginValidators, validateRequest, auth.login);
 r.post('/login/otp', ...otpLimits, loginOtpValidators, validateRequest, auth.loginOtp);
-r.post('/admin/login', adminLoginValidators, validateRequest, auth.adminLogin);
+r.post('/admin/login', authLoginRateLimit, adminLoginValidators, validateRequest, auth.adminLogin);
 r.post('/forgot-password', ...otpLimits, forgotPasswordValidators, validateRequest, auth.forgotPassword);
 r.post('/reset-password', resetPasswordValidators, validateRequest, auth.resetPassword);
 r.post('/logout', authMiddleware, auth.logout);

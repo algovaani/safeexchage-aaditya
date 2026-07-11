@@ -61,14 +61,14 @@ export function transactionTypesForFilter(type) {
     deposit: DEPOSIT_TRANSACTION_TYPES,
     withdrawal: WITHDRAWAL_TRANSACTION_TYPES,
     referral: REFERRAL_TRANSACTION_TYPES,
-    trade: TRADE_TRANSACTION_TYPES,
+    trade: [...TRADE_TRANSACTION_TYPES, ...SPOT_TRANSACTION_TYPES],
     spot: SPOT_TRANSACTION_TYPES,
     stake: STAKE_TRANSACTION_TYPES,
     futures: FUTURES_TRANSACTION_TYPES,
     admin: ADMIN_ADJUSTMENT_TYPES,
     admin_adjustment: ADMIN_ADJUSTMENT_TYPES,
-    buy: ['trade_margin_locked'],
-    sell: ['trade_profit', 'trade_loss', 'trade_margin_returned'],
+    buy: ['spot_buy', 'trade_margin_locked'],
+    sell: ['spot_sell', 'trade_profit', 'trade_loss', 'trade_margin_returned'],
     hold: ['trade_margin_locked', 'stake_locked'],
   };
   return map[type] || null;

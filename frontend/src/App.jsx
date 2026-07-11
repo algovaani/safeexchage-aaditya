@@ -1,43 +1,104 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ExchangeLayout from './components/ExchangeLayout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import AdminRoute from './components/AdminRoute.jsx';
 import AdminLayout from './components/AdminLayout.jsx';
-import Landing from './pages/Landing.jsx';
-import Login from './pages/Login.jsx';
-import Signup from './pages/Signup.jsx';
-import ForgotPassword from './pages/ForgotPassword.jsx';
-import InviteRedirect from './pages/InviteRedirect.jsx';
-import AdminLogin from './pages/AdminLogin.jsx';
-import Dashboard from './pages/Dashboard.jsx';
-import Markets from './pages/Markets.jsx';
-import Account from './pages/Account.jsx';
-import Deposit from './pages/Deposit.jsx';
-import AccountProfile from './pages/AccountProfile.jsx';
-import ReferEarn from './pages/ReferEarn.jsx';
-import Transactions from './pages/Transactions.jsx';
-import Trading from './pages/Trading.jsx';
-import Futures from './pages/Futures.jsx';
-import Staking from './pages/Staking.jsx';
-import Admin from './pages/Admin.jsx';
-import AdminUserDetail from './pages/admin/AdminUserDetail.jsx';
+import PageLoader from './components/PageLoader.jsx';
 
+const Landing = lazy(() => import('./pages/Landing.jsx'));
+const Login = lazy(() => import('./pages/Login.jsx'));
+const Signup = lazy(() => import('./pages/Signup.jsx'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword.jsx'));
+const InviteRedirect = lazy(() => import('./pages/InviteRedirect.jsx'));
+const AdminLogin = lazy(() => import('./pages/AdminLogin.jsx'));
+const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
+const Markets = lazy(() => import('./pages/Markets.jsx'));
+const Account = lazy(() => import('./pages/Account.jsx'));
+const Deposit = lazy(() => import('./pages/Deposit.jsx'));
+const AccountProfile = lazy(() => import('./pages/AccountProfile.jsx'));
+const ReferEarn = lazy(() => import('./pages/ReferEarn.jsx'));
+const Transactions = lazy(() => import('./pages/Transactions.jsx'));
+const Trading = lazy(() => import('./pages/Trading.jsx'));
+const Futures = lazy(() => import('./pages/Futures.jsx'));
+const Staking = lazy(() => import('./pages/Staking.jsx'));
+const Admin = lazy(() => import('./pages/Admin.jsx'));
+const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail.jsx'));
+
+function Lazy({ children }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
 
 export default function App() {
   return (
     <Routes>
-      {/* Public site — same domain: landing + auth (no app sidebar) */}
-      <Route path="/" element={<Landing />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/signup" element={<Signup />} />
-      <Route path="/invite/:code" element={<InviteRedirect />} />
+      <Route
+        path="/"
+        element={
+          <Lazy>
+            <Landing />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/admin/login"
+        element={
+          <Lazy>
+            <AdminLogin />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/login"
+        element={
+          <Lazy>
+            <Login />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <Lazy>
+            <ForgotPassword />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          <Lazy>
+            <Signup />
+          </Lazy>
+        }
+      />
+      <Route
+        path="/invite/:code"
+        element={
+          <Lazy>
+            <InviteRedirect />
+          </Lazy>
+        }
+      />
 
       <Route element={<ExchangeLayout />}>
-        <Route path="/trade" element={<Trading />} />
-        <Route path="/futures" element={<Futures />} />
+        <Route
+          path="/trade"
+          element={
+            <Lazy>
+              <Trading />
+            </Lazy>
+          }
+        />
+        <Route
+          path="/futures"
+          element={
+            <Lazy>
+              <Futures />
+            </Lazy>
+          }
+        />
         <Route path="/exchange" element={<Navigate to="/trade" replace />} />
       </Route>
 
@@ -46,7 +107,9 @@ export default function App() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <Lazy>
+                <Dashboard />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -54,7 +117,9 @@ export default function App() {
           path="/markets"
           element={
             <ProtectedRoute>
-              <Markets />
+              <Lazy>
+                <Markets />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -62,7 +127,9 @@ export default function App() {
           path="/wallet/deposit"
           element={
             <ProtectedRoute>
-              <Deposit />
+              <Lazy>
+                <Deposit />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -70,7 +137,9 @@ export default function App() {
           path="/wallet"
           element={
             <ProtectedRoute>
-              <Account />
+              <Lazy>
+                <Account />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -80,7 +149,9 @@ export default function App() {
           path="/account/profile/*"
           element={
             <ProtectedRoute>
-              <AccountProfile />
+              <Lazy>
+                <AccountProfile />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -89,7 +160,9 @@ export default function App() {
           path="/refer"
           element={
             <ProtectedRoute>
-              <ReferEarn />
+              <Lazy>
+                <ReferEarn />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -97,7 +170,9 @@ export default function App() {
           path="/transactions"
           element={
             <ProtectedRoute>
-              <Transactions />
+              <Lazy>
+                <Transactions />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -105,7 +180,9 @@ export default function App() {
           path="/staking"
           element={
             <ProtectedRoute>
-              <Staking />
+              <Lazy>
+                <Staking />
+              </Lazy>
             </ProtectedRoute>
           }
         />
@@ -121,8 +198,22 @@ export default function App() {
         }
       >
         <Route index element={<Navigate to="/admin/panel?section=overview" replace />} />
-        <Route path="panel" element={<Admin />} />
-        <Route path="users/:userId" element={<AdminUserDetail />} />
+        <Route
+          path="panel"
+          element={
+            <Lazy>
+              <Admin />
+            </Lazy>
+          }
+        />
+        <Route
+          path="users/:userId"
+          element={
+            <Lazy>
+              <AdminUserDetail />
+            </Lazy>
+          }
+        />
       </Route>
     </Routes>
   );

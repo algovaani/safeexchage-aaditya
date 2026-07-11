@@ -9,6 +9,7 @@ import {
   debitAsset,
 } from './assetBalanceService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { unitPriceToUsdt } from '../utils/inrTrading.js';
 
 const FEE_RATE = 0.001;
 
@@ -29,11 +30,35 @@ function withSymbolOrderLock(symbol, fn) {
 
 let liquidityUserIdPromise = null;
 
+async function ensureLiquidityUserId() {
+  const liqEmail = process.env.SYSTEM_LIQUIDITY_EMAIL || 'liquidity@internal.safex';
+  let user = await User.findOne({ email: liqEmail }).select('_id').lean();
+  if (user?._id) return user._id;
+
+  user = await User.findOne({ role: 'system' }).select('_id').lean();
+  if (user?._id) return user._id;
+
+  const bcrypt = (await import('bcryptjs')).default;
+  const passwordHash = await bcrypt.hash(
+    process.env.SYSTEM_LIQUIDITY_PASSWORD || 'LiquidityInternal123!',
+    12
+  );
+  const created = await User.create({
+    email: liqEmail,
+    passwordHash,
+    name: 'Liquidity',
+    role: 'system',
+  });
+  await Wallet.create({ userId: created._id, currency: 'USDT', balance: 0, lockedBalance: 0 });
+  return created._id;
+}
+
 async function getLiquidityUserId() {
   if (!liquidityUserIdPromise) {
-    liquidityUserIdPromise = User.findOne({
-      email: process.env.SYSTEM_LIQUIDITY_EMAIL || 'liquidity@internal.safex',
-    }).then((u) => u?._id || null);
+    liquidityUserIdPromise = ensureLiquidityUserId().catch((err) => {
+      liquidityUserIdPromise = null;
+      throw err;
+    });
   }
   return liquidityUserIdPromise;
 }
@@ -47,6 +72,7 @@ export async function processOrdersForPrice(symbol, currentPrice) {
 
 async function processOrdersForPriceUnlocked(symbol, currentPrice) {
   const sym = symbol.toUpperCase();
+  const fillPriceUsdt = await unitPriceToUsdt(sym, currentPrice);
   const liquidityId = await getLiquidityUserId();
   const openOrders = await Order.find({
     symbol: sym,
@@ -60,14 +86,15 @@ async function processOrdersForPriceUnlocked(symbol, currentPrice) {
     if (!fresh || !['open', 'partially_filled'].includes(fresh.status)) continue;
 
     let shouldFill = false;
-    let fillPrice = currentPrice;
+    // Limit price is the worst acceptable price; fills execute at current market when triggered.
+    const fillPrice = fillPriceUsdt;
 
     if (fresh.orderType === 'market') {
       shouldFill = true;
     } else if (fresh.orderType === 'limit' && fresh.price != null) {
-      if (fresh.side === 'buy' && currentPrice <= fresh.price) shouldFill = true;
-      if (fresh.side === 'sell' && currentPrice >= fresh.price) shouldFill = true;
-      fillPrice = fresh.price;
+      const limitUsdt = await unitPriceToUsdt(sym, fresh.price);
+      if (fresh.side === 'buy' && fillPriceUsdt <= limitUsdt) shouldFill = true;
+      if (fresh.side === 'sell' && fillPriceUsdt >= limitUsdt) shouldFill = true;
     }
 
     if (!shouldFill) continue;
@@ -86,19 +113,36 @@ async function logSpotTransaction(userId, side, { symbol, quantity, price, fee, 
   const wallet = await Wallet.findOne({ userId }).lean();
   const notional = price * quantity;
   const amount = side === 'buy' ? notional + fee : notional - fee;
-
-  await Transaction.create({
-    userId,
+  const payload = {
     type: side === 'buy' ? 'spot_buy' : 'spot_sell',
     amount: roundMoney(amount),
     balanceAfter: roundMoney(wallet?.balance || 0),
     currency: 'USDT',
     status: 'completed',
     method: 'gateway',
-    reference: `${symbol} ${side} ${quantity} @ ${price}`,
-    spotOrderId: orderId,
+    reference: `${symbol} ${side} ${quantity} @ ${roundMoney(price)}`,
     spotTradeId: tradeId,
+    adminNote: `${symbol} ${side.toUpperCase()} ${quantity} @ ${roundMoney(price)} USDT`,
+  };
+
+  const pending = await Transaction.findOne({ userId, spotOrderId: orderId, status: 'pending' });
+  if (pending) {
+    await Transaction.findByIdAndUpdate(pending._id, payload);
+    return;
+  }
+
+  await Transaction.create({
+    userId,
+    ...payload,
+    spotOrderId: orderId,
   });
+}
+
+async function markSpotOrderTransaction(userId, orderId, status, note = '') {
+  await Transaction.findOneAndUpdate(
+    { userId, spotOrderId: orderId, status: 'pending' },
+    { status, adminNote: note || undefined }
+  );
 }
 
 async function executeInternalFill(order, price, qty, symbol, liquidityId) {
@@ -133,6 +177,7 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
       filledQuantity: order.filledQuantity || 0,
       avgFillPrice: order.avgFillPrice ?? null,
     });
+    await markSpotOrderTransaction(userId, orderId, 'rejected', 'Insufficient USDT balance');
     return null;
   }
 
@@ -153,6 +198,7 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
           filledQuantity: order.filledQuantity || 0,
           avgFillPrice: order.avgFillPrice ?? null,
         });
+        await markSpotOrderTransaction(userId, orderId, 'rejected', 'Insufficient USDT balance');
         return null;
       }
       wallet.balance = storeMoney(wallet.balance - cost);
@@ -169,13 +215,15 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
       filledQuantity: order.filledQuantity || 0,
       avgFillPrice: order.avgFillPrice ?? null,
     });
+    await markSpotOrderTransaction(userId, orderId, 'rejected', err.message || 'Order rejected');
     return null;
   }
 
   const buyOrderId = orderId;
   const sellOrderId = orderId;
-  const buyerUserId = order.side === 'buy' ? userId : liquidityId || userId;
-  const sellerUserId = order.side === 'sell' ? userId : liquidityId || userId;
+  const counterpartyId = liquidityId || (await getLiquidityUserId());
+  const buyerUserId = order.side === 'buy' ? userId : counterpartyId;
+  const sellerUserId = order.side === 'sell' ? userId : counterpartyId;
 
   const trade = await Trade.create({
     symbol,

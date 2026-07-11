@@ -1,12 +1,13 @@
 import { AssetBalance } from '../models/AssetBalance.js';
-import { TRADING_PAIRS } from '../config/tradingPairs.js';
+import { getPairSync } from './tradingPairService.js';
 import { storeMoney } from '../utils/money.js';
 
 export function baseAssetFromSymbol(symbol) {
   const sym = String(symbol || '').toUpperCase();
-  const pair = TRADING_PAIRS.find((p) => p.symbol === sym);
-  if (pair) return pair.baseAsset;
+  const pair = getPairSync(sym);
+  if (pair?.baseAsset) return pair.baseAsset;
   if (sym.endsWith('USDT')) return sym.slice(0, -4);
+  if (sym.endsWith('INR')) return sym.slice(0, -3);
   return sym;
 }
 

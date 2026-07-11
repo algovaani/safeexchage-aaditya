@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Inbox } from 'lucide-react';
 import { api, dashboardAPI, parseApiResponse } from '../api/client.js';
-import LiveChart from '../components/LiveChart.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
+
+const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
 const ASSETS = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '5m', '15m', '1H', '4H', '1D'];
@@ -35,18 +36,35 @@ export default function Dashboard() {
   const [ticker, setTicker] = useState(null);
 
   useEffect(() => {
-    (async () => {
+    let active = true;
+
+    async function load() {
       try {
-        const [sum, ord] = await Promise.all([
+        const [sum, ordRes] = await Promise.all([
           dashboardAPI.getSummary().catch(() => null),
-          api.get('/orders/open').then((r) => parseApiResponse(r.data)).catch(() => []),
+          api
+            .get('/orders', {
+              params: { page: 1, pageSize: 8, sortBy: 'createdAt', sortDir: 'desc' },
+            })
+            .then((r) => parseApiResponse(r.data))
+            .catch(() => ({ rows: [] })),
         ]);
+        if (!active) return;
         setSummary(sum);
-        setOrders(Array.isArray(ord) ? ord.slice(0, 8) : []);
+        setOrders(Array.isArray(ordRes?.rows) ? ordRes.rows : []);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
-    })();
+    }
+
+    load();
+
+    const onOrders = () => load();
+    window.addEventListener('orders:updated', onOrders);
+    return () => {
+      active = false;
+      window.removeEventListener('orders:updated', onOrders);
+    };
   }, [walletVersion]);
 
   useEffect(() => {
@@ -173,7 +191,9 @@ export default function Dashboard() {
             ))}
           </div>
           <div className="p-2">
-            <LiveChart candles={candles} variant="dark" className="!h-[360px] !rounded-none !border-0" />
+            <Suspense fallback={<div className="skeleton !h-[360px] w-full rounded-lg" />}>
+              <LiveChart candles={candles} variant="dark" className="!h-[360px] !rounded-none !border-0" />
+            </Suspense>
           </div>
         </div>
 
@@ -233,18 +253,34 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => (
+                {orders.map((o) => {
+                  const sym = String(o.symbol || o.pair || '');
+                  const asset = sym.endsWith('INR')
+                    ? `${sym.replace(/INR$/, '')}/INR`
+                    : sym.endsWith('USDT')
+                      ? `${sym.replace(/USDT$/, '')}/USDT`
+                      : sym || '—';
+                  const price =
+                    o.avgFillPrice != null
+                      ? o.avgFillPrice
+                      : o.price != null
+                        ? o.price
+                        : o.orderType === 'market'
+                          ? 'Market'
+                          : '—';
+                  return (
                   <tr key={o._id || o.id}>
-                    <td>{o.symbol || o.pair || '—'}</td>
+                    <td>{asset}</td>
                     <td><StatusBadge status={o.side || o.type} /></td>
                     <td className="tabular-nums">{o.quantity ?? o.qty ?? '—'}</td>
-                    <td className="tabular-nums">{o.price ?? '—'}</td>
+                    <td className="tabular-nums">{price}</td>
                     <td><StatusBadge status={o.status} /></td>
                     <td className="text-text-secondary text-xs">
                       {o.createdAt ? new Date(o.createdAt).toLocaleString() : '—'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

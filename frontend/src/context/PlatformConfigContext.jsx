@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, parseApiResponse } from '../api/client.js';
+import { readCachedConfig, writeCachedConfig } from '../utils/configCache.js';
 import { fmtINR, inrFromUsdt } from '../utils/format.js';
 
 const DEFAULT_RATE = 83.5;
@@ -7,19 +8,23 @@ const DEFAULT_RATE = 83.5;
 const PlatformConfigContext = createContext(null);
 
 export function PlatformConfigProvider({ children }) {
-  const [usdtInrRate, setUsdtInrRate] = useState(DEFAULT_RATE);
-  const [loading, setLoading] = useState(true);
+  const cached = readCachedConfig();
+  const [usdtInrRate, setUsdtInrRate] = useState(
+    Number(cached?.usdt_inr_rate) > 0 ? Number(cached.usdt_inr_rate) : DEFAULT_RATE
+  );
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const { data } = await api.get('/config');
       const payload = parseApiResponse(data);
+      writeCachedConfig(payload);
       const rate = Number(payload?.usdt_inr_rate);
       if (Number.isFinite(rate) && rate >= 1) {
         setUsdtInrRate(rate);
       }
     } catch {
-      /* keep last known or default rate */
+      /* keep cached/default rate */
     } finally {
       setLoading(false);
     }
@@ -27,7 +32,7 @@ export function PlatformConfigProvider({ children }) {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 5 * 60_000);
     const onUpdate = () => load();
     window.addEventListener('platform:config-updated', onUpdate);
     return () => {

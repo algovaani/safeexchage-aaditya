@@ -20,9 +20,10 @@ const TYPE_FILTERS = [
   { value: '', label: 'All types' },
   { value: 'deposit', label: 'Deposit' },
   { value: 'withdrawal', label: 'Withdrawal' },
+  { value: 'spot', label: 'Spot trade' },
   { value: 'trade', label: 'Trade' },
-  { value: 'buy', label: 'Buy / Hold' },
-  { value: 'sell', label: 'Sell / P&L' },
+  { value: 'buy', label: 'Buy' },
+  { value: 'sell', label: 'Sell' },
   { value: 'stake', label: 'Staking' },
   { value: 'admin', label: 'Admin adjustment' },
 ];
@@ -85,6 +86,17 @@ export default function Transactions() {
 
   useEffect(() => {
     fetchRows();
+  }, [fetchRows]);
+
+  useEffect(() => {
+    const onFocus = () => fetchRows();
+    const onOrders = () => fetchRows();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('orders:updated', onOrders);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('orders:updated', onOrders);
+    };
   }, [fetchRows]);
 
   useEffect(() => {
@@ -215,8 +227,8 @@ export default function Transactions() {
                         {t.balance_after != null ? fmtUSD(t.balance_after) : '—'}
                       </td>
                       <td><StatusBadge status={t.status} /></td>
-                      <td className="text-text-secondary text-xs max-w-[200px] truncate" title={t.remark || t.admin_note || ''}>
-                        {t.remark || t.admin_note || '—'}
+                      <td className="text-text-secondary text-xs max-w-[200px] truncate" title={t.remark || t.reference || ''}>
+                        {t.remark || t.reference || '—'}
                       </td>
                       {/* <td className="text-text-secondary text-xs tabular-nums">
                         {t.date ? new Date(t.date).toLocaleString() : '—'}

@@ -102,6 +102,19 @@
   font-weight: 600;
   color: var(--accent);
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.markets-dt__icon--img {
+  background: transparent;
+  padding: 0;
+}
+
+.markets-dt__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .markets-dt__name {
@@ -109,6 +122,12 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.markets-dt__icon--commodity {
+  background: linear-gradient(135deg, #d4af37 0%, #f5e6a8 50%, #c9a227 100%);
+  color: #1a1408;
+  font-size: 0.7rem;
 }
 
 .markets-dt__symbol {

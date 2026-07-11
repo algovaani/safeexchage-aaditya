@@ -22,6 +22,10 @@ const STYLES = {
   stake_locked: 'badge-amber',
   stake_reward: 'badge-green',
   referral_reward: 'badge-green',
+  spot_buy: 'badge-amber',
+  spot_sell: 'badge-blue',
+  'spot buy': 'badge-amber',
+  'spot sell': 'badge-blue',
 };
 
 export default function StatusBadge({ status, className = '' }) {

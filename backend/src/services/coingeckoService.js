@@ -48,6 +48,7 @@ export function coinIdForSymbol(symbol) {
 export function toDisplayPair(symbol) {
   const upper = String(symbol).toUpperCase();
   if (upper.endsWith('USDT')) return `${upper.slice(0, -4)}/USDT`;
+  if (upper.endsWith('INR')) return `${upper.slice(0, -3)}/INR`;
   return upper;
 }
 

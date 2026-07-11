@@ -1,17 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import { api, parseApiResponse } from '../api/client.js';
-import LiveChart from '../components/LiveChart.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
-import { MARKET_POLL_MS } from '../config/marketPoll.js';
+import { TRADE_MARKET_POLL_MS, DEPTH_POLL_MS } from '../config/marketPoll.js';
+import { acquireMarketSocket, releaseMarketSocket, getUserSocket } from '../services/appSocket.js';
 import './Futures.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
-const FUTURES_DEPTH_POLL_MS = 5_000;
+const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
 const CHART_INTERVALS = [
   { id: '1m', label: '1m' },
@@ -131,7 +129,6 @@ export default function Futures() {
   const [partialQty, setPartialQty] = useState('');
   const [marginAmt, setMarginAmt] = useState('');
 
-  const futuresSocketRef = useRef(null);
   const prevPriceRef = useRef(null);
   const configInitRef = useRef(false);
   const tapeSeqRef = useRef(0);
@@ -327,13 +324,13 @@ export default function Futures() {
 
   useEffect(() => {
     loadTicker();
-    const t = setInterval(loadTicker, MARKET_POLL_MS);
+    const t = setInterval(loadTicker, TRADE_MARKET_POLL_MS);
     return () => clearInterval(t);
   }, [loadTicker]);
 
   useEffect(() => {
     loadDepth();
-    const d = setInterval(loadDepth, FUTURES_DEPTH_POLL_MS);
+    const d = setInterval(loadDepth, DEPTH_POLL_MS);
     return () => clearInterval(d);
   }, [loadDepth]);
 
@@ -358,7 +355,7 @@ export default function Futures() {
   }, [orderType, symbol, markPrice, limitPrice]);
 
   useEffect(() => {
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const socket = acquireMarketSocket();
     const sym = symbol.toUpperCase();
 
     socket.emit('market:subscribe', { symbol: sym, interval: chartInterval });
@@ -427,16 +424,14 @@ export default function Futures() {
       socket.off('market:klines:merged', onMerged);
       socket.off('market:depth', onDepth);
       socket.off('market:trade', onTrade);
-      socket.close();
+      releaseMarketSocket();
     };
   }, [symbol, chartInterval]);
 
   useEffect(() => {
     if (!user || !token) return undefined;
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'], auth: { token } });
-    futuresSocketRef.current = socket;
-    socket.on('connect', () => socket.emit('auth', token));
-    socket.on('futures:update', (payload) => {
+    const socket = getUserSocket(token);
+    const onFuturesUpdate = (payload) => {
       if (payload?.event === 'position:mark') return;
       if (payload?.positions?.length) {
         setPositions((prev) => {
@@ -455,10 +450,10 @@ export default function Futures() {
         loadOrders();
         loadWallet();
       }
-    });
+    };
+    socket.on('futures:update', onFuturesUpdate);
     return () => {
-      socket.close();
-      futuresSocketRef.current = null;
+      socket.off('futures:update', onFuturesUpdate);
     };
   }, [user, token, loadPosHistory, loadPositions, loadOrders, loadWallet]);
 
@@ -648,7 +643,9 @@ export default function Futures() {
             <span className="fut-toolbar__pair">{pairLabel}</span>
           </div>
           <div className="fut-chart-body">
-            <LiveChart variant="dark" className="fut-chart-wrap" candles={candles} />
+            <Suspense fallback={<div className="fut-chart-loading">Loading chart…</div>}>
+              <LiveChart variant="dark" className="fut-chart-wrap" candles={candles} />
+            </Suspense>
             {!candles.length && <div className="fut-chart-loading">Loading chart…</div>}
           </div>
         </section>

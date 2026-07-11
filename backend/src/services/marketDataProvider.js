@@ -14,6 +14,7 @@ import {
   getTradingPairSymbolsSync,
 } from './tradingPairService.js';
 import * as coingeckoMarket from './coingeckoService.js';
+import { fetchCommodityPrices, fetchCommodityTicker, fetchCommodityKlines, fetchCommodityDepth, isCommoditySymbol } from './commodityService.js';
 import {
   normalizeSymbol,
   toDisplayPair,
@@ -147,10 +148,13 @@ export async function fetchAllPairPrices({ force = false } = {}) {
   await ensureTradingPairCache();
   const activePairs = getActivePairsSync();
   const binanceSyms = activePairs
-    .filter((p) => p.priceSource !== 'coingecko')
+    .filter((p) => p.priceSource === 'binance' || (!p.priceSource && p.category !== 'commodity'))
     .map((p) => p.symbol);
   const cgOnlySyms = activePairs
     .filter((p) => p.priceSource === 'coingecko')
+    .map((p) => p.symbol);
+  const commoditySyms = activePairs
+    .filter((p) => p.priceSource === 'commodity_inr')
     .map((p) => p.symbol);
 
   const bySymbol = new Map();
@@ -180,6 +184,15 @@ export async function fetchAllPairPrices({ force = false } = {}) {
         if (needCg.includes(row.symbol)) {
           bySymbol.set(row.symbol, { ...row, provider: 'coingecko' });
           recordPriceTick(row.symbol, row.price);
+        }
+      }
+    }
+
+    if (commoditySyms.length) {
+      const commodityResult = await fetchCommodityPrices({ force });
+      for (const row of commodityResult.pairs || []) {
+        if (commoditySyms.includes(row.symbol)) {
+          bySymbol.set(row.symbol, row);
         }
       }
     }
@@ -267,6 +280,10 @@ export async function fetchKlines(symbol, interval, { startTime, endTime, limit 
   }
 
   const pair = getPairSync(sym);
+  if (pair?.priceSource === 'commodity_inr' || isCommoditySymbol(sym)) {
+    return fetchCommodityKlines(sym, interval, { startTime, endTime, limit });
+  }
+
   if (pair?.priceSource === 'coingecko') {
     return coingeckoMarket.fetchKlines(sym, interval, { startTime, endTime, limit });
   }
@@ -398,6 +415,14 @@ export async function fetchDepth(symbol, { limit = 20 } = {}) {
   }
 
   const pair = getPairSync(sym);
+  if (pair?.priceSource === 'commodity_inr' || isCommoditySymbol(sym)) {
+    try {
+      return await fetchCommodityDepth(sym, { limit });
+    } catch {
+      return null;
+    }
+  }
+
   if (pair?.priceSource === 'coingecko') {
     try {
       const ticker = await fetchTicker(sym);

@@ -5,6 +5,6 @@ export const transactionListValidators = [
   ...datatableQueryValidators,
   query('type')
     .optional()
-    .isIn(['all', 'deposit', 'withdrawal', 'trade', 'stake', 'buy', 'sell', 'hold']),
+    .isIn(['all', 'deposit', 'withdrawal', 'trade', 'spot', 'stake', 'buy', 'sell', 'hold', 'admin', 'futures', 'referral']),
   query('status').optional().isIn(['all', 'pending', 'approved', 'rejected', 'completed']),
 ];
