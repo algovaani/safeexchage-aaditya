@@ -11,6 +11,7 @@ import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { DEPTH_POLL_MS, TRADE_MARKET_POLL_MS, CLOCK_TICK_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
 import { notifyWalletUpdated } from '../utils/walletEvents.js';
+import CoinIcon from '../components/CoinIcon.jsx';
 import './Trading.css';
 
 const CHART_INTERVALS = [
@@ -108,7 +109,7 @@ export default function Trading() {
 
   const [orderSideTab, setOrderSideTab] = useState('buy');
   const [orderStatusTab, setOrderStatusTab] = useState('pending');
-  const [orderBusy, setOrderBusy] = useState(false);
+  const [orderBusySide, setOrderBusySide] = useState(null);
   const [mobileView, setMobileView] = useState('chart');
   const [mobileOrderSide, setMobileOrderSide] = useState('buy');
 
@@ -460,7 +461,7 @@ export default function Trading() {
       requireLogin();
       return;
     }
-    if (orderBusy) return;
+    if (orderBusySide === side) return;
     const qty = parseFloat(side === 'buy' ? buyQty : sellQty);
     const priceRaw = side === 'buy' ? buyPrice : sellPrice;
     if (!(qty > 0)) {
@@ -480,7 +481,7 @@ export default function Trading() {
       stopLoss: null,
       takeProfit: null,
     };
-    setOrderBusy(true);
+    setOrderBusySide(side);
     try {
       const { data } = await api.post('/orders', payload);
       const result = parseApiResponse(data);
@@ -495,8 +496,49 @@ export default function Trading() {
     } catch {
       /* API error toast handled globally */
     } finally {
-      setOrderBusy(false);
+      setOrderBusySide(null);
     }
+  }
+
+  function fillFromBook(row, bookSide) {
+    const price = Number(row?.price);
+    const qty = Number(row?.qty);
+    if (Number.isFinite(price) && price > 0) {
+      const priceStr = String(price);
+      setBuyPrice(priceStr);
+      setSellPrice(priceStr);
+      if (buyType === 'market') setBuyType('limit');
+      if (sellType === 'market') setSellType('limit');
+    }
+    if (Number.isFinite(qty) && qty > 0) {
+      const qtyStr = String(qty);
+      if (bookSide === 'ask') {
+        // Clicking sell wall → fill buy amount
+        setBuyQty(qtyStr);
+        setMobileOrderSide('buy');
+      } else {
+        // Clicking buy wall → fill sell amount
+        setSellQty(qtyStr);
+        setMobileOrderSide('sell');
+      }
+    }
+  }
+
+  function fillBuyMax() {
+    const price = buyType === 'market' ? Number(ticker?.lastPrice) : parseFloat(buyPrice);
+    if (!(usdtBalance > 0)) return;
+    if (!(price > 0)) {
+      toast.warning('Set a price first (or wait for market price).');
+      return;
+    }
+    // Leave room for 0.1% fee
+    const maxQty = (usdtBalance * 0.999) / price;
+    if (maxQty > 0) setBuyQty(maxQty.toFixed(8).replace(/\.?0+$/, '') || '0');
+  }
+
+  function fillSellMax() {
+    if (!(baseBalance > 0)) return;
+    setSellQty(baseBalance.toFixed(8).replace(/\.?0+$/, '') || '0');
   }
 
   useEffect(() => {
@@ -577,6 +619,14 @@ export default function Trading() {
       )}
       <div className="ex-ticker ex-ticker--scroll">
         <div className="ex-ticker__pair-wrap">
+          <CoinIcon
+            symbol={base}
+            imageUrl={pairMeta(symbol, tradingPairs)?.imageUrl}
+            coingeckoId={pairMeta(symbol, tradingPairs)?.coingeckoId}
+            type={isInrPair ? 'commodity' : 'crypto'}
+            name={pairMeta(symbol, tradingPairs)?.name}
+            size={28}
+          />
           <span className="ex-ticker__pair">{pairLabel}{isInrPair ? ' · per g' : ''}</span>
         </div>
 
@@ -684,7 +734,17 @@ export default function Trading() {
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && selectSymbol(p)}
                 >
-                  <span className="ex-markets__pair">{rowLabel}</span>
+                  <span className="ex-markets__pair">
+                    <CoinIcon
+                      symbol={pairBase(p, tradingPairs)}
+                      imageUrl={pairMeta(p, tradingPairs)?.imageUrl}
+                      coingeckoId={pairMeta(p, tradingPairs)?.coingeckoId}
+                      type={rowQuote === 'INR' ? 'commodity' : 'crypto'}
+                      name={pairMeta(p, tradingPairs)?.name}
+                      size={20}
+                    />
+                    {rowLabel}
+                  </span>
                   <span>
                     {w?.lastPrice != null
                       ? formatTradePrice(w.lastPrice, rowQuote)
@@ -784,10 +844,16 @@ export default function Trading() {
                 <h3>Buy {base}</h3>
                 <p className="ex-balance-line">
                   {user ? (
-                    <>
+                    <button
+                      type="button"
+                      className="ex-balance-line__btn"
+                      title="Use max USDT"
+                      onClick={fillBuyMax}
+                    >
                       USDT: {usdtBalance.toFixed(2)}
                       <span className="ex-balance-line__inr"> ({fmtINR(toInr(usdtBalance))})</span>
-                    </>
+                      <span className="ex-balance-line__hint"> · click to fill</span>
+                    </button>
                   ) : (
                     <Link to="/login" state={loginReturn} className="ex-balance-line__link">Log in for balance</Link>
                   )}
@@ -821,8 +887,13 @@ export default function Trading() {
                   <small className="ex-balance-line__inr">≈ {buyTotalUsdtHint} USDT from wallet</small>
                 ) : null}
               </div>
-              <button type="button" className="ex-btn-buy" disabled={orderBusy} onClick={() => place('buy', buyType)}>
-                {orderBusy ? 'Placing…' : user ? `Buy ${base}` : 'Log in to Buy'}
+              <button
+                type="button"
+                className="ex-btn-buy"
+                disabled={orderBusySide === 'buy'}
+                onClick={() => place('buy', buyType)}
+              >
+                {orderBusySide === 'buy' ? 'Placing…' : user ? `Buy ${base}` : 'Log in to Buy'}
               </button>
             </div>
 
@@ -831,7 +902,15 @@ export default function Trading() {
                 <h3>Sell {base}</h3>
                 <p className="ex-balance-line">
                   {user ? (
-                    <>{base}: {baseBalance.toFixed(8).replace(/\.?0+$/, '') || '0'}</>
+                    <button
+                      type="button"
+                      className="ex-balance-line__btn"
+                      title={`Sell all ${base}`}
+                      onClick={fillSellMax}
+                    >
+                      {base}: {baseBalance.toFixed(8).replace(/\.?0+$/, '') || '0'}
+                      <span className="ex-balance-line__hint"> · click to fill</span>
+                    </button>
                   ) : (
                     <Link to="/login" state={loginReturn} className="ex-balance-line__link">Log in for balance</Link>
                   )}
@@ -865,8 +944,13 @@ export default function Trading() {
                   <small className="ex-balance-line__inr">≈ {sellTotalUsdtHint} USDT to wallet</small>
                 ) : null}
               </div>
-              <button type="button" className="ex-btn-sell" disabled={orderBusy} onClick={() => place('sell', sellType)}>
-                {orderBusy ? 'Placing…' : user ? `Sell ${base}` : 'Log in to Sell'}
+              <button
+                type="button"
+                className="ex-btn-sell"
+                disabled={orderBusySide === 'sell'}
+                onClick={() => place('sell', sellType)}
+              >
+                {orderBusySide === 'sell' ? 'Placing…' : user ? `Sell ${base}` : 'Log in to Sell'}
               </button>
             </div>
           </div>
@@ -883,11 +967,17 @@ export default function Trading() {
               </div>
               <div className="ex-book__side ex-book__side--asks">
                 {[...(depth.asks || [])].reverse().slice(0, 12).map((r, i) => (
-                  <div key={`a-${i}`} className="ex-book__row ex-book__row--ask">
+                  <button
+                    type="button"
+                    key={`a-${i}`}
+                    className="ex-book__row ex-book__row--ask"
+                    onClick={() => fillFromBook(r, 'ask')}
+                    title="Fill buy form"
+                  >
                     <span>{r.price.toFixed(4)}</span>
                     <span>{r.qty.toFixed(4)}</span>
                     <span>{(r.price * r.qty).toFixed(2)}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
               <div className={`ex-book__mid ${priceUp ? 'ex-book__mid--up' : 'ex-book__mid--down'}`}>
@@ -897,11 +987,17 @@ export default function Trading() {
               </div>
               <div className="ex-book__side ex-book__side--bids">
                 {(depth.bids || []).slice(0, 12).map((r, i) => (
-                  <div key={`b-${i}`} className="ex-book__row ex-book__row--bid">
+                  <button
+                    type="button"
+                    key={`b-${i}`}
+                    className="ex-book__row ex-book__row--bid"
+                    onClick={() => fillFromBook(r, 'bid')}
+                    title="Fill sell form"
+                  >
                     <span>{r.price.toFixed(4)}</span>
                     <span>{r.qty.toFixed(4)}</span>
                     <span>{(r.price * r.qty).toFixed(2)}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -987,7 +1083,18 @@ export default function Trading() {
                     <td>
                       <span className={`ex-status-badge ex-status-badge--${t.side}`}>{t.side}</span>
                     </td>
-                    <td>{orderPairLabel(t.symbol, tradingPairs)}</td>
+                    <td>
+                      <span className="ex-pair-cell">
+                        <CoinIcon
+                          symbol={String(t.symbol || '').replace(/USDT$|INR$/, '')}
+                          imageUrl={pairMeta(t.symbol, tradingPairs)?.imageUrl}
+                          coingeckoId={pairMeta(t.symbol, tradingPairs)?.coingeckoId}
+                          type={String(t.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
+                          size={18}
+                        />
+                        {orderPairLabel(t.symbol, tradingPairs)}
+                      </span>
+                    </td>
                     <td>{formatTradePrice(t.price, pairQuote(t.symbol, tradingPairs))}</td>
                     <td>{t.quantity}</td>
                     <td>{t.total ?? fmtNum(Number(t.price) * Number(t.quantity), 2)}</td>
@@ -1022,7 +1129,18 @@ export default function Trading() {
               {tableRows.map((o) => {
                 return (
                   <tr key={o._id || o.id}>
-                    <td>{orderPairLabel(o.symbol, tradingPairs)}</td>
+                    <td>
+                      <span className="ex-pair-cell">
+                        <CoinIcon
+                          symbol={String(o.symbol || '').replace(/USDT$|INR$/, '')}
+                          imageUrl={pairMeta(o.symbol, tradingPairs)?.imageUrl}
+                          coingeckoId={pairMeta(o.symbol, tradingPairs)?.coingeckoId}
+                          type={String(o.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
+                          size={18}
+                        />
+                        {orderPairLabel(o.symbol, tradingPairs)}
+                      </span>
+                    </td>
                     <td>{orderDisplayPrice(o)}</td>
                     <td>{o.quantity}</td>
                     <td>{orderDisplayTotal(o)}</td>

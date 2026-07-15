@@ -4,14 +4,16 @@ import { error, success } from '../utils/response.js';
 
 export async function submitRequest(req, res, next) {
   try {
-    const { mobile, city, amount } = req.body;
+    const { mobile, city, amount, type } = req.body;
+    const requestType = type === 'withdraw' ? 'withdraw' : 'deposit';
     const existing = await CashInPersonRequest.findOne({
       userId: req.userId,
       status: 'pending',
+      type: requestType,
     }).lean();
 
     if (existing) {
-      return error(res, 'You already have a pending cash-in-person request', 400);
+      return error(res, `You already have a pending cash-in-person ${requestType} request`, 400);
     }
 
     const requestedAmount =
@@ -19,8 +21,13 @@ export async function submitRequest(req, res, next) {
         ? Number(amount)
         : null;
 
+    if (requestType === 'withdraw' && !(requestedAmount > 0)) {
+      return error(res, 'Amount is required for withdraw requests', 400);
+    }
+
     const row = await CashInPersonRequest.create({
       userId: req.userId,
+      type: requestType,
       mobile: String(mobile).trim(),
       city: String(city).trim(),
       requestedAmount,

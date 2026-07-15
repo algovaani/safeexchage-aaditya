@@ -4,12 +4,10 @@ import { cashInPersonAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
 import './DepositModal.css';
 
-const INFO_MESSAGE =
-  'Kindly share your mobile number and city so our team can connect with you at the earliest.';
-
 export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
   const toast = useToast();
   const [form, setForm] = useState({
+    type: 'deposit',
     mobile: userMobile || '',
     city: '',
     amount: '',
@@ -36,6 +34,8 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
     };
   }, [onClose]);
 
+  const isWithdraw = form.type === 'withdraw';
+
   async function submit(e) {
     e.preventDefault();
     setErr('');
@@ -47,14 +47,24 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
       toast.warning(message);
       return;
     }
+    const amount = parseFloat(form.amount);
+    if (isWithdraw && !(amount > 0)) {
+      const message = 'Enter the amount you want to withdraw.';
+      setErr(message);
+      toast.warning(message);
+      return;
+    }
     setBusy(true);
     try {
-      const body = { mobile, city };
-      const amount = parseFloat(form.amount);
+      const body = { mobile, city, type: form.type };
       if (Number.isFinite(amount) && amount > 0) body.amount = amount;
       await cashInPersonAPI.submit(body);
       setDone(true);
-      toast.success('Request sent — our team will contact you shortly.');
+      toast.success(
+        isWithdraw
+          ? 'Withdraw request sent — our team will contact you shortly.'
+          : 'Deposit request sent — our team will contact you shortly.'
+      );
       onSuccess?.();
       setTimeout(onClose, 1800);
     } catch (ex) {
@@ -79,7 +89,7 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
             </span>
             <div>
               <h2 id="cash-in-person-title">Cash in Person</h2>
-              <p className="deposit-modal__subtitle">Request a team callback</p>
+              <p className="deposit-modal__subtitle">Deposit or withdraw with our team</p>
             </div>
           </div>
           <button type="button" className="deposit-modal__close" onClick={onClose} aria-label="Close">
@@ -95,7 +105,30 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
             </div>
           ) : (
             <form className="deposit-modal__form" onSubmit={submit}>
-              <p className="deposit-modal__info">{INFO_MESSAGE}</p>
+              <div className="deposit-modal__field">
+                <label>Request type</label>
+                <div className="cash-in-person-modal__type-tabs" role="group" aria-label="Request type">
+                  <button
+                    type="button"
+                    className={form.type === 'deposit' ? 'is-active' : ''}
+                    onClick={() => setForm((f) => ({ ...f, type: 'deposit' }))}
+                  >
+                    Deposit
+                  </button>
+                  <button
+                    type="button"
+                    className={form.type === 'withdraw' ? 'is-active' : ''}
+                    onClick={() => setForm((f) => ({ ...f, type: 'withdraw' }))}
+                  >
+                    Withdraw
+                  </button>
+                </div>
+              </div>
+              <p className="deposit-modal__info">
+                {isWithdraw
+                  ? 'Share your mobile and city. After verification, the amount will be deducted from your wallet when you collect cash.'
+                  : 'Share your mobile and city. After verification, cash given in person will be credited to your wallet.'}
+              </p>
               <div className="deposit-modal__field">
                 <label htmlFor="cip-mobile">Mobile number</label>
                 <input
@@ -120,7 +153,9 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
                 />
               </div>
               <div className="deposit-modal__field">
-                <label htmlFor="cip-amount">Expected amount (USDT) — optional</label>
+                <label htmlFor="cip-amount">
+                  {isWithdraw ? 'Amount (USDT) — required' : 'Expected amount (USDT) — optional'}
+                </label>
                 <input
                   id="cip-amount"
                   className="deposit-modal__input"
@@ -130,6 +165,7 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
                   value={form.amount}
                   onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                   placeholder="e.g. 5000"
+                  required={isWithdraw}
                 />
               </div>
               {err && <p className="deposit-modal__error">{err}</p>}
@@ -142,8 +178,10 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
                     <>
                       <Loader2 size={16} className="deposit-modal__spin" /> Sending…
                     </>
+                  ) : isWithdraw ? (
+                    'Send withdraw request'
                   ) : (
-                    'Send request'
+                    'Send deposit request'
                   )}
                 </button>
               </div>

@@ -66,13 +66,27 @@ async function getLiquidityUserId() {
 /**
  * On each merged price tick, try to fill open orders (simulated internal liquidity).
  */
-export async function processOrdersForPrice(symbol, currentPrice) {
-  return withSymbolOrderLock(symbol, () => processOrdersForPriceUnlocked(symbol, currentPrice));
+/**
+ * @param {string} symbol
+ * @param {number} currentPrice - mark / pulse price used to fill
+ * @param {{ fromPrice?: number|null, rangeOnly?: boolean }} [opts]
+ *   When fromPrice is set with rangeOnly, only limit orders whose limit sits between from→to fill.
+ */
+export async function processOrdersForPrice(symbol, currentPrice, opts = {}) {
+  return withSymbolOrderLock(symbol, () => processOrdersForPriceUnlocked(symbol, currentPrice, opts));
 }
 
-async function processOrdersForPriceUnlocked(symbol, currentPrice) {
+async function processOrdersForPriceUnlocked(symbol, currentPrice, opts = {}) {
   const sym = symbol.toUpperCase();
   const fillPriceUsdt = await unitPriceToUsdt(sym, currentPrice);
+  const fromRaw = opts.fromPrice != null ? Number(opts.fromPrice) : null;
+  const fromUsdt =
+    fromRaw != null && Number.isFinite(fromRaw) && fromRaw > 0
+      ? await unitPriceToUsdt(sym, fromRaw)
+      : null;
+  const rangeOnly = Boolean(opts.rangeOnly && fromUsdt != null);
+  const pathLo = fromUsdt != null ? Math.min(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
+  const pathHi = fromUsdt != null ? Math.max(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
   const liquidityId = await getLiquidityUserId();
   const openOrders = await Order.find({
     symbol: sym,
@@ -90,11 +104,16 @@ async function processOrdersForPriceUnlocked(symbol, currentPrice) {
     const fillPrice = fillPriceUsdt;
 
     if (fresh.orderType === 'market') {
-      shouldFill = true;
+      shouldFill = !rangeOnly;
     } else if (fresh.orderType === 'limit' && fresh.price != null) {
       const limitUsdt = await unitPriceToUsdt(sym, fresh.price);
-      if (fresh.side === 'buy' && fillPriceUsdt <= limitUsdt) shouldFill = true;
-      if (fresh.side === 'sell' && fillPriceUsdt >= limitUsdt) shouldFill = true;
+      if (rangeOnly) {
+        // Admin pulse: execute limits whose price lies on the wick between market → pulse.
+        shouldFill = limitUsdt >= pathLo - 1e-10 && limitUsdt <= pathHi + 1e-10;
+      } else {
+        if (fresh.side === 'buy' && fillPriceUsdt <= limitUsdt) shouldFill = true;
+        if (fresh.side === 'sell' && fillPriceUsdt >= limitUsdt) shouldFill = true;
+      }
     }
 
     if (!shouldFill) continue;

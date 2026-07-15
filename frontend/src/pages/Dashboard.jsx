@@ -6,6 +6,7 @@ import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
+import CoinIcon from '../components/CoinIcon.jsx';
 
 const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
@@ -156,7 +157,10 @@ export default function Dashboard() {
                   className={`!flex-none px-3 py-1.5 rounded-btn text-xs${symbol === a ? ' is-active !bg-bg-tertiary' : ''}`}
                   onClick={() => setSymbol(a)}
                 >
-                  {a.replace('USDT', '/USDT')}
+                  <span className="inline-flex items-center gap-1.5">
+                    <CoinIcon symbol={a.replace(/USDT$/, '')} size={16} />
+                    {a.replace('USDT', '/USDT')}
+                  </span>
                 </button>
               ))}
               <button type="button" className="!flex-none px-3 py-1.5 rounded-btn text-xs text-text-muted">
@@ -190,7 +194,7 @@ export default function Dashboard() {
               </button>
             ))}
           </div>
-          <div className="p-2">
+          <div className="p-2 bg-[var(--ex-chart-bg,#0a0e13)] min-h-[360px]">
             <Suspense fallback={<div className="skeleton !h-[360px] w-full rounded-lg" />}>
               <LiveChart candles={candles} variant="dark" className="!h-[360px] !rounded-none !border-0" />
             </Suspense>
@@ -204,8 +208,11 @@ export default function Dashboard() {
             </h3>
             <ul className="space-y-2">
               {MOCK_GAINERS.map((g) => (
-                <li key={g.name} className="flex justify-between text-sm">
-                  <span className="font-medium">{g.name}</span>
+                <li key={g.name} className="flex justify-between text-sm items-center gap-2">
+                  <span className="font-medium inline-flex items-center gap-1.5">
+                    <CoinIcon symbol={g.name} size={16} />
+                    {g.name}
+                  </span>
                   <span className="tabular-nums text-text-secondary">{g.price}</span>
                   <span className="text-profit tabular-nums">{fmtPct(g.change)}</span>
                 </li>
@@ -218,8 +225,11 @@ export default function Dashboard() {
             </h3>
             <ul className="space-y-2">
               {MOCK_LOSERS.map((g) => (
-                <li key={g.name} className="flex justify-between text-sm">
-                  <span className="font-medium">{g.name}</span>
+                <li key={g.name} className="flex justify-between text-sm items-center gap-2">
+                  <span className="font-medium inline-flex items-center gap-1.5">
+                    <CoinIcon symbol={g.name} size={16} />
+                    {g.name}
+                  </span>
                   <span className="tabular-nums text-text-secondary">{g.price}</span>
                   <span className="text-loss tabular-nums">{fmtPct(g.change)}</span>
                 </li>
@@ -270,7 +280,12 @@ export default function Dashboard() {
                           : '—';
                   return (
                   <tr key={o._id || o.id}>
-                    <td>{asset}</td>
+                    <td>
+                      <span className="inline-flex items-center gap-2">
+                        <CoinIcon symbol={String(sym).replace(/USDT$|INR$/, '')} size={18} />
+                        {asset}
+                      </span>
+                    </td>
                     <td><StatusBadge status={o.side || o.type} /></td>
                     <td className="tabular-nums">{o.quantity ?? o.qty ?? '—'}</td>
                     <td className="tabular-nums">{price}</td>
@@ -285,8 +300,8 @@ export default function Dashboard() {
             </table>
           </div>
         ) : (
-          <div className="empty-state">
-            <Inbox size={32} className="mb-3 opacity-40" />
+          <div className="empty-state !py-8">
+            <Inbox size={28} className="mb-2 opacity-40" />
             <p>No orders yet</p>
             <Link to="/trade" className="text-accent text-sm mt-2">Start trading</Link>
           </div>

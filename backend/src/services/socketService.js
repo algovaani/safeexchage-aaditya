@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/token.js';
 import { Wallet } from '../models/Wallet.js';
 import { roundMoney } from '../utils/money.js';
+import { listUserAssets } from './assetBalanceService.js';
 
 function userRoom(userId) {
   return `user:${String(userId)}`;
@@ -39,7 +40,7 @@ export function attachUserSockets(io) {
   });
 }
 
-function walletSnapshot(wallet) {
+function walletSnapshot(wallet, assets = []) {
   const balance = roundMoney(wallet?.balance || 0);
   const locked = roundMoney(wallet?.lockedBalance || 0);
   return {
@@ -48,6 +49,7 @@ function walletSnapshot(wallet) {
     locked_balance: locked,
     available_balance: roundMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0))),
     currency: wallet?.currency || 'USDT',
+    assets,
   };
 }
 
@@ -58,9 +60,12 @@ function walletSnapshot(wallet) {
 export async function emitWalletUpdate(io, userId, { reason = null } = {}) {
   if (!io || !userId) return;
   try {
-    const wallet = await Wallet.findOne({ userId }).lean();
+    const [wallet, assets] = await Promise.all([
+      Wallet.findOne({ userId }).lean(),
+      listUserAssets(userId),
+    ]);
     io.to(userRoom(userId)).emit('wallet:update', {
-      wallet: walletSnapshot(wallet),
+      wallet: walletSnapshot(wallet, assets),
       reason,
       at: Date.now(),
     });

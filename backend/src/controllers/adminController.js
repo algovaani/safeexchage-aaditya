@@ -9,9 +9,13 @@ import { Deposit } from '../models/Deposit.js';
 import { Withdrawal } from '../models/Withdrawal.js';
 import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { mergeCandles } from '../services/mergeService.js';
-import { fetchKlines } from '../services/marketDataProvider.js';
+import { fetchKlines, fetchTicker } from '../services/marketDataProvider.js';
+import { processOrdersForPrice } from '../services/orderEngine.js';
+import { listActivePulses, setPricePulse } from '../services/pricePulseService.js';
+import { roomName } from '../services/marketStreamService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
+import { z } from 'zod';
 import {
   buildDateRangeFilter,
   getExportLimit,
@@ -317,6 +321,130 @@ export async function deleteManualPrice(req, res, next) {
   } catch (e) {
     return next(e);
   }
+}
+
+export const pricePulseSchema = z.object({
+  symbol: z.string().min(3),
+  price: z.number().positive(),
+  holdMs: z.number().int().min(800).max(15_000).optional(),
+});
+
+/**
+ * Admin price pulse: chart spikes to `price`, fills limit orders in market→pulse range,
+ * then reverts to live market after holdMs.
+ */
+export async function pulsePrice(req, res, next) {
+  try {
+    const symbol = String(req.body.symbol || '').toUpperCase();
+    const pulsePriceValue = Number(req.body.price);
+    const holdMs = Number(req.body.holdMs) || 2500;
+
+    if (!symbol || !Number.isFinite(pulsePriceValue) || pulsePriceValue <= 0) {
+      return error(res, 'symbol and positive price are required', 400);
+    }
+
+    let fromPrice = pulsePriceValue;
+    try {
+      const ticker = await fetchTicker(symbol);
+      fromPrice = Number(ticker?.price) || pulsePriceValue;
+    } catch {
+      /* use pulse as fallback baseline */
+    }
+
+    const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs });
+    const openTime = Math.floor(Date.now() / 1000) * 1000;
+    const hi = Math.max(fromPrice, pulsePriceValue);
+    const lo = Math.min(fromPrice, pulsePriceValue);
+
+    const candle = {
+      openTime,
+      open: fromPrice,
+      high: hi,
+      low: lo,
+      close: pulsePriceValue,
+      volume: 0,
+      isFinal: false,
+      pulse: true,
+    };
+
+    const io = req.app.get('io');
+    const intervals = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
+    if (io) {
+      for (const interval of intervals) {
+        io.to(roomName(symbol, interval)).emit('market:klines:merged', {
+          symbol,
+          interval,
+          candle: { ...candle, openTime: alignOpenTime(openTime, interval) },
+        });
+        io.to(roomName(symbol, interval)).emit('market:trade', {
+          symbol,
+          price: pulsePriceValue,
+          qty: 0,
+          quantity: 0,
+          time: Date.now(),
+          isBuyerMaker: pulsePriceValue < fromPrice,
+          pulse: true,
+        });
+      }
+      io.emit('market:price:pulse', {
+        symbol,
+        price: pulsePriceValue,
+        fromPrice,
+        until: pulse.until,
+      });
+    }
+
+    const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
+      fromPrice,
+      rangeOnly: true,
+    });
+
+    return success(
+      res,
+      {
+        symbol,
+        fromPrice,
+        price: pulsePriceValue,
+        until: pulse.until,
+        holdMs,
+        filledOrders: trades.length,
+        trades: trades.map((t) => ({
+          id: t._id,
+          symbol: t.symbol,
+          price: t.price,
+          quantity: t.quantity,
+        })),
+      },
+      trades.length
+        ? `Price pulsed — ${trades.length} order(s) filled`
+        : 'Price pulsed — chart updated (no matching limit orders in range)'
+    );
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  }
+}
+
+export async function listPricePulses(req, res, next) {
+  try {
+    return success(res, listActivePulses(), 'Active price pulses');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+function alignOpenTime(ms, interval) {
+  const map = {
+    '1s': 1000,
+    '1m': 60_000,
+    '5m': 300_000,
+    '15m': 900_000,
+    '1h': 3_600_000,
+    '4h': 14_400_000,
+    '1d': 86_400_000,
+  };
+  const step = map[interval] || 1000;
+  return Math.floor(ms / step) * step;
 }
 
 export async function allTrades(_req, res, next) {

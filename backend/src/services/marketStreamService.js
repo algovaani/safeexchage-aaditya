@@ -10,6 +10,7 @@ import {
   recordPriceTick,
   bucketTicksToIntervalCandles,
 } from './marketDataProvider.js';
+import { getActivePulsePrice } from './pricePulseService.js';
 
 const TICK_POLL_MS = Number(process.env.MARKET_STREAM_POLL_MS) || 2000;
 const KLINE_POLL_MS = Number(process.env.MARKET_KLINE_POLL_MS) || 15_000;
@@ -75,7 +76,9 @@ function startBinanceTickStream({ symbol, io }) {
     if (stopped) return;
     try {
       const ticker = await fetchTicker(sym);
-      const price = ticker.price;
+      const livePrice = ticker.price;
+      const pulsed = getActivePulsePrice(sym);
+      const price = pulsed != null ? pulsed : livePrice;
       recordPriceTick(sym, price);
 
       const bucket = Math.floor(Date.now() / 1000) * 1000;

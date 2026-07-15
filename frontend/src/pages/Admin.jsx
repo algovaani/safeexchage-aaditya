@@ -6,6 +6,7 @@ import AdminDataTable from '../components/AdminDataTable.jsx';
 import StakingAdminSection from './admin/StakingAdminSection.jsx';
 import TradingPairsAdminSection from './admin/TradingPairsAdminSection.jsx';
 import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
+import AdminPricesSection from './admin/AdminPricesSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
 import { useDialog } from '../context/DialogContext.jsx';
 import './Admin.css';
@@ -680,7 +681,6 @@ export default function Admin() {
   const [txs, setTxs] = useState([]);
   const [allTxs, setAllTxs] = useState([]);
   const [trades, setTrades] = useState([]);
-  const [manual, setManual] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedKyc, setSelectedKyc] = useState(null);
   const [fundUser, setFundUser] = useState(null);
@@ -719,32 +719,18 @@ export default function Admin() {
 
   const bumpTables = () => setTableRefreshKey((k) => k + 1);
 
-  const [manualForm, setManualForm] = useState({
-    symbol: 'BTCUSDT',
-    interval: '1m',
-    openTime: String(Date.now() - 60_000),
-    open: '42000',
-    high: '42100',
-    low: '41900',
-    close: '42050',
-    volume: '10',
-    mode: 'candle',
-  });
-
   async function refresh() {
     setLoading(true);
     try {
-      const [{ data: overview }, { data: t }, { data: tr }, { data: m }, { data: allT }] = await Promise.all([
+      const [{ data: overview }, { data: t }, { data: tr }, { data: allT }] = await Promise.all([
         api.get('/admin/overview'),
         api.get('/admin/transactions'),
         api.get('/admin/exchange-trades'),
-        api.get('/admin/manual-prices'),
         api.get('/admin/transactions/all'),
       ]);
       setStats(parseApiResponse(overview) || stats);
       setTxs(asArray(parseApiResponse(t)));
       setTrades(asArray(parseApiResponse(tr)));
-      setManual(asArray(parseApiResponse(m)));
       setAllTxs(asArray(parseApiResponse(allT)));
     } finally {
       setLoading(false);
@@ -976,22 +962,25 @@ export default function Admin() {
 
   async function verifyCashInPerson(row, action) {
     const id = row.id || row._id;
+    const isWithdraw = row.type === 'withdraw';
     if (action === 'approve') {
       const defaultAmount = row.requestedAmount != null ? String(row.requestedAmount) : '';
       const result = await dialog.prompt({
-        title: 'Approve cash in person',
-        message: `Credit wallet for ${row.userLabel || row.mobile || 'user'}. Enter the USDT amount received in person.`,
+        title: isWithdraw ? 'Approve cash withdraw' : 'Approve cash deposit',
+        message: isWithdraw
+          ? `Debit wallet for ${row.userLabel || row.mobile || 'user'}. Enter USDT amount paid out in person.`
+          : `Credit wallet for ${row.userLabel || row.mobile || 'user'}. Enter USDT amount received in person.`,
         fields: [
           {
             key: 'amount',
-            label: 'Amount to credit (USDT)',
+            label: isWithdraw ? 'Amount to debit (USDT)' : 'Amount to credit (USDT)',
             type: 'number',
             defaultValue: defaultAmount,
             placeholder: 'e.g. 5000',
             required: true,
           },
         ],
-        confirmLabel: 'Approve & credit',
+        confirmLabel: isWithdraw ? 'Approve & debit' : 'Approve & credit',
         cancelLabel: 'Cancel',
       });
       if (result === null) return;
@@ -1028,23 +1017,6 @@ export default function Admin() {
 
   async function approveTx(id, decision) {
     await api.patch(`/admin/transactions/${id}`, { decision });
-    await refresh();
-  }
-
-  async function saveManual(e) {
-    e.preventDefault();
-    const body = {
-      symbol: manualForm.symbol.toUpperCase(),
-      interval: manualForm.interval,
-      openTime: Number(manualForm.openTime),
-      mode: manualForm.mode,
-      open: parseFloat(manualForm.open),
-      high: parseFloat(manualForm.high),
-      low: parseFloat(manualForm.low),
-      close: parseFloat(manualForm.close),
-      volume: parseFloat(manualForm.volume || '0'),
-    };
-    await api.post('/admin/manual-prices', body);
     await refresh();
   }
 
@@ -1408,6 +1380,12 @@ export default function Admin() {
           );
         },
       },
+      {
+        key: 'type',
+        label: 'Type',
+        sortable: true,
+        render: (row) => <StatusBadge status={row.type === 'withdraw' ? 'withdraw' : 'deposit'} />,
+      },
       { key: 'mobile', label: 'Mobile', render: (row) => row.mobile || '—' },
       { key: 'city', label: 'City', render: (row) => row.city || '—' },
       {
@@ -1418,7 +1396,7 @@ export default function Admin() {
       },
       {
         key: 'creditedAmount',
-        label: 'Credited',
+        label: 'Settled',
         render: (row) =>
           row.creditedAmount != null ? `${Number(row.creditedAmount).toFixed(2)} USDT` : '—',
       },
@@ -1963,14 +1941,19 @@ export default function Admin() {
       {activeTab === 'cashInPerson' && (
         <>
           <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Users request cash-in-person deposits with their mobile and city. Approve to credit their wallet instantly
-            with the USDT amount received.
+            Users request cash-in-person <strong>deposit</strong> (credit wallet) or <strong>withdraw</strong> (debit wallet).
+            Approve with the settled USDT amount.
           </p>
           <AdminDataTable
             title="Cash in person requests"
             endpoint="/admin/cash-in-person"
             columns={cashInPersonColumns}
             filters={[
+              { key: 'type', label: 'Type', options: [
+                { value: '', label: 'All types' },
+                { value: 'deposit', label: 'Deposit' },
+                { value: 'withdraw', label: 'Withdraw' },
+              ]},
               { key: 'status', label: 'Status', options: [
                 { value: '', label: 'All' },
                 { value: 'pending', label: 'Pending' },
@@ -2092,97 +2075,7 @@ export default function Admin() {
         />
       )}
 
-      {activeTab === 'prices' && (
-        <>
-          <div className="admin-card">
-            <h2>Manual Price (Merge Layer)</h2>
-            <form className="admin-form-grid" onSubmit={saveManual}>
-              <div className="admin-field">
-                <label>Symbol</label>
-                <input value={manualForm.symbol} onChange={(e) => setManualForm({ ...manualForm, symbol: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>Interval</label>
-                <select value={manualForm.interval} onChange={(e) => setManualForm({ ...manualForm, interval: e.target.value })}>
-                  <option value="1s">1s</option>
-                  <option value="1m">1m</option>
-                  <option value="5m">5m</option>
-                  <option value="15m">15m</option>
-                </select>
-              </div>
-              <div className="admin-field">
-                <label>Open time (ms)</label>
-                <input value={manualForm.openTime} onChange={(e) => setManualForm({ ...manualForm, openTime: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>Mode</label>
-                <select value={manualForm.mode} onChange={(e) => setManualForm({ ...manualForm, mode: e.target.value })}>
-                  <option value="candle">candle</option>
-                  <option value="tick">tick</option>
-                </select>
-              </div>
-              <div className="admin-field">
-                <label>Open</label>
-                <input value={manualForm.open} onChange={(e) => setManualForm({ ...manualForm, open: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>High</label>
-                <input value={manualForm.high} onChange={(e) => setManualForm({ ...manualForm, high: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>Low</label>
-                <input value={manualForm.low} onChange={(e) => setManualForm({ ...manualForm, low: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>Close</label>
-                <input value={manualForm.close} onChange={(e) => setManualForm({ ...manualForm, close: e.target.value })} />
-              </div>
-              <div className="admin-field">
-                <label>Volume</label>
-                <input value={manualForm.volume} onChange={(e) => setManualForm({ ...manualForm, volume: e.target.value })} />
-              </div>
-              <div style={{ alignSelf: 'end' }}>
-                <button className="admin-btn admin-btn--primary" type="submit">
-                  Save manual candle
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <div className="admin-card">
-            <h2>Manual Overrides</h2>
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Interval</th>
-                    <th>Open time</th>
-                    <th>Close</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {manual.slice(0, 50).map((m) => (
-                    <tr key={m._id}>
-                      <td>{m.symbol}</td>
-                      <td>{m.interval}</td>
-                      <td>{m.openTime}</td>
-                      <td>{m.close ?? m.price}</td>
-                    </tr>
-                  ))}
-                  {!manual.length && (
-                    <tr>
-                      <td colSpan={4} className="admin-empty">
-                        No manual overrides.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
+      {activeTab === 'prices' && <AdminPricesSection />}
 
       {activeTab === 'staking' && (
         <StakingAdminSection refreshKey={tableRefreshKey} onMutate={bumpTables} />

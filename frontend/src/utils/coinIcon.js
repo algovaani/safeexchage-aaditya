@@ -28,14 +28,15 @@ const CG_ICON = {
   'polygon-ecosystem-token': 'https://assets.coingecko.com/coins/images/32440/small/polygon.png',
 };
 
-export function resolveCoinIconUrl({ imageUrl, symbol, coingeckoId, type } = {}) {
+export function resolveCoinIconUrl({ imageUrl, symbol, coingeckoId, type, baseAsset } = {}) {
   if (imageUrl) return imageUrl;
   if (type === 'commodity') return null;
 
   const cg = String(coingeckoId || '').trim();
   if (cg && CG_ICON[cg]) return CG_ICON[cg];
 
-  const base = String(symbol || '').toUpperCase();
+  let base = String(baseAsset || symbol || '').toUpperCase();
+  base = base.replace(/USDT$|BUSD$|USDC$|INR$/i, '') || base;
   const slug = ICON_SLUG[base] || base.toLowerCase();
   if (!slug) return null;
 
@@ -43,6 +44,11 @@ export function resolveCoinIconUrl({ imageUrl, symbol, coingeckoId, type } = {})
 }
 
 export function coinIconFallbackLabel(row) {
-  if (row?.type === 'commodity') return row.symbol === 'GOLD' ? 'Au' : 'Ag';
-  return String(row?.symbol || '?').slice(0, 2);
+  const sym = String(row?.baseAsset || row?.symbol || '?').toUpperCase();
+  if (row?.type === 'commodity' || sym.endsWith('INR') || sym === 'GOLD' || sym === 'SILVER') {
+    if (sym.includes('GOLD') || sym === 'XAU') return 'Au';
+    if (sym.includes('SILVER') || sym === 'XAG') return 'Ag';
+  }
+  const base = sym.replace(/USDT$|BUSD$|USDC$|INR$/i, '') || sym;
+  return base.slice(0, 2);
 }

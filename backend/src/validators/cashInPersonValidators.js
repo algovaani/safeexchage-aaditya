@@ -3,6 +3,7 @@ import { body, param, query } from 'express-validator';
 export const submitCashInPersonValidators = [
   body('mobile').trim().notEmpty().withMessage('Mobile number is required').isLength({ max: 20 }),
   body('city').trim().notEmpty().withMessage('City is required').isLength({ max: 120 }),
+  body('type').optional().isIn(['deposit', 'withdraw']).withMessage('Type must be deposit or withdraw'),
   body('amount')
     .optional({ nullable: true })
     .isFloat({ min: 0 })
@@ -13,6 +14,7 @@ export const adminCashInPersonListValidators = [
   query('page').optional().isInt({ min: 1 }),
   query('pageSize').optional().isInt({ min: 1, max: 200 }),
   query('status').optional().isIn(['pending', 'approved', 'rejected']),
+  query('type').optional().isIn(['deposit', 'withdraw']),
   query('search').optional().isString(),
   query('sortBy').optional().isString(),
   query('sortDir').optional().isIn(['asc', 'desc']),

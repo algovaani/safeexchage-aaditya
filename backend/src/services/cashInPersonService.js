@@ -7,6 +7,7 @@ export function formatCashInPersonRequest(doc, { includeUser = false } = {}) {
   const payload = {
     id: doc._id,
     userId: doc.userId?._id || doc.userId,
+    type: doc.type === 'withdraw' ? 'withdraw' : 'deposit',
     mobile: doc.mobile,
     city: doc.city,
     requestedAmount: doc.requestedAmount ?? null,
@@ -37,38 +38,54 @@ export async function approveCashInPersonRequest(request, reviewedBy, amount, io
     throw Object.assign(new Error('Only pending requests can be approved'), { status: 400 });
   }
 
-  const creditAmount = roundMoney(Number(amount));
-  if (!(creditAmount > 0)) {
-    throw Object.assign(new Error('A valid credit amount is required'), { status: 400 });
+  const settleAmount = roundMoney(Number(amount));
+  if (!(settleAmount > 0)) {
+    throw Object.assign(new Error('A valid amount is required'), { status: 400 });
   }
 
-  const wallet = await Wallet.findOneAndUpdate(
-    { userId: request.userId },
-    { $inc: { balance: creditAmount }, $setOnInsert: { currency: 'USDT' } },
-    { upsert: true, new: true }
-  );
+  const isWithdraw = request.type === 'withdraw';
+  let wallet;
+
+  if (isWithdraw) {
+    wallet = await Wallet.findOneAndUpdate(
+      { userId: request.userId, balance: { $gte: settleAmount } },
+      { $inc: { balance: -settleAmount } },
+      { new: true }
+    );
+    if (!wallet) {
+      throw Object.assign(new Error('Insufficient wallet balance for withdraw'), { status: 400 });
+    }
+  } else {
+    wallet = await Wallet.findOneAndUpdate(
+      { userId: request.userId },
+      { $inc: { balance: settleAmount }, $setOnInsert: { currency: 'USDT' } },
+      { upsert: true, new: true }
+    );
+  }
 
   const transaction = await Transaction.create({
     userId: request.userId,
-    type: 'deposit',
-    amount: creditAmount,
+    type: isWithdraw ? 'withdrawal' : 'deposit',
+    amount: settleAmount,
     balanceAfter: roundMoney(wallet.balance),
     currency: 'USDT',
     status: 'completed',
     method: 'fiat',
-    reference: `Cash in person — ${request.city}`,
+    reference: `Cash in person ${isWithdraw ? 'withdraw' : 'deposit'} — ${request.city}`,
     adminNote: request.adminNote || '',
   });
 
   request.status = 'approved';
-  request.creditedAmount = creditAmount;
+  request.creditedAmount = settleAmount;
   request.reviewedBy = reviewedBy;
   request.reviewedAt = new Date();
   request.transactionId = transaction._id;
   await request.save();
 
   if (io) {
-    await emitWalletUpdate(io, request.userId, { reason: 'cash_in_person_approved' });
+    await emitWalletUpdate(io, request.userId, {
+      reason: isWithdraw ? 'cash_in_person_withdraw' : 'cash_in_person_deposit',
+    });
   }
 
   return { request, wallet, transaction };

@@ -1592,3 +1592,35 @@ html.dark .admin-badge--cancelled {
     width: 100%;
   }
 }
+
+.admin-prices__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.admin-prices__table .admin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-prices__pulse-input {
+  width: 140px;
+  max-width: 100%;
+}
+
+.admin-muted {
+  color: var(--admin-muted, #8b95a8);
+  font-size: 0.875rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spin {
+  animation: spin 0.8s linear infinite;
+}

@@ -17,6 +17,7 @@ import {
 
 const EXPORT_COLUMNS = [
   { key: 'userLabel', label: 'User', export: (r) => r.userLabel || '' },
+  { key: 'type', label: 'Type', export: (r) => r.type || 'deposit' },
   { key: 'mobile', label: 'Mobile' },
   { key: 'city', label: 'City' },
   {
@@ -26,7 +27,7 @@ const EXPORT_COLUMNS = [
   },
   {
     key: 'creditedAmount',
-    label: 'Credited (USDT)',
+    label: 'Settled (USDT)',
     export: (r) => (r.creditedAmount != null ? r.creditedAmount : ''),
   },
   { key: 'status', label: 'Status' },
@@ -36,6 +37,7 @@ const EXPORT_COLUMNS = [
 async function buildAdminFilter(query, search) {
   const filter = { ...buildDateRangeFilter(query) };
   if (query.status) filter.status = query.status;
+  if (query.type === 'deposit' || query.type === 'withdraw') filter.type = query.type;
 
   const re = searchRegex(search);
   if (re) {
@@ -122,7 +124,9 @@ export async function verifyRequest(req, res, next) {
       return success(
         res,
         enrichRow(updated.toObject()),
-        'Request approved and wallet credited'
+        request.type === 'withdraw'
+          ? 'Request approved and wallet debited'
+          : 'Request approved and wallet credited'
       );
     }
 

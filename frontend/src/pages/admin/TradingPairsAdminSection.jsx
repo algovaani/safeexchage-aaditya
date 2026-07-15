@@ -13,6 +13,7 @@ import {
 import { api, parseApiResponse } from '../../services/api.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDialog } from '../../context/DialogContext.jsx';
+import { CoinLabel } from '../../components/CoinIcon.jsx';
 
 const CHAINS = [
   { value: 'ethereum', label: 'Ethereum (ERC-20)' },
@@ -342,7 +343,17 @@ export default function TradingPairsAdminSection() {
               <tbody>
                 {pairs.map((p) => (
                   <tr key={p.id || p.symbol} className={!p.isActive ? 'admin-coins__row--hidden' : ''}>
-                    <td><strong className="admin-coins__pair">{p.displayPair}</strong></td>
+                    <td>
+                      <CoinLabel
+                        symbol={p.baseAsset || String(p.symbol).replace(/USDT$|INR$/, '')}
+                        imageUrl={p.imageUrl}
+                        coingeckoId={p.coingeckoId}
+                        type={p.category === 'commodity' ? 'commodity' : 'crypto'}
+                        name={p.name}
+                        label={p.displayPair}
+                        size={24}
+                      />
+                    </td>
                     <td>{p.name || p.baseAsset}</td>
                     <td>
                       <span className={`admin-coins__tag admin-coins__tag--${p.priceSource || 'binance'}`}>

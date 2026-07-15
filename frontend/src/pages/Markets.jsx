@@ -6,8 +6,8 @@ import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { TRADING_PAIRS } from '../config/tradingPairs.js';
 import { LIST_MARKET_POLL_MS } from '../config/marketPoll.js';
 import DataTable from '../components/DataTable.jsx';
+import CoinIcon from '../components/CoinIcon.jsx';
 import { fmtINR, fmtPct } from '../utils/format.js';
-import { coinIconFallbackLabel, resolveCoinIconUrl } from '../utils/coinIcon.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import './Markets.css';
 
@@ -95,21 +95,16 @@ function formatPrice(row, toInr) {
 }
 
 function AssetIcon({ row }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const iconUrl = imgFailed ? null : resolveCoinIconUrl(row);
-  const fallback = coinIconFallbackLabel(row);
-  const isCommodity = row.type === 'commodity';
-
   return (
-    <span
-      className={`markets-dt__icon${isCommodity ? ' markets-dt__icon--commodity' : ''}${iconUrl ? ' markets-dt__icon--img' : ''}`}
-    >
-      {iconUrl ? (
-        <img src={iconUrl} alt="" loading="lazy" onError={() => setImgFailed(true)} />
-      ) : (
-        fallback
-      )}
-    </span>
+    <CoinIcon
+      symbol={row.symbol}
+      imageUrl={row.imageUrl}
+      coingeckoId={row.coingeckoId}
+      type={row.type}
+      name={row.name}
+      size={32}
+      className="markets-dt__icon"
+    />
   );
 }
 

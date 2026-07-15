@@ -15,6 +15,7 @@ import {
 } from './tradingPairService.js';
 import * as coingeckoMarket from './coingeckoService.js';
 import { fetchCommodityPrices, fetchCommodityTicker, fetchCommodityKlines, fetchCommodityDepth, isCommoditySymbol } from './commodityService.js';
+import { getActivePulsePrice } from './pricePulseService.js';
 import {
   normalizeSymbol,
   toDisplayPair,
@@ -243,8 +244,17 @@ export async function fetchTicker(symbol, opts = {}) {
     throw err;
   }
 
-  recordPriceTick(sym, row.price);
-  return { ...row, stale: result.stale, updatedAt: result.updatedAt };
+  const pulsed = getActivePulsePrice(sym);
+  const price = pulsed != null ? pulsed : row.price;
+  recordPriceTick(sym, price);
+  return {
+    ...row,
+    price,
+    lastPrice: price,
+    pulsed: pulsed != null,
+    stale: result.stale,
+    updatedAt: result.updatedAt,
+  };
 }
 
 export async function fetchPriceMap(opts = {}) {

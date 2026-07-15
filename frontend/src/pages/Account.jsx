@@ -5,15 +5,28 @@ import { WALLET_ASSETS } from '../theme/assets.js';
 import DepositModal from '../components/DepositModal.jsx';
 import WithdrawModal from '../components/WithdrawModal.jsx';
 import CashInPersonModal from '../components/CashInPersonModal.jsx';
+import CoinIcon from '../components/CoinIcon.jsx';
 import { fmtINR, fmtUSD } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
+import { useTradingPairs } from '../context/TradingPairsContext.jsx';
+
+function fmtQty(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n === 0) return '0';
+  if (n >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+  if (n >= 1) return n.toFixed(6).replace(/\.?0+$/, '');
+  return n.toFixed(8).replace(/\.?0+$/, '');
+}
 
 export default function Account() {
   const { user } = useAuth();
-  const { toInr } = usePlatformConfig();
+  const { toInr, usdtInrRate } = usePlatformConfig();
+  const { pairs } = useTradingPairs();
   const [spotUsdt, setSpotUsdt] = useState(null);
   const [lockedUsdt, setLockedUsdt] = useState(0);
-  const [hideZero, setHideZero] = useState(false);
+  const [assetBalances, setAssetBalances] = useState([]);
+  const [priceMap, setPriceMap] = useState({});
+  const [hideZero, setHideZero] = useState(true);
   const [search, setSearch] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
@@ -29,13 +42,36 @@ export default function Account() {
   });
   const [walletBusy, setWalletBusy] = useState(false);
 
+  function applyWallet(wallet) {
+    if (!wallet) return;
+    setSpotUsdt(wallet?.balance_usdt ?? wallet?.balance ?? 0);
+    setLockedUsdt(wallet?.locked_balance ?? 0);
+    if (Array.isArray(wallet?.assets)) {
+      setAssetBalances(wallet.assets);
+    }
+  }
+
   async function refresh() {
     setLoading(true);
     try {
-      const { data } = await api.get('/wallet/balance');
-      const wallet = parseApiResponse(data);
-      setSpotUsdt(wallet?.balance_usdt ?? wallet?.balance ?? 0);
-      setLockedUsdt(wallet?.locked_balance ?? 0);
+      const [{ data: balRes }, { data: priceRes }] = await Promise.all([
+        api.get('/wallet/balance'),
+        api.get('/market/prices/live').catch(() => ({ data: null })),
+      ]);
+      applyWallet(parseApiResponse(balRes));
+
+      const live = parseApiResponse(priceRes);
+      const pairsLive = Array.isArray(live?.pairs) ? live.pairs : [];
+      const next = {};
+      for (const row of pairsLive) {
+        const sym = String(row.symbol || '').toUpperCase();
+        const base = sym.replace(/USDT$|INR$/i, '');
+        const price = Number(row.price ?? row.lastPrice ?? 0);
+        if (!base || !(price > 0)) continue;
+        // Prefer USDT pair for valuation when both exist
+        if (sym.endsWith('USDT') || !next[base]) next[base] = { price, quote: sym.endsWith('INR') ? 'INR' : 'USDT' };
+      }
+      setPriceMap(next);
     } finally {
       setLoading(false);
     }
@@ -66,31 +102,90 @@ export default function Account() {
 
   useEffect(() => {
     const onWallet = (e) => {
-      const w = e.detail;
-      if (!w) return;
-      setSpotUsdt(w.balance_usdt ?? w.balance ?? 0);
-      setLockedUsdt(w.locked_balance ?? 0);
+      applyWallet(e.detail);
     };
     window.addEventListener('wallet:updated', onWallet);
     return () => window.removeEventListener('wallet:updated', onWallet);
   }, []);
 
+  const pairMetaByBase = useMemo(() => {
+    const map = new Map();
+    for (const p of pairs || []) {
+      const base = String(p.baseAsset || p.symbol || '').replace(/USDT$|INR$/i, '').toUpperCase();
+      if (base && !map.has(base)) map.set(base, p);
+    }
+    return map;
+  }, [pairs]);
+
   const rows = useMemo(() => {
-    return WALLET_ASSETS.map((a) => {
-      const isUsdt = a.symbol === 'USDT';
-      const main = 0;
-      const spot = isUsdt ? Number(spotUsdt ?? 0) : 0;
-      return { ...a, main, spot, total: main + spot };
+    const byAsset = new Map(
+      (assetBalances || []).map((a) => [String(a.asset || '').toUpperCase(), a])
+    );
+
+    const symbols = new Set([
+      'USDT',
+      ...WALLET_ASSETS.map((a) => a.symbol),
+      ...byAsset.keys(),
+    ]);
+
+    return [...symbols].map((symbol) => {
+      const isUsdt = symbol === 'USDT';
+      const held = byAsset.get(symbol);
+      const qty = isUsdt ? Number(spotUsdt ?? 0) : Number(held?.balance ?? 0);
+      const locked = isUsdt ? Number(lockedUsdt ?? 0) : Number(held?.locked_balance ?? 0);
+      const available = Math.max(0, qty - locked);
+      const meta = pairMetaByBase.get(symbol);
+      const px = priceMap[symbol];
+      let usdtValue = null;
+      if (isUsdt) {
+        usdtValue = qty;
+      } else if (px?.price > 0) {
+        if (px.quote === 'INR') {
+          const rate = Number(usdtInrRate) > 0 ? Number(usdtInrRate) : 83.5;
+          usdtValue = (qty * px.price) / rate;
+        } else {
+          usdtValue = qty * px.price;
+        }
+      }
+
+      return {
+        symbol,
+        name: meta?.name || symbol,
+        imageUrl: meta?.imageUrl,
+        coingeckoId: meta?.coingeckoId,
+        type: meta?.category === 'commodity' ? 'commodity' : 'crypto',
+        qty,
+        available,
+        locked,
+        usdtValue,
+        canDeposit: WALLET_ASSETS.some((a) => a.symbol === symbol) || isUsdt,
+      };
+    }).sort((a, b) => {
+      if (a.symbol === 'USDT') return -1;
+      if (b.symbol === 'USDT') return 1;
+      return (b.qty || 0) - (a.qty || 0) || a.symbol.localeCompare(b.symbol);
     });
-  }, [spotUsdt]);
+  }, [assetBalances, spotUsdt, lockedUsdt, pairMetaByBase, priceMap, usdtInrRate]);
 
   const visible = useMemo(() => {
     let list = rows;
-    if (hideZero) list = list.filter((r) => r.main !== 0 || r.spot !== 0);
+    if (hideZero) list = list.filter((r) => r.qty > 0 || r.symbol === 'USDT');
     const q = search.trim().toUpperCase();
-    if (q) list = list.filter((r) => r.symbol.includes(q));
+    if (q) {
+      list = list.filter(
+        (r) => r.symbol.includes(q) || String(r.name || '').toUpperCase().includes(q)
+      );
+    }
     return list;
   }, [rows, hideZero, search]);
+
+  const portfolioUsdt = useMemo(() => {
+    const fromAssets = rows.reduce((sum, r) => {
+      if (r.symbol === 'USDT') return sum;
+      return sum + (Number(r.usdtValue) || 0);
+    }, 0);
+    return Number(spotUsdt ?? 0) + fromAssets;
+  }, [rows, spotUsdt]);
 
   function onDeposit(symbol) {
     setDepositCoin(symbol);
@@ -114,8 +209,7 @@ export default function Account() {
     }
   }
 
-  const portfolio = spotUsdt != null ? Number(spotUsdt) : null;
-  const available = Math.max(0, (portfolio ?? 0) - Number(lockedUsdt || 0));
+  const availableUsdt = Math.max(0, Number(spotUsdt ?? 0) - Number(lockedUsdt || 0));
 
   return (
     <div className="space-y-8">
@@ -128,14 +222,14 @@ export default function Account() {
         <div>
           <p className="stat-card__label">Total Balance</p>
           <p className="text-3xl font-medium tabular-nums text-text-primary mt-1">
-            {loading ? '…' : fmtINR(toInr(portfolio ?? 0))}
+            {loading ? '…' : fmtINR(toInr(portfolioUsdt))}
           </p>
           <p className="text-sm text-text-muted mt-1">
-            ≈ {portfolio != null ? fmtUSD(portfolio) : '—'} USDT
+            ≈ {fmtUSD(portfolioUsdt)} USDT
           </p>
           {!loading && lockedUsdt > 0 && (
             <p className="text-xs text-text-secondary mt-1">
-              Available: {fmtINR(toInr(available))} · Locked: {fmtINR(toInr(lockedUsdt))}
+              Available USDT: {fmtINR(toInr(availableUsdt))} · Locked: {fmtINR(toInr(lockedUsdt))}
             </p>
           )}
         </div>
@@ -156,7 +250,7 @@ export default function Account() {
           <div>
             <h2 className="text-sm font-medium text-text-primary">Assets</h2>
             <p className="text-xs text-text-secondary mt-0.5">
-              {visible.length} asset{visible.length !== 1 ? 's' : ''} shown
+              Purchased coin balances · {visible.length} asset{visible.length !== 1 ? 's' : ''} shown
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -184,10 +278,10 @@ export default function Account() {
             <thead>
               <tr>
                 <th>Asset</th>
-                <th>Total Balance</th>
+                <th>Coins held</th>
                 <th>Available</th>
                 <th>In Orders</th>
-                <th>INR Value</th>
+                <th>Est. value</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -201,30 +295,62 @@ export default function Account() {
                 >
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center gap-2">
-                      <span
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                        style={{ background: r.color }}
-                      >
-                        {r.symbol.slice(0, 2)}
-                      </span>
+                      <CoinIcon
+                        symbol={r.symbol}
+                        imageUrl={r.imageUrl}
+                        coingeckoId={r.coingeckoId}
+                        type={r.type}
+                        name={r.name}
+                        size={28}
+                      />
                       <span>
                         <strong className="text-text-primary">{r.symbol}</strong>
-                        {r.symbol === 'USDT' && (
-                          <small className="block text-xs text-accent">Primary</small>
-                        )}
+                        <small className="block text-xs text-text-muted">
+                          {r.symbol === 'USDT' ? 'Primary balance' : r.name}
+                        </small>
                       </span>
                     </span>
                   </td>
-                  <td className="tabular-nums">{r.total.toFixed(8)}</td>
-                  <td className="tabular-nums">{r.spot.toFixed(8)}</td>
-                  <td className="tabular-nums text-text-muted">0</td>
                   <td className="tabular-nums">
-                    {r.symbol === 'USDT' ? fmtINR(toInr(r.total)) : '—'}
+                    <strong>{fmtQty(r.qty)}</strong>
+                    <span className="text-text-muted text-xs ml-1">{r.symbol}</span>
+                  </td>
+                  <td className="tabular-nums">{fmtQty(r.available)}</td>
+                  <td className="tabular-nums text-text-muted">{fmtQty(r.locked)}</td>
+                  <td className="tabular-nums">
+                    {r.usdtValue != null ? (
+                      <>
+                        <div>{fmtINR(toInr(r.usdtValue))}</div>
+                        <div className="text-xs text-text-muted">≈ {fmtUSD(r.usdtValue)}</div>
+                      </>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td>
                     <div className="flex flex-wrap gap-3">
-                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onDeposit(r.symbol)}>Deposit</button>
-                      <button type="button" className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0" onClick={() => onWithdraw(r.symbol)}>Withdraw</button>
+                      {r.canDeposit || r.symbol === 'USDT' ? (
+                        <>
+                          <button
+                            type="button"
+                            className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0"
+                            onClick={() => onDeposit(r.symbol === 'USDT' ? 'USDT' : r.symbol)}
+                          >
+                            Deposit
+                          </button>
+                          {r.symbol === 'USDT' && (
+                            <button
+                              type="button"
+                              className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0"
+                              onClick={() => onWithdraw('USDT')}
+                            >
+                              Withdraw
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-text-muted">Spot holdings</span>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -232,7 +358,7 @@ export default function Account() {
               {!visible.length && (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-text-secondary">
-                    No assets match your filters.
+                    {loading ? 'Loading balances…' : 'No purchased coins yet. Buy on Trade to see holdings here.'}
                   </td>
                 </tr>
               )}
@@ -290,7 +416,7 @@ export default function Account() {
         <WithdrawModal
           coin={withdrawCoin}
           platformInfo={platformInfo}
-          availableBalance={available}
+          availableBalance={availableUsdt}
           onClose={() => setWithdrawCoin(null)}
           onSuccess={refresh}
         />

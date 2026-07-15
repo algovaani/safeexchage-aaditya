@@ -175,6 +175,9 @@
 .fut-toolbar__pair {
   font-size: 0.72rem;
   color: var(--fut-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .fut-chart-body {

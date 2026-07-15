@@ -158,6 +158,8 @@ r.get('/orders', adminOrdersListValidators, validateRequest, a.listAllOrders);
 r.post('/manual-prices', validateBody(manualPriceSchema), a.upsertManualPrice);
 r.get('/manual-prices', a.listManualPrices);
 r.delete('/manual-prices/:id', a.deleteManualPrice);
+r.post('/prices/pulse', a.pulsePrice);
+r.get('/prices/pulses', a.listPricePulses);
 r.use('/dashboard', dashboardRoutes);
 r.use('/reports', reportsRoutes);
 r.use('/trades', tradeRoutes);

@@ -526,6 +526,29 @@
   color: #94a3b8;
 }
 
+.cash-in-person-modal__type-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.cash-in-person-modal__type-tabs button {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: #cbd5e1;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cash-in-person-modal__type-tabs button.is-active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
 .deposit-modal__scan-hint {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;

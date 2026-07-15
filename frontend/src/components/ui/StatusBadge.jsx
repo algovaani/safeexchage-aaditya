@@ -13,6 +13,7 @@ const STYLES = {
   sell: 'badge-red',
   hold: 'badge-amber',
   deposit: 'badge-green',
+  withdraw: 'badge-amber',
   withdrawal: 'badge-amber',
   trade: 'badge-blue',
   trade_margin_locked: 'badge-amber',

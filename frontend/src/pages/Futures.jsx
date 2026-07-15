@@ -7,6 +7,7 @@ import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import { TRADE_MARKET_POLL_MS, DEPTH_POLL_MS } from '../config/marketPoll.js';
 import { acquireMarketSocket, releaseMarketSocket, getUserSocket } from '../services/appSocket.js';
+import CoinIcon from '../components/CoinIcon.jsx';
 import './Futures.css';
 
 const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
@@ -94,7 +95,7 @@ export default function Futures() {
   const toast = useToast();
   const { user, token } = useAuth();
   const { wallet: rtWallet, walletVersion } = useRealtime();
-  const { symbols: watchlistSymbols } = useTradingPairs();
+  const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
 
   const [symbol, setSymbol] = useState('BTCUSDT');
@@ -640,7 +641,15 @@ export default function Futures() {
                 </button>
               ))}
             </div>
-            <span className="fut-toolbar__pair">{pairLabel}</span>
+            <span className="fut-toolbar__pair">
+              <CoinIcon
+                symbol={base}
+                imageUrl={tradingPairs.find((p) => p.symbol === symbol)?.imageUrl}
+                coingeckoId={tradingPairs.find((p) => p.symbol === symbol)?.coingeckoId}
+                size={22}
+              />
+              {pairLabel}
+            </span>
           </div>
           <div className="fut-chart-body">
             <Suspense fallback={<div className="fut-chart-loading">Loading chart…</div>}>
