@@ -36,6 +36,7 @@ import { startStakingCron } from './services/stakingRewardService.js';
 import { startChainDepositWatcher } from './services/chainWatcherService.js';
 import { evmScannerStatus } from './services/evmDepositScanService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
+import { repairMisCreditedNativeDeposits } from './services/depositService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
 import { installGracefulShutdown, installProcessHandlers } from './config/processStability.js';
 import { isDbConnected } from './config/db.js';
@@ -164,6 +165,14 @@ async function startBackgroundJobs() {
     await ensureCommodityPairs();
     await refreshTradingPairCache();
     console.info('[pairs] Trading pair cache loaded');
+    try {
+      const { repaired, scanned } = await repairMisCreditedNativeDeposits();
+      if (repaired > 0) {
+        console.info(`[deposits] Repaired ${repaired} native crypto deposit(s) (scanned ${scanned})`);
+      }
+    } catch (err) {
+      console.warn('[deposits] Native deposit repair skipped:', err.message);
+    }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);
   }

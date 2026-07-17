@@ -1,4 +1,5 @@
 import path from 'path';
+import { Deposit } from '../models/Deposit.js';
 import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { storedFiatProofPath } from '../middleware/fiatDepositUpload.js';
@@ -217,4 +218,66 @@ export async function rejectDepositWithReversal(deposit, reviewedBy, note = '') 
   await deposit.save();
 
   return deposit;
+}
+
+/**
+ * Fix approved non-USDT crypto deposits that were incorrectly credited as USDT.
+ * Idempotent — skips deposits already recorded in the native asset currency.
+ */
+export async function repairMisCreditedNativeDeposits({ userId } = {}) {
+  const filter = {
+    type: 'crypto',
+    status: 'approved',
+    currency: { $nin: ['USDT', 'usdt'] },
+  };
+  if (userId) filter.userId = userId;
+
+  const deposits = await Deposit.find(filter).lean();
+  let repaired = 0;
+
+  for (const dep of deposits) {
+    if (!isNativeCryptoDeposit(dep) || !dep.transactionId) continue;
+
+    const tx = await Transaction.findById(dep.transactionId).lean();
+    if (!tx || tx.status !== 'completed') continue;
+
+    const currency = String(dep.currency || '').toUpperCase();
+    if (tx.currency === currency) continue;
+    if (tx.currency !== 'USDT') continue;
+
+    // Claim this deposit atomically so concurrent repairs cannot double-credit.
+    const claimed = await Transaction.findOneAndUpdate(
+      { _id: dep.transactionId, currency: 'USDT', status: 'completed' },
+      {
+        amount: roundMoney(dep.amount),
+        currency,
+        reference: depositCreditReference({ ...dep, _id: dep._id }),
+      },
+      { new: true }
+    );
+    if (!claimed) continue;
+
+    const usdtAmount = roundMoney(dep.usdtAmount ?? tx.amount);
+
+    const wallet = await Wallet.findOne({ userId: dep.userId });
+    if (wallet && usdtAmount > 0) {
+      const debit = Math.min(wallet.balance, usdtAmount);
+      if (debit > 0) {
+        wallet.balance = roundMoney(wallet.balance - debit);
+        await wallet.save();
+      }
+    }
+
+    const assetRow = await creditAsset(dep.userId, currency, dep.amount);
+    const balanceAfter = roundMoney(assetRow?.balance ?? 0);
+
+    await Transaction.findByIdAndUpdate(dep.transactionId, { balanceAfter });
+
+    repaired += 1;
+    console.info(
+      `[deposits] repaired ${dep.amount} ${currency} for user ${dep.userId} (removed ${usdtAmount} USDT miscredit)`
+    );
+  }
+
+  return { repaired, scanned: deposits.length };
 }
