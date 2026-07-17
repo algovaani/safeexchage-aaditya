@@ -7,6 +7,7 @@ import { Withdrawal } from '../models/Withdrawal.js';
 import {
   computeDepositUsdtCredit,
   depositCreditReference,
+  isNativeCryptoDeposit,
 } from './depositConversionService.js';
 import { roundMoney } from '../utils/money.js';
 
@@ -188,14 +189,17 @@ export async function ensureOpeningBalanceTransaction(userId) {
 
 export async function createPendingDepositTransaction(deposit) {
   const method = deposit.type === 'crypto' ? 'crypto' : 'fiat';
-  const usdtAmount = deposit.usdtAmount ?? deposit.amount;
+  const creditNativeAsset = isNativeCryptoDeposit(deposit);
+  const currency = String(deposit.currency || 'USDT').toUpperCase();
+  const amount = creditNativeAsset ? roundMoney(deposit.amount) : roundMoney(deposit.usdtAmount ?? deposit.amount);
+  const txCurrency = creditNativeAsset ? currency : 'USDT';
   const reference = depositCreditReference(deposit);
 
   const transaction = await Transaction.create({
     userId: deposit.userId,
     type: 'deposit',
-    amount: usdtAmount,
-    currency: 'USDT',
+    amount,
+    currency: txCurrency,
     status: 'pending',
     method,
     reference,

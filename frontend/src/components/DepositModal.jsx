@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { depositAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { FIAT_DEPOSIT_SYMBOLS } from '../config/depositNetworks.js';
 import { isCryptoDepositSupported } from '../config/cryptoDepositChains.js';
-import { WALLET_ASSETS } from '../theme/assets.js';
 import CryptoDepositView from './CryptoDepositView.jsx';
 import './DepositModal.css';
 
@@ -92,11 +92,30 @@ function FiatDepositForm({ coin, platformInfo, onClose, onSuccess }) {
 }
 
 export default function DepositModal({ coin: initialCoin, platformInfo, onClose, onSuccess }) {
+  const { pairs } = useTradingPairs();
   const [selectedCoin, setSelectedCoin] = useState(initialCoin || 'USDT');
 
+  const depositCoins = useMemo(() => {
+    const map = new Map();
+    map.set('USDT', { symbol: 'USDT' });
+    for (const p of pairs || []) {
+      if (p.isActive === false || p.category === 'commodity') continue;
+      const base = String(p.baseAsset || '').toUpperCase();
+      if (!base || map.has(base)) continue;
+      map.set(base, p);
+    }
+    return [...map.entries()].map(([symbol, meta]) => ({ symbol, meta }));
+  }, [pairs]);
+
+  const pairMeta = useMemo(() => {
+    const row = depositCoins.find((c) => c.symbol === selectedCoin);
+    const meta = row?.meta;
+    if (!meta || meta.symbol === selectedCoin) return meta && meta.baseAsset ? meta : null;
+    return meta?.baseAsset ? meta : null;
+  }, [depositCoins, selectedCoin]);
+
   const isFiat = FIAT_DEPOSIT_SYMBOLS.has(String(selectedCoin || '').toUpperCase());
-  const coinColor = WALLET_ASSETS.find((a) => a.symbol === selectedCoin)?.color || '#f0b90b';
-  const cryptoSupported = isCryptoDepositSupported(selectedCoin);
+  const cryptoSupported = isCryptoDepositSupported(selectedCoin, pairMeta);
 
   useEffect(() => {
     setSelectedCoin(initialCoin || 'USDT');
@@ -121,7 +140,7 @@ export default function DepositModal({ coin: initialCoin, platformInfo, onClose,
       <div className="deposit-modal deposit-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="deposit-modal-title">
         <header className="deposit-modal__header">
           <div className="deposit-modal__title-wrap">
-            <span className="deposit-modal__coin-icon" style={{ background: coinColor }}>{selectedCoin.slice(0, 2)}</span>
+            <span className="deposit-modal__coin-icon" style={{ background: '#f0b90b' }}>{selectedCoin.slice(0, 2)}</span>
             <div>
               <h2 id="deposit-modal-title">Deposit {selectedCoin}</h2>
               <p className="deposit-modal__subtitle">
@@ -136,8 +155,8 @@ export default function DepositModal({ coin: initialCoin, platformInfo, onClose,
           <div className="deposit-modal__field deposit-modal__field--coin">
             <label htmlFor="deposit-coin">Asset</label>
             <select id="deposit-coin" className="deposit-modal__select" value={selectedCoin} onChange={(e) => setSelectedCoin(e.target.value)}>
-              {WALLET_ASSETS.map((a) => (
-                <option key={a.symbol} value={a.symbol}>{a.symbol}</option>
+              {depositCoins.map(({ symbol }) => (
+                <option key={symbol} value={symbol}>{symbol}</option>
               ))}
             </select>
           </div>
@@ -145,7 +164,7 @@ export default function DepositModal({ coin: initialCoin, platformInfo, onClose,
           {isFiat ? (
             <FiatDepositForm coin={selectedCoin} platformInfo={platformInfo} onClose={onClose} onSuccess={onSuccess} />
           ) : cryptoSupported ? (
-            <CryptoDepositView coin={selectedCoin} onSubmitted={onSuccess} />
+            <CryptoDepositView coin={selectedCoin} pairMeta={pairMeta} onSubmitted={onSuccess} />
           ) : (
             <p className="deposit-modal__error">
               On-chain deposit for {selectedCoin} is not available. Please use BNB, ETH, TRX, or USDT.

@@ -4,6 +4,7 @@ build/
 .env
 .env.local
 uploads/
+storage/
 *.log
 .DS_Store
 coverage/

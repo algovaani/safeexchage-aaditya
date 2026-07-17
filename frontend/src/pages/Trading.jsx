@@ -77,22 +77,23 @@ export default function Trading() {
   const toast = useToast();
   const { user } = useAuth();
   const { toInr, usdtInrRate } = usePlatformConfig();
-  const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
+  const { pairs: tradingPairs, symbols: watchlistSymbols, refresh: refreshPairs } = useTradingPairs();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const loginReturn = { from: { pathname: '/trade' } };
-  const [symbol, setSymbol] = useState('BNBUSDT');
-  const [marketTab, setMarketTab] = useState('USDT');
+  const [symbol, setSymbol] = useState(() => searchParams.get('symbol')?.toUpperCase() || 'BNBUSDT');
+  const [marketTab, setMarketTab] = useState(() => {
+    const s = searchParams.get('symbol')?.toUpperCase() || '';
+    return s.endsWith('INR') ? 'INR' : 'USDT';
+  });
   const [search, setSearch] = useState('');
   const [chartInterval, setChartInterval] = useState('4h');
   const [candles, setCandles] = useState([]);
-  const [tableRows, setTableRows] = useState([]);
-  const [tableTotal, setTableTotal] = useState(0);
-  const [tablePage, setTablePage] = useState(1);
-  const [tablePageSize, setTablePageSize] = useState(10);
-  const [tableTotalPages, setTableTotalPages] = useState(1);
   const [tableSearch, setTableSearch] = useState('');
-  const [tableLoading, setTableLoading] = useState(false);
+  const [tablePageSize, setTablePageSize] = useState(10);
+  const [orderStatusTab, setOrderStatusTab] = useState('pending');
+  const [buyTable, setBuyTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
+  const [sellTable, setSellTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
   const [ticker, setTicker] = useState(null);
   const [priceDir, setPriceDir] = useState('up');
   const prevPriceRef = useRef(null);
@@ -107,8 +108,6 @@ export default function Trading() {
   const [buyQty, setBuyQty] = useState('0.01');
   const [sellQty, setSellQty] = useState('0.01');
 
-  const [orderSideTab, setOrderSideTab] = useState('buy');
-  const [orderStatusTab, setOrderStatusTab] = useState('pending');
   const [orderBusySide, setOrderBusySide] = useState(null);
   const [mobileView, setMobileView] = useState('chart');
   const [mobileOrderSide, setMobileOrderSide] = useState('buy');
@@ -140,11 +139,25 @@ export default function Trading() {
   const filteredList = useMemo(() => {
     const q = search.trim().toUpperCase();
     const suffix = marketTab === 'INR' ? 'INR' : 'USDT';
-    return watchlistSymbols.filter((p) => p.endsWith(suffix) && (!q || p.includes(q)));
-  }, [search, watchlistSymbols, marketTab]);
+    // Prefer full pair catalog (active only) so newly added coins always appear
+    const symbols = (tradingPairs || [])
+      .filter((p) => p.isActive !== false && String(p.symbol || '').endsWith(suffix))
+      .map((p) => String(p.symbol).toUpperCase());
+    const list = symbols.length ? symbols : watchlistSymbols.filter((p) => p.endsWith(suffix));
+    return list.filter((p) => !q || p.includes(q) || (pairMeta(p, tradingPairs)?.name || '').toUpperCase().includes(q));
+  }, [search, watchlistSymbols, marketTab, tradingPairs]);
 
-  const tableFromRow = tableTotal === 0 ? 0 : (tablePage - 1) * tablePageSize + 1;
-  const tableToRow = Math.min(tablePage * tablePageSize, tableTotal);
+  useEffect(() => {
+    refreshPairs?.();
+  }, [refreshPairs]);
+
+  useEffect(() => {
+    const param = searchParams.get('symbol')?.toUpperCase();
+    if (!param) return;
+    // Accept URL symbol immediately; once catalog loads it will validate / stay selected
+    setSymbol(param);
+    setMarketTab(param.endsWith('INR') ? 'INR' : 'USDT');
+  }, [searchParams]);
 
   const buyTotal = useMemo(() => {
     const p = buyType === 'market' ? Number(ticker?.lastPrice) : parseFloat(buyPrice);
@@ -173,14 +186,6 @@ export default function Trading() {
     if (!Number.isFinite(inr) || !usdtInrRate) return '';
     return (inr / usdtInrRate).toFixed(2);
   }, [sellTotal, isInrPair, usdtInrRate]);
-
-  useEffect(() => {
-    const param = searchParams.get('symbol')?.toUpperCase();
-    if (param && watchlistSymbols.includes(param)) {
-      setSymbol(param);
-      setMarketTab(param.endsWith('INR') ? 'INR' : 'USDT');
-    }
-  }, [searchParams, watchlistSymbols]);
 
   useEffect(() => {
     if (isInrPair) {
@@ -388,56 +393,68 @@ export default function Trading() {
     };
   }, [symbol]);
 
-  const fetchTableData = useCallback(async () => {
-    if (!user) {
-      setTableRows([]);
-      setTableTotal(0);
-      setTableTotalPages(1);
-      setTableLoading(false);
-      return;
-    }
-    setTableLoading(true);
-    try {
+  const fetchSideOrders = useCallback(
+    async (side, page) => {
       const params = {
-        page: tablePage,
+        page,
         pageSize: tablePageSize,
         sortBy: 'createdAt',
         sortDir: 'desc',
-        side: orderSideTab,
+        side,
       };
       if (debouncedTableSearch) params.search = debouncedTableSearch;
 
       if (orderStatusTab === 'history') {
         const { data } = await api.get('/orders/trades', { params });
         const payload = parseApiResponse(data);
-        setTableRows(payload?.rows || []);
-        setTableTotal(payload?.total || 0);
-        setTableTotalPages(payload?.totalPages || 1);
-      } else {
-        const { data } = await api.get('/orders', {
-          params: { ...params, status: orderStatusTab },
-        });
-        const payload = parseApiResponse(data);
-        setTableRows(payload?.rows || []);
-        setTableTotal(payload?.total || 0);
-        setTableTotalPages(payload?.totalPages || 1);
+        return {
+          rows: payload?.rows || [],
+          total: payload?.total || 0,
+          totalPages: payload?.totalPages || 1,
+          page,
+          loading: false,
+        };
       }
-    } catch {
-      setTableRows([]);
-      setTableTotal(0);
-      setTableTotalPages(1);
-    } finally {
-      setTableLoading(false);
+      const { data } = await api.get('/orders', {
+        params: { ...params, status: orderStatusTab },
+      });
+      const payload = parseApiResponse(data);
+      return {
+        rows: payload?.rows || [],
+        total: payload?.total || 0,
+        totalPages: payload?.totalPages || 1,
+        page,
+        loading: false,
+      };
+    },
+    [tablePageSize, debouncedTableSearch, orderStatusTab]
+  );
+
+  const fetchTableData = useCallback(async () => {
+    if (!user) {
+      setBuyTable({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
+      setSellTable({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
+      return;
     }
-  }, [tablePage, tablePageSize, debouncedTableSearch, orderSideTab, orderStatusTab, user]);
+    setBuyTable((t) => ({ ...t, loading: true }));
+    setSellTable((t) => ({ ...t, loading: true }));
+    const empty = { rows: [], total: 0, totalPages: 1, page: 1, loading: false };
+    const [buyRes, sellRes] = await Promise.all([
+      fetchSideOrders('buy', buyTable.page).catch(() => ({ ...empty, page: buyTable.page })),
+      fetchSideOrders('sell', sellTable.page).catch(() => ({ ...empty, page: sellTable.page })),
+    ]);
+    setBuyTable(buyRes);
+    setSellTable(sellRes);
+  }, [user, buyTable.page, sellTable.page, fetchSideOrders]);
 
   useEffect(() => {
     fetchTableData();
   }, [fetchTableData]);
 
   useEffect(() => {
-    setTablePage(1);
-  }, [debouncedTableSearch, orderSideTab, orderStatusTab, tablePageSize]);
+    setBuyTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
+    setSellTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
+  }, [debouncedTableSearch, orderStatusTab, tablePageSize]);
 
   useEffect(() => {
     if (!user) {
@@ -604,6 +621,152 @@ export default function Trading() {
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches) {
       setMobileView('chart');
     }
+  }
+
+  function pageRange(table) {
+    if (!table.total) return { from: 0, to: 0 };
+    const from = (table.page - 1) * tablePageSize + 1;
+    const to = Math.min(table.page * tablePageSize, table.total);
+    return { from, to };
+  }
+
+  function renderOrderSideCard(side, table, setPage) {
+    const isBuy = side === 'buy';
+    const { from, to } = pageRange(table);
+    const emptyLabel =
+      orderStatusTab === 'history'
+        ? `No ${side} trade history yet.`
+        : `No ${orderStatusTab} ${side} orders.`;
+
+    return (
+      <div className={`ex-my-orders__card ex-my-orders__card--${side}`}>
+        <div className="ex-my-orders__card-head">
+          <h3>{isBuy ? 'Buy orders' : 'Sell orders'}</h3>
+          <span className="ex-my-orders__card-count">
+            {table.total} {table.total === 1 ? 'order' : 'orders'}
+          </span>
+        </div>
+        <div className="ex-my-orders__scroll">
+          {table.loading ? (
+            <div className="ex-my-orders__loading">Loading…</div>
+          ) : orderStatusTab === 'history' ? (
+            <div className="ex-my-orders__table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th>Price</th>
+                    <th>Amount</th>
+                    <th>Total</th>
+                    <th>Fee</th>
+                    <th>Date &amp; Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.rows.map((t) => (
+                    <tr key={t.id || t._id}>
+                      <td>
+                        <span className="ex-pair-cell">
+                          <CoinIcon
+                            symbol={String(t.symbol || '').replace(/USDT$|INR$/, '')}
+                            imageUrl={pairMeta(t.symbol, tradingPairs)?.imageUrl}
+                            coingeckoId={pairMeta(t.symbol, tradingPairs)?.coingeckoId}
+                            type={String(t.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
+                            size={18}
+                          />
+                          {orderPairLabel(t.symbol, tradingPairs)}
+                        </span>
+                      </td>
+                      <td>{formatTradePrice(t.price, pairQuote(t.symbol, tradingPairs))}</td>
+                      <td>{t.quantity}</td>
+                      <td>{t.total ?? fmtNum(Number(t.price) * Number(t.quantity), 2)}</td>
+                      <td>{t.fee != null ? fmtNum(t.fee, 4) : '—'}</td>
+                      <td>{t.createdAt ? formatMarketTime(t.createdAt) : '—'}</td>
+                    </tr>
+                  ))}
+                  {!table.rows.length && (
+                    <tr>
+                      <td colSpan={6} className="ex-empty-row">
+                        {emptyLabel}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="ex-my-orders__table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Pair</th>
+                    <th>Price</th>
+                    <th>Amount</th>
+                    <th>Total</th>
+                    <th>Date &amp; Time</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {table.rows.map((o) => (
+                    <tr key={o._id || o.id}>
+                      <td>
+                        <span className="ex-pair-cell">
+                          <CoinIcon
+                            symbol={String(o.symbol || '').replace(/USDT$|INR$/, '')}
+                            imageUrl={pairMeta(o.symbol, tradingPairs)?.imageUrl}
+                            coingeckoId={pairMeta(o.symbol, tradingPairs)?.coingeckoId}
+                            type={String(o.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
+                            size={18}
+                          />
+                          {orderPairLabel(o.symbol, tradingPairs)}
+                        </span>
+                      </td>
+                      <td>{orderDisplayPrice(o)}</td>
+                      <td>{o.quantity}</td>
+                      <td>{orderDisplayTotal(o)}</td>
+                      <td>{o.createdAt ? formatMarketTime(o.createdAt) : '—'}</td>
+                      <td>
+                        <span className="ex-status-badge">{o.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {!table.rows.length && (
+                    <tr>
+                      <td colSpan={6} className="ex-empty-row">
+                        {emptyLabel}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+        {!table.loading && table.total > 0 && (
+          <div className="ex-my-orders__pagination">
+            <span>
+              Showing {from}–{to} of {table.total}
+            </span>
+            <div className="ex-my-orders__pagination-actions">
+              <button type="button" disabled={table.page <= 1} onClick={() => setPage(table.page - 1)}>
+                Previous
+              </button>
+              <span>
+                Page {table.page} of {table.totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={table.page >= table.totalPages}
+                onClick={() => setPage(table.page + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -1012,180 +1175,63 @@ export default function Trading() {
         className={`ex-panel ex-history ex-my-orders ex-zone ex-zone--orders${mobileView === 'orders' ? ' is-active' : ''}`}
       >
         <div className="ex-history__title">My Orders</div>
-        {user && (
+        {!user ? (
+          <div className="ex-my-orders__guest">
+            <p>Log in to view your orders and trade history.</p>
+            <Link to="/login" state={loginReturn} className="btn-outline-accent no-underline">
+              Log in
+            </Link>
+          </div>
+        ) : (
           <>
-        <div className="ex-my-orders__tabs">
-          <button type="button" className={orderSideTab === 'buy' ? 'is-active' : ''} onClick={() => setOrderSideTab('buy')}>
-            Buy
-          </button>
-          <button type="button" className={orderSideTab === 'sell' ? 'is-active' : ''} onClick={() => setOrderSideTab('sell')}>
-            Sell
-          </button>
-        </div>
-        <div className="ex-my-orders__subtabs">
-          <button type="button" className={orderStatusTab === 'pending' ? 'is-active' : ''} onClick={() => setOrderStatusTab('pending')}>
-            Pending
-          </button>
-          <button type="button" className={orderStatusTab === 'completed' ? 'is-active' : ''} onClick={() => setOrderStatusTab('completed')}>
-            Completed
-          </button>
-          <button type="button" className={orderStatusTab === 'history' ? 'is-active' : ''} onClick={() => setOrderStatusTab('history')}>
-            Trade History
-          </button>
-        </div>
-        <div className="ex-my-orders__toolbar">
-          <input
-            type="search"
-            className="ex-input ex-my-orders__search"
-            placeholder={orderStatusTab === 'history' ? 'Search pair, side…' : 'Search pair, status…'}
-            value={tableSearch}
-            onChange={(e) => setTableSearch(e.target.value)}
-          />
-          <select
-            className="ex-input ex-my-orders__pagesize"
-            value={tablePageSize}
-            onChange={(e) => setTablePageSize(Number(e.target.value))}
-          >
-            {[10, 20, 50].map((n) => (
-              <option key={n} value={n}>{n} / page</option>
-            ))}
-          </select>
-        </div>
-          </>
-        )}
-        <div className="ex-my-orders__scroll">
-          {!user ? (
-            <div className="ex-my-orders__guest">
-              <p>Log in to view your orders and trade history.</p>
-              <Link to="/login" state={loginReturn} className="btn-outline-accent no-underline">
-                Log in
-              </Link>
+            <div className="ex-my-orders__subtabs">
+              <button
+                type="button"
+                className={orderStatusTab === 'pending' ? 'is-active' : ''}
+                onClick={() => setOrderStatusTab('pending')}
+              >
+                Pending
+              </button>
+              <button
+                type="button"
+                className={orderStatusTab === 'completed' ? 'is-active' : ''}
+                onClick={() => setOrderStatusTab('completed')}
+              >
+                Completed
+              </button>
+              <button
+                type="button"
+                className={orderStatusTab === 'history' ? 'is-active' : ''}
+                onClick={() => setOrderStatusTab('history')}
+              >
+                Trade History
+              </button>
             </div>
-          ) : tableLoading ? (
-            <div className="ex-my-orders__loading">Loading…</div>
-          ) : orderStatusTab === 'history' ? (
-            <div className="ex-my-orders__table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Side</th>
-                  <th>Pair</th>
-                  <th>Price</th>
-                  <th>Amount</th>
-                  <th>Total</th>
-                  <th>Fee</th>
-                  <th>Date &amp; Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.map((t) => (
-                  <tr key={t.id || t._id}>
-                    <td>
-                      <span className={`ex-status-badge ex-status-badge--${t.side}`}>{t.side}</span>
-                    </td>
-                    <td>
-                      <span className="ex-pair-cell">
-                        <CoinIcon
-                          symbol={String(t.symbol || '').replace(/USDT$|INR$/, '')}
-                          imageUrl={pairMeta(t.symbol, tradingPairs)?.imageUrl}
-                          coingeckoId={pairMeta(t.symbol, tradingPairs)?.coingeckoId}
-                          type={String(t.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
-                          size={18}
-                        />
-                        {orderPairLabel(t.symbol, tradingPairs)}
-                      </span>
-                    </td>
-                    <td>{formatTradePrice(t.price, pairQuote(t.symbol, tradingPairs))}</td>
-                    <td>{t.quantity}</td>
-                    <td>{t.total ?? fmtNum(Number(t.price) * Number(t.quantity), 2)}</td>
-                    <td>{t.fee != null ? fmtNum(t.fee, 4) : '—'}</td>
-                    <td>{t.createdAt ? formatMarketTime(t.createdAt) : '—'}</td>
-                  </tr>
+            <div className="ex-my-orders__toolbar">
+              <input
+                type="search"
+                className="ex-input ex-my-orders__search"
+                placeholder="Search pair…"
+                value={tableSearch}
+                onChange={(e) => setTableSearch(e.target.value)}
+              />
+              <select
+                className="ex-input ex-my-orders__pagesize"
+                value={tablePageSize}
+                onChange={(e) => setTablePageSize(Number(e.target.value))}
+              >
+                {[10, 20, 50].map((n) => (
+                  <option key={n} value={n}>
+                    {n} / page
+                  </option>
                 ))}
-                {!tableRows.length && (
-                  <tr>
-                    <td colSpan={7} className="ex-empty-row">
-                      No {orderSideTab} trade history yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+              </select>
             </div>
-          ) : (
-          <div className="ex-my-orders__table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Pair</th>
-                <th>Price</th>
-                <th>Amount</th>
-                <th>Total</th>
-                <th>Date &amp; Time</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tableRows.map((o) => {
-                return (
-                  <tr key={o._id || o.id}>
-                    <td>
-                      <span className="ex-pair-cell">
-                        <CoinIcon
-                          symbol={String(o.symbol || '').replace(/USDT$|INR$/, '')}
-                          imageUrl={pairMeta(o.symbol, tradingPairs)?.imageUrl}
-                          coingeckoId={pairMeta(o.symbol, tradingPairs)?.coingeckoId}
-                          type={String(o.symbol || '').endsWith('INR') ? 'commodity' : 'crypto'}
-                          size={18}
-                        />
-                        {orderPairLabel(o.symbol, tradingPairs)}
-                      </span>
-                    </td>
-                    <td>{orderDisplayPrice(o)}</td>
-                    <td>{o.quantity}</td>
-                    <td>{orderDisplayTotal(o)}</td>
-                    <td>{o.createdAt ? formatMarketTime(o.createdAt) : '—'}</td>
-                    <td>
-                      <span className="ex-status-badge">{o.status}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!tableRows.length && (
-                <tr>
-                  <td colSpan={6} className="ex-empty-row">
-                    No {orderStatusTab} {orderSideTab} orders.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
-          )}
-        </div>
-        {!user ? null : !tableLoading && tableTotal > 0 && (
-          <div className="ex-my-orders__pagination">
-            <span>
-              Showing {tableFromRow}–{tableToRow} of {tableTotal}
-            </span>
-            <div className="ex-my-orders__pagination-actions">
-              <button
-                type="button"
-                disabled={tablePage <= 1}
-                onClick={() => setTablePage((p) => p - 1)}
-              >
-                Previous
-              </button>
-              <span>Page {tablePage} of {tableTotalPages}</span>
-              <button
-                type="button"
-                disabled={tablePage >= tableTotalPages}
-                onClick={() => setTablePage((p) => p + 1)}
-              >
-                Next
-              </button>
+            <div className="ex-my-orders__split">
+              {renderOrderSideCard('buy', buyTable, (page) => setBuyTable((t) => ({ ...t, page })))}
+              {renderOrderSideCard('sell', sellTable, (page) => setSellTable((t) => ({ ...t, page })))}
             </div>
-          </div>
+          </>
         )}
       </section>
     </div>

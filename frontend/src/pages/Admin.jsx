@@ -5,6 +5,7 @@ import { api, parseApiResponse } from '../api/client.js';
 import AdminDataTable from '../components/AdminDataTable.jsx';
 import StakingAdminSection from './admin/StakingAdminSection.jsx';
 import TradingPairsAdminSection from './admin/TradingPairsAdminSection.jsx';
+import WalletManagementSection from './admin/WalletManagementSection.jsx';
 import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import AdminPricesSection from './admin/AdminPricesSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
@@ -681,6 +682,7 @@ export default function Admin() {
   const [txs, setTxs] = useState([]);
   const [allTxs, setAllTxs] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [tradesPage, setTradesPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [selectedKyc, setSelectedKyc] = useState(null);
   const [fundUser, setFundUser] = useState(null);
@@ -703,6 +705,8 @@ export default function Admin() {
     bankAccountHolder: '',
     referralRewardUsdt: '',
     usdtInrRate: '83.5',
+    cashInPersonDepositRate: '',
+    cashInPersonWithdrawRate: '',
     bnbPrivateKey: '',
     ethPrivateKey: '',
     trcPrivateKey: '',
@@ -731,6 +735,7 @@ export default function Admin() {
       setStats(parseApiResponse(overview) || stats);
       setTxs(asArray(parseApiResponse(t)));
       setTrades(asArray(parseApiResponse(tr)));
+      setTradesPage(1);
       setAllTxs(asArray(parseApiResponse(allT)));
     } finally {
       setLoading(false);
@@ -850,6 +855,8 @@ export default function Admin() {
       bankAccountHolder: String(form.bankAccountHolder || '').trim(),
       referralRewardUsdt: Number(form.referralRewardUsdt || 0),
       usdtInrRate: Number(form.usdtInrRate || 83.5),
+      cashInPersonDepositRate: Number(form.cashInPersonDepositRate || 0),
+      cashInPersonWithdrawRate: Number(form.cashInPersonWithdrawRate || 0),
     };
     for (const key of ['bnbPrivateKey', 'ethPrivateKey', 'trcPrivateKey', 'evmMnemonic']) {
       const val = String(form[key] || '').trim();
@@ -878,6 +885,10 @@ export default function Admin() {
       bankAccountHolder: s.bankAccountHolder || s.bank?.holder || '',
       referralRewardUsdt: s.referralRewardUsdt != null ? String(s.referralRewardUsdt) : '',
       usdtInrRate: s.usdtInrRate != null ? String(s.usdtInrRate) : '83.5',
+      cashInPersonDepositRate:
+        s.cashInPersonDepositRate != null ? String(s.cashInPersonDepositRate) : '',
+      cashInPersonWithdrawRate:
+        s.cashInPersonWithdrawRate != null ? String(s.cashInPersonWithdrawRate) : '',
       bnbPrivateKey: s.bnbPrivateKey || '',
       ethPrivateKey: s.ethPrivateKey || '',
       trcPrivateKey: s.trcPrivateKey || '',
@@ -908,7 +919,7 @@ export default function Admin() {
   }
 
   useEffect(() => {
-    if (activeTab === 'settings' || activeTab === 'wallets') {
+    if (activeTab === 'settings') {
       loadSettings().catch(() => {});
     }
   }, [activeTab]);
@@ -1021,6 +1032,17 @@ export default function Admin() {
   }
 
   const title = SECTION_TITLES[activeTab] || 'Admin';
+
+  const TRADES_PAGE_SIZE = 10;
+  const tradesTotal = trades.length;
+  const tradesTotalPages = Math.max(1, Math.ceil(tradesTotal / TRADES_PAGE_SIZE));
+  const tradesPageSafe = Math.min(tradesPage, tradesTotalPages);
+  const pagedTrades = useMemo(() => {
+    const start = (tradesPageSafe - 1) * TRADES_PAGE_SIZE;
+    return trades.slice(start, start + TRADES_PAGE_SIZE);
+  }, [trades, tradesPageSafe]);
+  const tradesFrom = tradesTotal === 0 ? 0 : (tradesPageSafe - 1) * TRADES_PAGE_SIZE + 1;
+  const tradesTo = Math.min(tradesPageSafe * TRADES_PAGE_SIZE, tradesTotal);
 
   const typeFilter = [
     { key: 'type', label: 'All types', options: [{ value: 'crypto', label: 'Crypto' }, { value: 'fiat', label: 'Fiat' }] },
@@ -1446,7 +1468,7 @@ export default function Admin() {
   );
 
   return (
-    <div>
+    <div className="admin-page">
       <header className="admin-page__head">
         <h1>{title}</h1>
         <p>Manage users, compliance, wallets, orders, and price overrides.</p>
@@ -1455,7 +1477,7 @@ export default function Admin() {
       {loading && <p className="admin-loading">Loading data…</p>}
 
       {activeTab === 'overview' && (
-        <>
+        <div className="admin-overview">
           <div className="admin-stats">
             <div className="admin-stat">
               <p className="admin-stat__label">Users</p>
@@ -1491,9 +1513,14 @@ export default function Admin() {
             </div>
           </div>
 
-          <div className="admin-card">
-            <h2>Recent Trades</h2>
-            <div className="admin-table-wrap">
+          <div className="admin-card admin-card--trades">
+            <div className="admin-card__head">
+              <h2>Recent Trades</h2>
+              <span className="admin-card__meta">
+                {tradesTotal} total · 10 / page
+              </span>
+            </div>
+            <div className="admin-table-wrap admin-table-wrap--grow">
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -1504,7 +1531,7 @@ export default function Admin() {
                   </tr>
                 </thead>
                 <tbody>
-                  {trades.slice(0, 15).map((x) => (
+                  {pagedTrades.map((x) => (
                     <tr key={x._id}>
                       <td>{x.symbol}</td>
                       <td>{x.price}</td>
@@ -1512,7 +1539,7 @@ export default function Admin() {
                       <td>{new Date(x.createdAt).toLocaleString()}</td>
                     </tr>
                   ))}
-                  {!trades.length && (
+                  {!pagedTrades.length && (
                     <tr>
                       <td colSpan={4} className="admin-empty">
                         No trades yet.
@@ -1522,8 +1549,36 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
+            {tradesTotal > 0 && (
+              <div className="admin-pager">
+                <span className="admin-pager__range">
+                  Showing {tradesFrom}–{tradesTo} of {tradesTotal}
+                </span>
+                <div className="admin-pager__actions">
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                    disabled={tradesPageSafe <= 1}
+                    onClick={() => setTradesPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </button>
+                  <span>
+                    Page {tradesPageSafe} of {tradesTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--ghost admin-btn--sm"
+                    disabled={tradesPageSafe >= tradesTotalPages}
+                    onClick={() => setTradesPage((p) => Math.min(tradesTotalPages, p + 1))}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        </>
+        </div>
       )}
 
       {activeTab === 'users' && (
@@ -1616,97 +1671,7 @@ export default function Admin() {
         </>
       )}
 
-      {activeTab === 'wallets' && (
-        <div className="admin-card">
-          <h2>Wallet management</h2>
-          <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            These addresses and bank details are shown to users when they deposit. Users send funds manually and submit TX details.
-            Approve deposits from the Deposits tab to credit their wallet.
-          </p>
-          <form className="admin-form-grid" onSubmit={saveSettings}>
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <label>USDT price in INR (1 USDT = ? INR)</label>
-              <input
-                type="number"
-                min="1"
-                max="500"
-                step="0.01"
-                value={settingsForm.usdtInrRate}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, usdtInrRate: e.target.value }))}
-                placeholder="e.g. 83.5"
-                required
-              />
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
-                Used across the app to show wallet balances and USDT amounts in INR. Update whenever the exchange rate changes.
-              </p>
-            </div>
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <label>Deposit mode</label>
-              <select
-                value={settingsForm.depositMode}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, depositMode: e.target.value }))}
-              >
-                <option value="manual">Manual — user submits TX, admin approves</option>
-                <option value="auto">Auto — chain watcher credits (legacy)</option>
-              </select>
-            </div>
-
-            <div className="admin-field">
-              <label>BNB wallet address (BEP20)</label>
-              <input value={settingsForm.bnbWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, bnbWalletAddress: e.target.value }))} placeholder="0x…" />
-            </div>
-            <div className="admin-field">
-              <label>ETH wallet address (ERC20)</label>
-              <input value={settingsForm.ethWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, ethWalletAddress: e.target.value }))} placeholder="0x…" />
-            </div>
-            <div className="admin-field">
-              <label>USDT wallet address</label>
-              <input value={settingsForm.usdtWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, usdtWalletAddress: e.target.value }))} placeholder="TRC20 / shared USDT" />
-            </div>
-            <div className="admin-field">
-              <label>TRX / TRON wallet address</label>
-              <input value={settingsForm.trcWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, trcWalletAddress: e.target.value }))} placeholder="T…" />
-            </div>
-
-            <div className="admin-wallet-qr-grid" style={{ gridColumn: '1 / -1' }}>
-              <WalletQrPreview label="BNB QR" address={settingsForm.bnbWalletAddress} />
-              <WalletQrPreview label="ETH QR" address={settingsForm.ethWalletAddress} />
-              <WalletQrPreview label="USDT QR" address={settingsForm.usdtWalletAddress || settingsForm.trcWalletAddress} />
-              <WalletQrPreview label="TRX QR" address={settingsForm.trcWalletAddress} />
-            </div>
-
-            <div className="admin-field" style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
-              <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>INR bank details</h3>
-            </div>
-            <div className="admin-field">
-              <label>Bank name</label>
-              <input value={settingsForm.bankName} onChange={(e) => setSettingsForm((f) => ({ ...f, bankName: e.target.value }))} />
-            </div>
-            <div className="admin-field">
-              <label>Account holder name</label>
-              <input value={settingsForm.bankAccountHolder} onChange={(e) => setSettingsForm((f) => ({ ...f, bankAccountHolder: e.target.value }))} />
-            </div>
-            <div className="admin-field">
-              <label>Account number</label>
-              <input value={settingsForm.bankAccountNumber} onChange={(e) => setSettingsForm((f) => ({ ...f, bankAccountNumber: e.target.value }))} />
-            </div>
-            <div className="admin-field">
-              <label>IFSC code</label>
-              <input value={settingsForm.bankIfsc} onChange={(e) => setSettingsForm((f) => ({ ...f, bankIfsc: e.target.value }))} />
-            </div>
-            <div className="admin-field">
-              <label>Branch</label>
-              <input value={settingsForm.bankBranch} onChange={(e) => setSettingsForm((f) => ({ ...f, bankBranch: e.target.value }))} />
-            </div>
-
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <button type="submit" className="admin-btn admin-btn--primary" disabled={settingsBusy}>
-                {settingsBusy ? 'Saving…' : 'Save wallet management'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {activeTab === 'wallets' && <WalletManagementSection />}
 
       {activeTab === 'settings' && (
         <div className="admin-card">
@@ -1748,6 +1713,28 @@ export default function Admin() {
               <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
                 When a new user registers with a referral code, this amount is added to the referrer&apos;s wallet and a transaction is created. Set 0 to disable.
               </p>
+            </div>
+            <div className="admin-field">
+              <label>Cash in person deposit rate (INR per 1 USDT)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={settingsForm.cashInPersonDepositRate}
+                onChange={(e) => setSettingsForm((f) => ({ ...f, cashInPersonDepositRate: e.target.value }))}
+                placeholder="e.g. 100"
+              />
+            </div>
+            <div className="admin-field">
+              <label>Cash in person withdraw rate (INR per 1 USDT)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={settingsForm.cashInPersonWithdrawRate}
+                onChange={(e) => setSettingsForm((f) => ({ ...f, cashInPersonWithdrawRate: e.target.value }))}
+                placeholder="e.g. 98"
+              />
             </div>
             <div className="admin-field">
               <label>

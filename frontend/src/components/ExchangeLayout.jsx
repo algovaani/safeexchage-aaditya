@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
@@ -120,6 +121,7 @@ export default function ExchangeLayout() {
                 logout();
               }}
             >
+              <LogOut size={16} strokeWidth={2.25} aria-hidden />
               Logout
             </button>
           ) : (
@@ -182,8 +184,15 @@ export default function ExchangeLayout() {
               <div className="exchange-header__avatar" title={user?.email || displayName}>
                 {initial}
               </div>
-              <button type="button" className="exchange-header__logout" onClick={logout}>
-                Logout
+              <button
+                type="button"
+                className="exchange-header__logout"
+                onClick={logout}
+                aria-label="Logout"
+                title="Logout"
+              >
+                <LogOut size={16} strokeWidth={2.25} aria-hidden />
+                <span className="exchange-header__logout-label">Logout</span>
               </button>
             </>
           ) : (

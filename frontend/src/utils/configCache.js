@@ -1,6 +1,7 @@
 const CONFIG_KEY = 'safex_platform_config_v1';
-const PAIRS_KEY = 'safex_trading_pairs_v1';
-const TTL_MS = 5 * 60 * 1000;
+/** bump version whenever pair payload shape changes so stale lists (missing new coins) drop */
+const PAIRS_KEY = 'safex_trading_pairs_v2';
+const TTL_MS = 60_000;
 
 function read(key) {
   try {
@@ -36,4 +37,13 @@ export function readCachedPairs() {
 
 export function writeCachedPairs(data) {
   write(PAIRS_KEY, data);
+}
+
+export function clearCachedPairs() {
+  try {
+    sessionStorage.removeItem(PAIRS_KEY);
+    sessionStorage.removeItem('safex_trading_pairs_v1');
+  } catch {
+    /* ignore */
+  }
 }

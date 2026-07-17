@@ -171,6 +171,12 @@ canvas {
 }
 
 .exchange-header__logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 36px;
+  min-height: 36px;
   padding: 0.35rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 600;
@@ -179,12 +185,17 @@ canvas {
   border: 1px solid var(--ex-border);
   border-radius: 4px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .exchange-header__logout:hover {
-  color: var(--ex-text);
-  border-color: var(--ex-muted);
+  color: #f6465d;
+  border-color: rgba(246, 70, 93, 0.45);
+  background: rgba(246, 70, 93, 0.08);
+}
+
+.exchange-header__logout-label {
+  line-height: 1;
 }
 
 .exchange-header__auth {
@@ -349,25 +360,31 @@ canvas {
 }
 
 .exchange-drawer__actions {
+  margin-top: auto;
   padding: 1rem;
   border-top: 1px solid var(--ex-border);
+  background: #12161a;
 }
 
 .exchange-drawer__logout {
   width: 100%;
-  padding: 0.65rem;
-  border: 1px solid var(--ex-border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ex-muted);
-  font-size: 0.85rem;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(246, 70, 93, 0.35);
+  border-radius: 8px;
+  background: rgba(246, 70, 93, 0.1);
+  color: #f6465d;
+  font-size: 0.9rem;
+  font-weight: 700;
   cursor: pointer;
 }
 
 .exchange-drawer__logout:hover {
-  color: var(--ex-text);
-  border-color: var(--ex-muted);
+  background: rgba(246, 70, 93, 0.18);
+  border-color: rgba(246, 70, 93, 0.55);
 }
 
 .exchange-drawer__login,
@@ -470,6 +487,13 @@ canvas {
   }
 
   .exchange-header__logout {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  .exchange-header__logout-label {
     display: none;
   }
 

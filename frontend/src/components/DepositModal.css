@@ -549,6 +549,27 @@
   color: #fbbf24;
 }
 
+.cash-in-person-modal__rate-box {
+  margin: -0.1rem 0 0.25rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.28);
+  background: rgba(240, 185, 11, 0.08);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+}
+
+.cash-in-person-modal__calc {
+  margin-top: 0.35rem;
+  font-size: 0.92rem;
+}
+
+.cash-in-person-modal__amount-hint {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
 .deposit-modal__scan-hint {
   margin: 0.35rem 0 0;
   font-size: 0.72rem;

@@ -21,6 +21,10 @@ const platformSettingsSchema = new mongoose.Schema(
     referralRewardUsdt: { type: Number, default: 0, min: 0 },
     /** 1 USDT = X INR — used for balance display across the app */
     usdtInrRate: { type: Number, default: 83.5, min: 1, max: 500 },
+    /** Cash-in-person deposit: 1 USDT = X INR */
+    cashInPersonDepositRate: { type: Number, default: 0, min: 0 },
+    /** Cash-in-person withdraw: 1 USDT = X INR */
+    cashInPersonWithdrawRate: { type: Number, default: 0, min: 0 },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true, collection: 'platform_settings' }

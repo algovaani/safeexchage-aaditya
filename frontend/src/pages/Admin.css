@@ -1,7 +1,6 @@
 /* SafeXchange Admin — black & gold theme */
 
-html.admin-theme,
-body.admin-theme {
+html.admin-theme {
   --adm-bg: #fafafa;
   --adm-surface: #ffffff;
   --adm-surface-2: #f0f1f5;
@@ -13,14 +12,18 @@ body.admin-theme {
   --adm-gold-bright: #f0b90b;
   --adm-gold-soft: rgba(240, 185, 11, 0.12);
   --adm-gold-glow: rgba(240, 185, 11, 0.2);
+  --adm-success: #0ecb81;
+  --adm-warning: #f0b90b;
+  --adm-danger: #f6465d;
+  --adm-radius: 12px;
+  --adm-sidebar-w: 260px;
+  height: 100%;
+  min-height: 100dvh;
   background: var(--adm-bg) !important;
-  color: var(--adm-text);
-  min-height: 100vh;
 }
 
-html.admin-theme.dark,
-body.admin-theme.dark {
-  --adm-bg: #0b0e11;
+html.admin-theme.dark {
+  --adm-bg: #000000;
   --adm-surface: #151a1f;
   --adm-surface-2: #1e252d;
   --adm-border: #2b3139;
@@ -29,15 +32,41 @@ body.admin-theme.dark {
   --adm-muted: #848e9c;
   --adm-gold-soft: rgba(240, 185, 11, 0.14);
   --adm-gold-glow: rgba(240, 185, 11, 0.25);
+  background: #000000 !important;
+}
+
+body.admin-theme {
+  margin: 0;
+  min-height: 100%;
+  min-height: 100dvh;
+  height: 100%;
+  background: var(--adm-bg) !important;
+  color: var(--adm-text);
 }
 
 body.admin-theme #root {
-  min-height: 100vh;
+  min-height: 100%;
+  min-height: 100dvh;
+  height: 100%;
   background: var(--adm-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-shell--dark,
+.admin-shell--light {
+  flex: 1;
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: var(--adm-sidebar-w) minmax(0, 1fr);
+  align-items: stretch;
+  color: var(--adm-text);
 }
 
 .admin-shell--dark {
-  --adm-bg: #0b0e11;
+  --adm-bg: #000000;
   --adm-surface: #151a1f;
   --adm-surface-2: #1e252d;
   --adm-border: #2b3139;
@@ -53,11 +82,7 @@ body.admin-theme #root {
   --adm-danger: #f6465d;
   --adm-radius: 12px;
   --adm-sidebar-w: 260px;
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: var(--adm-sidebar-w) minmax(0, 1fr);
-  background: var(--adm-bg);
-  color: var(--adm-text);
+  background: #000000;
 }
 
 .admin-shell--light {
@@ -66,18 +91,15 @@ body.admin-theme #root {
   --adm-danger: #f6465d;
   --adm-radius: 12px;
   --adm-sidebar-w: 260px;
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: var(--adm-sidebar-w) minmax(0, 1fr);
   background: var(--adm-bg);
-  color: var(--adm-text);
 }
 
 .admin-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100%;
+  background: inherit;
 }
 
 .admin-mobile-bar {
@@ -113,7 +135,9 @@ body.admin-theme #root {
   gap: 1rem;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100%;
+  min-height: 100dvh;
+  align-self: stretch;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -126,7 +150,9 @@ body.admin-theme #root {
   gap: 1rem;
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: 100%;
+  min-height: 100dvh;
+  align-self: stretch;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.06);
 }
 
@@ -399,27 +425,98 @@ body.admin-theme #root {
 }
 
 .admin-content--dark {
-  padding: 1.25rem 1.5rem 2rem;
+  padding: 1.25rem 1.5rem 1.5rem;
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(234, 179, 8, 0.08), transparent),
     #000;
 }
 
 .admin-content--light {
-  padding: 1.25rem 1.5rem 2rem;
+  padding: 1.25rem 1.5rem 1.5rem;
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(ellipse 80% 50% at 50% -20%, rgba(234, 179, 8, 0.06), transparent),
     var(--adm-bg);
+}
+
+.admin-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-card--trades {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+.admin-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.admin-card__head h2 {
+  margin: 0;
+}
+
+.admin-card__meta {
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+  white-space: nowrap;
+}
+
+.admin-table-wrap--grow {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.admin-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--adm-border);
+  font-size: 0.8rem;
+  color: var(--adm-muted);
+}
+
+.admin-pager__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .admin-page__head {
   margin-bottom: 1.25rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--adm-border);
+  flex-shrink: 0;
 }
 
 .admin-page__head h1 {
@@ -1148,11 +1245,11 @@ html.dark .admin-badge--cancelled {
 }
 
 .admin-coins__intro {
+  /* kept for legacy; primary styles in toolbar block below */
   color: var(--adm-muted);
   font-size: 0.875rem;
   margin: 0;
   line-height: 1.6;
-  max-width: 52rem;
 }
 
 /* Shared admin form controls — dark & light via CSS vars */
@@ -1213,49 +1310,325 @@ html.dark .admin-badge--cancelled {
 }
 
 /* Exchange Coins page */
-.admin-coins__hero {
+.admin-coins__toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem 1.5rem;
-  margin-bottom: 1.25rem;
-  padding: 1rem 1.15rem;
-  border-radius: var(--adm-radius);
-  border: 1px solid var(--adm-border-gold);
-  background: linear-gradient(135deg, var(--adm-gold-soft) 0%, transparent 55%);
+  gap: 1rem 1.25rem;
+  margin-bottom: 1rem;
 }
 
-.admin-coins__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
+.admin-coins__toolbar-copy {
+  flex: 1;
+  min-width: 200px;
 }
 
-.admin-coins__stat {
+.admin-coins__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--adm-gold-bright);
+}
+
+.admin-coins__intro {
+  margin: 0;
+  max-width: 42rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--adm-muted);
+}
+
+.admin-coins__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  padding: 0.65rem 1.1rem;
+  font-weight: 700;
+}
+
+.admin-coins__empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 5.5rem;
-  padding: 0.55rem 0.85rem;
+  gap: 0.85rem;
+  padding: 2rem 1rem;
+}
+
+.admin-coins__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-coins__stat {
+  padding: 0.85rem 1rem;
   border-radius: 10px;
   border: 1px solid var(--adm-border);
   background: var(--adm-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .admin-coins__stat-value {
   font-size: 1.35rem;
   font-weight: 800;
   color: var(--adm-gold-bright);
-  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
 .admin-coins__stat-label {
-  font-size: 0.68rem;
-  color: var(--adm-muted);
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 0.15rem;
+  letter-spacing: 0.04em;
+  color: var(--adm-muted);
+}
+
+/* Add coin modal */
+.admin-coins-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+}
+
+.admin-coins-modal {
+  width: min(100%, 640px);
+  max-height: min(90dvh, 820px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid rgba(240, 185, 11, 0.28);
+  background: #0e1116;
+  color: var(--adm-text, #eaecef);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.55);
+  animation: admin-coins-modal-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+
+.admin-shell--light .admin-coins-modal {
+  background: #ffffff;
+  border-color: var(--adm-border);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.18);
+}
+
+@keyframes admin-coins-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.admin-coins-modal__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.1rem 1.15rem 0.85rem;
+  border-bottom: 1px solid var(--adm-border);
+}
+
+.admin-coins-modal__head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--adm-gold-bright);
+}
+
+.admin-coins-modal__head p {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--adm-muted);
+}
+
+.admin-coins-modal__close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--adm-muted);
+  cursor: pointer;
+}
+
+.admin-coins-modal__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--adm-text);
+}
+
+.admin-coins-modal__tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1.15rem;
+  border-bottom: 1px solid var(--adm-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.admin-shell--light .admin-coins-modal__tabs {
+  background: var(--adm-surface-2);
+}
+
+.admin-coins-modal__tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.7rem 0.75rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--adm-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-coins-modal__tabs button.is-active {
+  color: var(--adm-text);
+  border-bottom-color: var(--adm-gold);
+}
+
+.admin-coins-modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-coins-modal__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-coins__results--modal {
+  max-height: 220px;
+}
+
+.admin-coins__preview--modal {
+  margin: 0;
+  border: 1px solid var(--adm-border-gold);
+}
+
+.admin-coins-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.85rem 1.15rem;
+  border-top: 1px solid var(--adm-border);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.admin-shell--light .admin-coins-modal__footer {
+  background: var(--adm-surface-2);
+}
+
+.admin-coins-modal--edit {
+  max-width: 520px;
+}
+
+.admin-coins-modal__body--edit {
+  gap: 1.25rem;
+}
+
+.admin-coins-edit__logo-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.admin-coins-edit__preview {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--adm-surface-2);
+  border: 1px solid var(--adm-border);
+}
+
+.admin-coins-edit__logo-fields {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-coins-edit__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem 1rem;
+}
+
+.admin-coins-edit__grid .admin-field--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-coins-edit__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--adm-text);
+  cursor: pointer;
+}
+
+.admin-coins-edit__checkbox input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--adm-gold);
+}
+
+.admin-coins-edit__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.admin-coins-edit__file-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.admin-coins__hint--file {
+  margin-top: 0.35rem;
+}
+
+@media (max-width: 520px) {
+  .admin-coins-edit__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-coins__panel {
@@ -1521,6 +1894,12 @@ html.dark .admin-badge--cancelled {
   border: 1px solid rgba(240, 185, 11, 0.35);
 }
 
+.admin-coins__tag--dexscreener {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
 .admin-coins__tag--coingecko {
   background: rgba(96, 165, 250, 0.12);
   color: #60a5fa;
@@ -1571,17 +1950,22 @@ html.dark .admin-badge--cancelled {
 }
 
 @media (max-width: 768px) {
-  .admin-coins__hero {
+  .admin-coins__toolbar {
     flex-direction: column;
   }
 
-  .admin-coins__stats {
+  .admin-coins__add-btn {
     width: 100%;
-    justify-content: stretch;
+    justify-content: center;
   }
 
-  .admin-coins__stat {
-    flex: 1;
+  .admin-coins__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-coins-modal {
+    width: 100%;
+    max-height: 92dvh;
   }
 
   .admin-coins__search {
@@ -1623,4 +2007,210 @@ html.dark .admin-badge--cancelled {
 }
 .spin {
   animation: spin 0.8s linear infinite;
+}
+
+/* ─── Wallet management (dynamic per-coin) ─── */
+.admin-wallets {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-wallets--loading {
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  gap: 0.75rem;
+  color: var(--adm-muted);
+}
+
+.admin-wallets__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admin-wallets__title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-wallets__intro {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  color: var(--adm-muted);
+  max-width: 52rem;
+}
+
+.admin-wallets__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-wallets__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--adm-border);
+  background: rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  color: var(--adm-text);
+}
+
+.admin-wallets__stat strong {
+  color: var(--adm-gold-bright);
+}
+
+.admin-wallets__stat--ok {
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.admin-wallets__stat--warn {
+  border-color: rgba(251, 191, 36, 0.45);
+  color: #fbbf24;
+}
+
+.admin-wallets__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-wallets__card {
+  margin: 0;
+}
+
+.admin-wallets__card--wide {
+  overflow: hidden;
+}
+
+.admin-wallets__card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  color: var(--adm-gold);
+}
+
+.admin-wallets__card-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--adm-text);
+}
+
+.admin-wallets__card-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+}
+
+.admin-wallets__fields {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-wallets__fields--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-wallets__fields .admin-field--wide {
+  grid-column: 1 / -1;
+}
+
+.admin-wallets__qr-grid {
+  margin-top: 1rem;
+}
+
+.admin-wallets__table .admin-wallets__network-select,
+.admin-wallets__table .admin-wallets__addr-input {
+  width: 100%;
+  min-width: 120px;
+  font-size: 0.8rem;
+}
+
+.admin-wallets__effective {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.admin-wallets__effective code {
+  font-size: 0.72rem;
+  color: var(--adm-gold-bright);
+}
+
+.admin-wallets__source {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-wallets__source--custom {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.admin-wallets__source--platform {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.admin-wallets__missing {
+  font-size: 0.75rem;
+  color: #f87171;
+}
+
+.admin-wallets__fiat-tag {
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+}
+
+.admin-wallets__hint-inline {
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+}
+
+.admin-wallets__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.admin-wallets__toggle input {
+  accent-color: var(--adm-gold);
+}
+
+.admin-wallets__empty {
+  margin: 0;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--adm-muted);
+  font-size: 0.875rem;
+}
+
+.admin-wallets__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.admin-wallets__fields .admin-field {
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .admin-wallets__fields--2 {
+    grid-template-columns: 1fr;
+  }
 }

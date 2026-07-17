@@ -1,12 +1,32 @@
 import { useEffect } from 'react';
+import { useTheme } from '../context/ThemeContext.jsx';
 
+/** Applies admin-theme + syncs dark/light so html/body bg never flash white under the shell. */
 export function useAdminTheme() {
+  const { isDark } = useTheme();
+
   useEffect(() => {
-    document.documentElement.classList.add('admin-theme');
-    document.body.classList.add('admin-theme');
+    const html = document.documentElement;
+    const body = document.body;
+    html.classList.add('admin-theme');
+    body.classList.add('admin-theme');
     return () => {
-      document.documentElement.classList.remove('admin-theme');
-      document.body.classList.remove('admin-theme');
+      html.classList.remove('admin-theme');
+      body.classList.remove('admin-theme');
+      html.style.removeProperty('background-color');
+      body.style.removeProperty('background-color');
     };
   }, []);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const bg = isDark ? '#000000' : '#fafafa';
+    html.style.backgroundColor = bg;
+    body.style.backgroundColor = bg;
+    html.classList.toggle('dark', isDark);
+    body.classList.toggle('dark', isDark);
+    html.classList.toggle('light', !isDark);
+    body.classList.toggle('light', !isDark);
+  }, [isDark]);
 }

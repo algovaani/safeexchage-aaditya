@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, authAPI, depositAPI, parseApiResponse } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
-import { WALLET_ASSETS } from '../theme/assets.js';
+import { useRealtime } from '../context/RealtimeContext.jsx';
 import DepositModal from '../components/DepositModal.jsx';
 import WithdrawModal from '../components/WithdrawModal.jsx';
 import CashInPersonModal from '../components/CashInPersonModal.jsx';
 import CoinIcon from '../components/CoinIcon.jsx';
 import { fmtINR, fmtUSD } from '../utils/format.js';
+import { isCryptoDepositSupported } from '../config/cryptoDepositChains.js';
+import { FIAT_DEPOSIT_SYMBOLS } from '../config/depositNetworks.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 
@@ -18,15 +20,32 @@ function fmtQty(value) {
   return n.toFixed(8).replace(/\.?0+$/, '');
 }
 
+function buildPriceMap(live) {
+  const pairsLive = Array.isArray(live?.pairs) ? live.pairs : [];
+  const next = {};
+  for (const row of pairsLive) {
+    const sym = String(row.symbol || '').toUpperCase();
+    const base = sym.replace(/USDT$|INR$/i, '');
+    const price = Number(row.price ?? row.lastPrice ?? 0);
+    if (!base || !(price > 0)) continue;
+    // Prefer USDT pair for valuation when both exist
+    if (sym.endsWith('USDT') || !next[base]) {
+      next[base] = { price, quote: sym.endsWith('INR') ? 'INR' : 'USDT' };
+    }
+  }
+  return next;
+}
+
 export default function Account() {
   const { user } = useAuth();
+  const { wallet: liveWallet, walletVersion } = useRealtime();
   const { toInr, usdtInrRate } = usePlatformConfig();
   const { pairs } = useTradingPairs();
   const [spotUsdt, setSpotUsdt] = useState(null);
   const [lockedUsdt, setLockedUsdt] = useState(0);
   const [assetBalances, setAssetBalances] = useState([]);
   const [priceMap, setPriceMap] = useState({});
-  const [hideZero, setHideZero] = useState(true);
+  const [hideZero, setHideZero] = useState(false);
   const [search, setSearch] = useState('');
   const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(true);
@@ -42,40 +61,44 @@ export default function Account() {
   });
   const [walletBusy, setWalletBusy] = useState(false);
 
-  function applyWallet(wallet) {
+  const applyWallet = useCallback((wallet) => {
     if (!wallet) return;
     setSpotUsdt(wallet?.balance_usdt ?? wallet?.balance ?? 0);
     setLockedUsdt(wallet?.locked_balance ?? 0);
     if (Array.isArray(wallet?.assets)) {
       setAssetBalances(wallet.assets);
     }
-  }
+    setLoading(false);
+  }, []);
 
-  async function refresh() {
-    setLoading(true);
+  const refreshPrices = useCallback(async () => {
     try {
-      const [{ data: balRes }, { data: priceRes }] = await Promise.all([
-        api.get('/wallet/balance'),
-        api.get('/market/prices/live').catch(() => ({ data: null })),
-      ]);
-      applyWallet(parseApiResponse(balRes));
+      const { data } = await api.get('/market/prices/live');
+      setPriceMap(buildPriceMap(parseApiResponse(data)));
+    } catch {
+      /* keep last known prices — never block balances */
+    }
+  }, []);
 
-      const live = parseApiResponse(priceRes);
-      const pairsLive = Array.isArray(live?.pairs) ? live.pairs : [];
-      const next = {};
-      for (const row of pairsLive) {
-        const sym = String(row.symbol || '').toUpperCase();
-        const base = sym.replace(/USDT$|INR$/i, '');
-        const price = Number(row.price ?? row.lastPrice ?? 0);
-        if (!base || !(price > 0)) continue;
-        // Prefer USDT pair for valuation when both exist
-        if (sym.endsWith('USDT') || !next[base]) next[base] = { price, quote: sym.endsWith('INR') ? 'INR' : 'USDT' };
-      }
-      setPriceMap(next);
-    } finally {
+  const refreshBalance = useCallback(async () => {
+    try {
+      const { data } = await api.get('/wallet/balance');
+      applyWallet(parseApiResponse(data));
+    } catch {
       setLoading(false);
     }
-  }
+  }, [applyWallet]);
+
+  const refresh = useCallback(async () => {
+    // Balance and prices must not share one Promise.all — slow/hung prices
+    // previously blocked Total Balance from ever rendering.
+    await Promise.all([refreshBalance(), refreshPrices()]);
+  }, [refreshBalance, refreshPrices]);
+
+  // Seed from realtime wallet (same source as navbar / transactions layout)
+  useEffect(() => {
+    if (liveWallet) applyWallet(liveWallet);
+  }, [liveWallet, walletVersion, applyWallet]);
 
   useEffect(() => {
     refresh().catch(() => setLoading(false));
@@ -98,7 +121,7 @@ export default function Account() {
       refresh().catch(() => {});
     }, 20_000);
     return () => clearInterval(timer);
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     const onWallet = (e) => {
@@ -106,13 +129,21 @@ export default function Account() {
     };
     window.addEventListener('wallet:updated', onWallet);
     return () => window.removeEventListener('wallet:updated', onWallet);
-  }, []);
+  }, [applyWallet]);
 
   const pairMetaByBase = useMemo(() => {
     const map = new Map();
     for (const p of pairs || []) {
-      const base = String(p.baseAsset || p.symbol || '').replace(/USDT$|INR$/i, '').toUpperCase();
-      if (base && !map.has(base)) map.set(base, p);
+      if (p.isActive === false) continue;
+      const base = String(p.baseAsset || p.symbol || '')
+        .replace(/USDT$|INR$/i, '')
+        .toUpperCase();
+      if (!base) continue;
+      const existing = map.get(base);
+      // Prefer USDT-quoted pair for wallet row meta
+      if (!existing || (p.quoteAsset === 'USDT' && existing.quoteAsset !== 'USDT')) {
+        map.set(base, p);
+      }
     }
     return map;
   }, [pairs]);
@@ -122,49 +153,69 @@ export default function Account() {
       (assetBalances || []).map((a) => [String(a.asset || '').toUpperCase(), a])
     );
 
-    const symbols = new Set([
-      'USDT',
-      ...WALLET_ASSETS.map((a) => a.symbol),
-      ...byAsset.keys(),
-    ]);
+    // Dynamic list: USDT + every active exchange coin + any held balance assets (exclude INR)
+    const symbols = new Set(['USDT']);
+    for (const base of pairMetaByBase.keys()) {
+      if (base === 'INR') continue;
+      symbols.add(base);
+    }
+    for (const asset of byAsset.keys()) {
+      if (!asset || asset === 'INR') continue;
+      symbols.add(asset);
+    }
 
-    return [...symbols].map((symbol) => {
-      const isUsdt = symbol === 'USDT';
-      const held = byAsset.get(symbol);
-      const qty = isUsdt ? Number(spotUsdt ?? 0) : Number(held?.balance ?? 0);
-      const locked = isUsdt ? Number(lockedUsdt ?? 0) : Number(held?.locked_balance ?? 0);
-      const available = Math.max(0, qty - locked);
-      const meta = pairMetaByBase.get(symbol);
-      const px = priceMap[symbol];
-      let usdtValue = null;
-      if (isUsdt) {
-        usdtValue = qty;
-      } else if (px?.price > 0) {
-        if (px.quote === 'INR') {
-          const rate = Number(usdtInrRate) > 0 ? Number(usdtInrRate) : 83.5;
-          usdtValue = (qty * px.price) / rate;
-        } else {
-          usdtValue = qty * px.price;
+    return [...symbols]
+      .map((symbol) => {
+        const isUsdt = symbol === 'USDT';
+        const held = byAsset.get(symbol);
+        const qty = isUsdt ? Number(spotUsdt ?? 0) : Number(held?.balance ?? 0);
+        const locked = isUsdt ? Number(lockedUsdt ?? 0) : Number(held?.locked_balance ?? 0);
+        const available = Math.max(0, qty - locked);
+        const meta = pairMetaByBase.get(symbol);
+        const px = priceMap[symbol];
+        let usdtValue = null;
+        if (isUsdt) {
+          usdtValue = qty;
+        } else if (px?.price > 0) {
+          if (px.quote === 'INR') {
+            const rate = Number(usdtInrRate) > 0 ? Number(usdtInrRate) : 83.5;
+            usdtValue = (qty * px.price) / rate;
+          } else {
+            usdtValue = qty * px.price;
+          }
         }
-      }
 
-      return {
-        symbol,
-        name: meta?.name || symbol,
-        imageUrl: meta?.imageUrl,
-        coingeckoId: meta?.coingeckoId,
-        type: meta?.category === 'commodity' ? 'commodity' : 'crypto',
-        qty,
-        available,
-        locked,
-        usdtValue,
-        canDeposit: WALLET_ASSETS.some((a) => a.symbol === symbol) || isUsdt,
-      };
-    }).sort((a, b) => {
-      if (a.symbol === 'USDT') return -1;
-      if (b.symbol === 'USDT') return 1;
-      return (b.qty || 0) - (a.qty || 0) || a.symbol.localeCompare(b.symbol);
-    });
+        const isFiat = FIAT_DEPOSIT_SYMBOLS?.has?.(symbol) || symbol === 'INR';
+        const canDeposit =
+          isUsdt ||
+          isFiat ||
+          isCryptoDepositSupported(symbol, meta) ||
+          (meta?.depositEnabled !== false &&
+            (Boolean(meta?.depositWalletAddress) || Boolean(meta?.depositNetwork)));
+
+        return {
+          symbol,
+          name: meta?.name || symbol,
+          imageUrl: meta?.imageUrl,
+          coingeckoId: meta?.coingeckoId,
+          type: meta?.category === 'commodity' || isFiat ? 'commodity' : 'crypto',
+          sortOrder: meta?.sortOrder ?? 999,
+          qty,
+          available,
+          locked,
+          usdtValue,
+          canDeposit,
+        };
+      })
+      .sort((a, b) => {
+        if (a.symbol === 'USDT') return -1;
+        if (b.symbol === 'USDT') return 1;
+        if ((b.qty || 0) !== (a.qty || 0)) return (b.qty || 0) - (a.qty || 0);
+        if ((a.sortOrder ?? 999) !== (b.sortOrder ?? 999)) {
+          return (a.sortOrder ?? 999) - (b.sortOrder ?? 999);
+        }
+        return a.symbol.localeCompare(b.symbol);
+      });
   }, [assetBalances, spotUsdt, lockedUsdt, pairMetaByBase, priceMap, usdtInrRate]);
 
   const visible = useMemo(() => {
@@ -222,7 +273,7 @@ export default function Account() {
         <div>
           <p className="stat-card__label">Total Balance</p>
           <p className="text-3xl font-medium tabular-nums text-text-primary mt-1">
-            {loading ? '…' : fmtINR(toInr(portfolioUsdt))}
+            {loading && spotUsdt == null ? '…' : fmtINR(toInr(portfolioUsdt))}
           </p>
           <p className="text-sm text-text-muted mt-1">
             ≈ {fmtUSD(portfolioUsdt)} USDT
@@ -250,7 +301,7 @@ export default function Account() {
           <div>
             <h2 className="text-sm font-medium text-text-primary">Assets</h2>
             <p className="text-xs text-text-secondary mt-0.5">
-              Purchased coin balances · {visible.length} asset{visible.length !== 1 ? 's' : ''} shown
+              All exchange coins · {visible.length} of {rows.length} shown
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3">
@@ -358,7 +409,13 @@ export default function Account() {
               {!visible.length && (
                 <tr>
                   <td colSpan={6} className="px-4 py-12 text-center text-text-secondary">
-                    {loading ? 'Loading balances…' : 'No purchased coins yet. Buy on Trade to see holdings here.'}
+                    {loading
+                      ? 'Loading balances…'
+                      : search.trim()
+                        ? 'No coins match your search.'
+                        : hideZero
+                          ? 'No balances yet. Uncheck “Hide zero balances” to see all coins.'
+                          : 'No coins listed yet. Add coins from Admin → Exchange Coins.'}
                   </td>
                 </tr>
               )}
@@ -425,6 +482,7 @@ export default function Account() {
       {cashInPersonOpen && (
         <CashInPersonModal
           userMobile={user?.mobile || ''}
+          platformInfo={platformInfo}
           onClose={() => setCashInPersonOpen(false)}
           onSuccess={refresh}
         />

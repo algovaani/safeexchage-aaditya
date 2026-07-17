@@ -20,7 +20,15 @@ import { creditReferrerForSignup, getReferralRewardAmount } from '../services/re
 const INITIAL_BALANCE = 0;
 const OTP_TTL_MS = 10 * 60 * 1000;
 const BCRYPT_ROUNDS = 12;
+/** OTP hashes are short-lived — fewer rounds keeps register/login snappy on mobile. */
+const OTP_BCRYPT_ROUNDS = 8;
 const OTP_PURPOSES = ['login', 'register'];
+
+function requireOtpVerification() {
+  // Local/dev can set SKIP_OTP_VERIFY=1. Production must always verify.
+  if (process.env.SKIP_OTP_VERIFY === '1') return false;
+  return true;
+}
 
 function publicUser(user) {
   return {
@@ -48,7 +56,7 @@ function generateOtp() {
 
 async function storeOtp(mobile, purpose, otp) {
   const identifier = normalizeIndianMobile(mobile);
-  const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS);
+  const otpHash = await bcrypt.hash(otp, OTP_BCRYPT_ROUNDS);
   const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
   await PasswordOtp.updateMany({ identifier, purpose, used: false }, { $set: { used: true } });
@@ -176,7 +184,10 @@ export async function register(req, res, next) {
       return error(res, 'Password is required', 400);
     }
 
-    if (process.env.NODE_ENV === 'production') {
+    if (requireOtpVerification()) {
+      if (!otp) {
+        return error(res, 'OTP is required', 400);
+      }
       const otpCheck = await verifyStoredOtp(mobile, 'register', otp);
 
       if (!otpCheck.ok) {
@@ -378,7 +389,7 @@ export async function forgotPassword(req, res, next) {
 
     const otp = generateOtp();
     const purpose = 'password_reset';
-    const otpHash = await bcrypt.hash(otp, BCRYPT_ROUNDS);
+    const otpHash = await bcrypt.hash(otp, OTP_BCRYPT_ROUNDS);
     const expiresAt = new Date(Date.now() + OTP_TTL_MS);
 
     await PasswordOtp.updateMany({ identifier: normalized, purpose, used: false }, { $set: { used: true } });

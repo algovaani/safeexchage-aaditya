@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Banknote, Loader2, X } from 'lucide-react';
 import { cashInPersonAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { fmtINR } from '../utils/format.js';
 import './DepositModal.css';
 
-export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
+export default function CashInPersonModal({ userMobile, platformInfo, onClose, onSuccess }) {
   const toast = useToast();
   const [form, setForm] = useState({
     type: 'deposit',
@@ -35,6 +36,16 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
   }, [onClose]);
 
   const isWithdraw = form.type === 'withdraw';
+  const amount = Number(form.amount);
+  const rate = Number(
+    isWithdraw ? platformInfo?.cashInPerson?.withdrawRate : platformInfo?.cashInPerson?.depositRate
+  );
+  const hasRate = Number.isFinite(rate) && rate > 0;
+  const inrValue = Number.isFinite(amount) && amount > 0 && hasRate ? amount * rate : 0;
+  const rateLabel = useMemo(
+    () => (isWithdraw ? 'Withdraw rate' : 'Deposit rate'),
+    [isWithdraw]
+  );
 
   async function submit(e) {
     e.preventDefault();
@@ -47,7 +58,6 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
       toast.warning(message);
       return;
     }
-    const amount = parseFloat(form.amount);
     if (isWithdraw && !(amount > 0)) {
       const message = 'Enter the amount you want to withdraw.';
       setErr(message);
@@ -126,9 +136,21 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
               </div>
               <p className="deposit-modal__info">
                 {isWithdraw
-                  ? 'Share your mobile and city. After verification, the amount will be deducted from your wallet when you collect cash.'
-                  : 'Share your mobile and city. After verification, cash given in person will be credited to your wallet.'}
+                  ? 'Enter your mobile number and city to proceed. After successful verification, the amount will be automatically deducted from your wallet upon cash collection.'
+                  : 'Please enter your mobile number and city for verification. Once verified, any cash submitted in person will be securely credited to your wallet.'}
               </p>
+              <div className="cash-in-person-modal__rate-box">
+                <div>
+                  <strong>{rateLabel}:</strong>{' '}
+                  {hasRate ? `${fmtINR(rate)} ` : 'Not set by admin yet'}
+                </div>
+                {hasRate && Number.isFinite(amount) && amount > 0 && (
+                  <div className="cash-in-person-modal__calc">
+                    {amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} USDT ={' '}
+                    <strong>{fmtINR(inrValue)}</strong>
+                  </div>
+                )}
+              </div>
               <div className="deposit-modal__field">
                 <label htmlFor="cip-mobile">Mobile number</label>
                 <input
@@ -167,6 +189,11 @@ export default function CashInPersonModal({ userMobile, onClose, onSuccess }) {
                   placeholder="e.g. 5000"
                   required={isWithdraw}
                 />
+                {hasRate && Number.isFinite(amount) && amount > 0 && (
+                  <p className="cash-in-person-modal__amount-hint">
+                    Estimated cash value: <strong>{fmtINR(inrValue)}</strong>
+                  </p>
+                )}
               </div>
               {err && <p className="deposit-modal__error">{err}</p>}
               <div className="deposit-modal__footer">

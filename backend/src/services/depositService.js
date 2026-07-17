@@ -7,7 +7,9 @@ import { roundMoney } from '../utils/money.js';
 import {
   computeDepositUsdtCredit,
   depositCreditReference,
+  isNativeCryptoDeposit,
 } from './depositConversionService.js';
+import { creditAsset, debitAsset, getAssetBalance } from './assetBalanceService.js';
 import { canTreasuryWithdraw } from './treasuryService.js';
 import { completeLinkedTransaction, rejectLinkedTransaction } from './transactionService.js';
 import { normalizeChainFromNetwork } from './userDepositAddressService.js';
@@ -79,21 +81,39 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
   deposit.usdtAmount = conversion.usdtAmount;
   deposit.conversionRate = conversion.conversionRate;
 
-  const wallet = await Wallet.findOneAndUpdate(
-    { userId: deposit.userId },
-    { $inc: { balance: conversion.usdtAmount }, $setOnInsert: { currency: 'USDT' } },
-    { upsert: true, new: true }
-  );
+  const creditNativeAsset = isNativeCryptoDeposit(deposit);
+  const currency = String(deposit.currency || 'USDT').toUpperCase();
+  let wallet;
+  let balanceAfter = null;
+  let creditAmount;
+  let creditCurrency;
+
+  if (creditNativeAsset) {
+    const assetRow = await creditAsset(deposit.userId, currency, deposit.amount);
+    balanceAfter = assetRow?.balance != null ? roundMoney(assetRow.balance) : null;
+    creditAmount = roundMoney(deposit.amount);
+    creditCurrency = currency;
+    wallet = await Wallet.findOne({ userId: deposit.userId }).lean();
+  } else {
+    wallet = await Wallet.findOneAndUpdate(
+      { userId: deposit.userId },
+      { $inc: { balance: conversion.usdtAmount }, $setOnInsert: { currency: 'USDT' } },
+      { upsert: true, new: true }
+    );
+    balanceAfter = roundMoney(wallet.balance);
+    creditAmount = conversion.usdtAmount;
+    creditCurrency = 'USDT';
+  }
 
   const creditReference = depositCreditReference(deposit);
 
   let transaction;
   if (deposit.transactionId) {
     transaction = await completeLinkedTransaction(deposit, {
-      balanceAfter: wallet.balance,
+      balanceAfter,
       status: 'completed',
-      amount: conversion.usdtAmount,
-      currency: 'USDT',
+      amount: creditAmount,
+      currency: creditCurrency,
       reference: creditReference,
     });
   }
@@ -102,9 +122,9 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
     transaction = await Transaction.create({
       userId: deposit.userId,
       type: 'deposit',
-      amount: conversion.usdtAmount,
-      balanceAfter: roundMoney(wallet.balance),
-      currency: 'USDT',
+      amount: creditAmount,
+      balanceAfter,
+      currency: creditCurrency,
       status: 'completed',
       method: deposit.type === 'crypto' ? 'crypto' : 'fiat',
       reference: creditReference,
@@ -137,25 +157,49 @@ export async function rejectDepositWithReversal(deposit, reviewedBy, note = '') 
   const wasApproved = deposit.status === 'approved';
 
   if (wasApproved) {
-    const usdtAmount = deposit.usdtAmount ?? deposit.amount;
-    const wallet = await Wallet.findOne({ userId: deposit.userId });
-    if (wallet) {
-      const debit = Math.min(wallet.balance, usdtAmount);
-      if (debit > 0) {
-        wallet.balance = roundMoney(wallet.balance - debit);
-        await wallet.save();
-        await Transaction.create({
-          userId: deposit.userId,
-          type: 'withdrawal',
-          amount: debit,
-          balanceAfter: roundMoney(wallet.balance),
-          currency: 'USDT',
-          status: 'completed',
-          method: 'manual',
-          reference: `Reversal: deposit ${deposit._id}`,
-          depositId: deposit._id,
-          adminNote: note?.trim() || 'Admin rejected deposit',
-        });
+    const currency = String(deposit.currency || 'USDT').toUpperCase();
+    const creditNativeAsset = isNativeCryptoDeposit(deposit);
+
+    if (creditNativeAsset) {
+      try {
+        await debitAsset(deposit.userId, currency, deposit.amount);
+      } catch {
+        /* best-effort reversal */
+      }
+      const balanceAfter = roundMoney(await getAssetBalance(deposit.userId, currency));
+      await Transaction.create({
+        userId: deposit.userId,
+        type: 'withdrawal',
+        amount: roundMoney(deposit.amount),
+        balanceAfter,
+        currency,
+        status: 'completed',
+        method: 'manual',
+        reference: `Reversal: deposit ${deposit._id}`,
+        depositId: deposit._id,
+        adminNote: note?.trim() || 'Admin rejected deposit',
+      });
+    } else {
+      const usdtAmount = deposit.usdtAmount ?? deposit.amount;
+      const wallet = await Wallet.findOne({ userId: deposit.userId });
+      if (wallet) {
+        const debit = Math.min(wallet.balance, usdtAmount);
+        if (debit > 0) {
+          wallet.balance = roundMoney(wallet.balance - debit);
+          await wallet.save();
+          await Transaction.create({
+            userId: deposit.userId,
+            type: 'withdrawal',
+            amount: debit,
+            balanceAfter: roundMoney(wallet.balance),
+            currency: 'USDT',
+            status: 'completed',
+            method: 'manual',
+            reference: `Reversal: deposit ${deposit._id}`,
+            depositId: deposit._id,
+            adminNote: note?.trim() || 'Admin rejected deposit',
+          });
+        }
       }
     }
     if (deposit.transactionId) {

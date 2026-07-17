@@ -60,6 +60,8 @@ export function formatPublicSettings(doc) {
     hasEvmMnemonic: canUseUniqueAddressDerivation(doc),
     referralRewardUsdt: roundMoney(Number(doc.referralRewardUsdt ?? 0)),
     usdtInrRate: roundMoney(Number(doc.usdtInrRate ?? 83.5)),
+    cashInPersonDepositRate: roundMoney(Number(doc.cashInPersonDepositRate ?? 0)),
+    cashInPersonWithdrawRate: roundMoney(Number(doc.cashInPersonWithdrawRate ?? 0)),
     updatedAt: doc.updatedAt,
   };
 }
@@ -98,6 +100,8 @@ export async function updatePlatformSettings(adminUserId, body) {
     'evmMnemonic',
     'referralRewardUsdt',
     'usdtInrRate',
+    'cashInPersonDepositRate',
+    'cashInPersonWithdrawRate',
   ];
 
   const update = { updatedBy: adminUserId };
@@ -112,6 +116,11 @@ export async function updatePlatformSettings(adminUserId, body) {
     if (key === 'usdtInrRate') {
       const num = Number(body[key]);
       update[key] = roundMoney(Number.isFinite(num) && num >= 1 ? num : 83.5);
+      continue;
+    }
+    if (key === 'cashInPersonDepositRate' || key === 'cashInPersonWithdrawRate') {
+      const num = Number(body[key]);
+      update[key] = roundMoney(Number.isFinite(num) && num >= 0 ? num : 0);
       continue;
     }
     if (key === 'depositMode') {

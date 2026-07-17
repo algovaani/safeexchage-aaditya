@@ -1,6 +1,12 @@
 import { fetchTicker, normalizeSymbol } from './marketDataProvider.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 
+/** Non-USDT crypto deposits credit the native coin balance (e.g. XAUT), not USDT wallet. */
+export function isNativeCryptoDeposit(deposit) {
+  const currency = String(deposit?.currency || 'USDT').toUpperCase();
+  return deposit?.type === 'crypto' && currency !== 'USDT';
+}
+
 /** Live USDT price for a base asset (e.g. BNB → BNBUSDT) via CoinGecko. */
 export async function fetchCryptoUsdtPrice(currency) {
   const base = String(currency || 'USDT').toUpperCase();
@@ -46,7 +52,7 @@ export function depositCreditReference(deposit) {
   const currency = String(deposit.currency || 'USDT').toUpperCase();
   if (currency === 'USDT' || deposit.type === 'fiat') return base;
   if (deposit.conversionRate != null && deposit.usdtAmount != null) {
-    return `${deposit.amount} ${currency} @ ${deposit.conversionRate} USDT = ${deposit.usdtAmount} USDT | ${base}`;
+    return `${deposit.amount} ${currency} (≈ ${deposit.usdtAmount} USDT @ ${deposit.conversionRate}) | ${base}`;
   }
   return `${deposit.amount} ${currency} | ${base}`;
 }

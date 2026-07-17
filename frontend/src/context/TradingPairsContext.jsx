@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, parseApiResponse } from '../api/client.js';
 import { TRADING_PAIRS as FALLBACK_PAIRS } from '../config/tradingPairs.js';
-import { readCachedPairs, writeCachedPairs } from '../utils/configCache.js';
+import { clearCachedPairs, readCachedPairs, writeCachedPairs } from '../utils/configCache.js';
 
 const TradingPairsContext = createContext(null);
 
@@ -17,20 +17,37 @@ const FALLBACK = FALLBACK_PAIRS.map((p) => ({
   isActive: true,
 }));
 
+function normalizePairs(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((p) => p && p.symbol && p.isActive !== false)
+    .map((p) => ({
+      ...p,
+      symbol: String(p.symbol).toUpperCase(),
+      baseAsset: p.baseAsset || String(p.symbol).replace(/USDT$|INR$/i, ''),
+      quoteAsset: p.quoteAsset || (String(p.symbol).endsWith('INR') ? 'INR' : 'USDT'),
+      displayPair: p.displayPair || `${String(p.symbol).replace(/USDT$/, '/USDT').replace(/INR$/, '/INR')}`,
+      name: p.name || p.baseAsset || String(p.symbol).replace(/USDT$|INR$/i, ''),
+      isActive: p.isActive !== false,
+    }));
+}
+
 function initialPairs() {
-  const cached = readCachedPairs();
-  return Array.isArray(cached) && cached.length ? cached : FALLBACK;
+  const cached = normalizePairs(readCachedPairs());
+  return cached.length ? cached : FALLBACK;
 }
 
 export function TradingPairsProvider({ children }) {
   const [pairs, setPairs] = useState(initialPairs);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
       const { data } = await api.get('/market/pairs');
       const payload = parseApiResponse(data);
-      const rows = Array.isArray(payload?.pairs) ? payload.pairs : Array.isArray(payload) ? payload : [];
+      const rows = normalizePairs(
+        Array.isArray(payload?.pairs) ? payload.pairs : Array.isArray(payload) ? payload : []
+      );
       if (rows.length) {
         setPairs(rows);
         writeCachedPairs(rows);
@@ -44,12 +61,23 @@ export function TradingPairsProvider({ children }) {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 5 * 60_000);
-    const onUpdate = () => load();
+    const id = setInterval(load, 60_000);
+    const onUpdate = () => {
+      clearCachedPairs();
+      load();
+    };
+    const onFocus = () => load();
+    const onVis = () => {
+      if (document.visibilityState === 'visible') load();
+    };
     window.addEventListener('trading-pairs:updated', onUpdate);
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
     return () => {
       clearInterval(id);
       window.removeEventListener('trading-pairs:updated', onUpdate);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
     };
   }, [load]);
 

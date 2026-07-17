@@ -15,6 +15,7 @@ import {
 } from './tradingPairService.js';
 import * as coingeckoMarket from './coingeckoService.js';
 import { fetchCommodityPrices, fetchCommodityTicker, fetchCommodityKlines, fetchCommodityDepth, isCommoditySymbol } from './commodityService.js';
+import { fetchDexPairPrices } from './dexscreenerService.js';
 import { getActivePulsePrice } from './pricePulseService.js';
 import {
   normalizeSymbol,
@@ -154,6 +155,9 @@ export async function fetchAllPairPrices({ force = false } = {}) {
   const cgOnlySyms = activePairs
     .filter((p) => p.priceSource === 'coingecko')
     .map((p) => p.symbol);
+  const dexPairs = activePairs.filter(
+    (p) => p.priceSource === 'dexscreener' && p.dexPairAddress && p.dexChainId
+  );
   const commoditySyms = activePairs
     .filter((p) => p.priceSource === 'commodity_inr')
     .map((p) => p.symbol);
@@ -186,6 +190,14 @@ export async function fetchAllPairPrices({ force = false } = {}) {
           bySymbol.set(row.symbol, { ...row, provider: 'coingecko' });
           recordPriceTick(row.symbol, row.price);
         }
+      }
+    }
+
+    if (dexPairs.length) {
+      const dexRows = await fetchDexPairPrices(dexPairs);
+      for (const row of dexRows) {
+        bySymbol.set(row.symbol, row);
+        recordPriceTick(row.symbol, row.price);
       }
     }
 
@@ -298,6 +310,33 @@ export async function fetchKlines(symbol, interval, { startTime, endTime, limit 
     return coingeckoMarket.fetchKlines(sym, interval, { startTime, endTime, limit });
   }
 
+  if (pair?.priceSource === 'dexscreener') {
+    // Prefer live tick buckets; seed a flat candle from current Dex price if cold.
+    const fromTicks = bucketTicksToIntervalCandles(sym, intervalToMs(interval), limit);
+    if (fromTicks.length) return fromTicks;
+    try {
+      const [live] = await fetchDexPairPrices([pair]);
+      if (live?.price > 0) {
+        recordPriceTick(sym, live.price);
+        const openTime = Math.floor(Date.now() / intervalToMs(interval)) * intervalToMs(interval);
+        return [
+          {
+            openTime,
+            open: live.price,
+            high: live.price,
+            low: live.price,
+            close: live.price,
+            volume: live.volume || 0,
+            isFinal: false,
+          },
+        ];
+      }
+    } catch {
+      /* empty */
+    }
+    return [];
+  }
+
   if (!BINANCE_INTERVALS.has(interval)) {
     const err = new Error(`Unsupported chart interval: ${interval}`);
     err.status = 400;
@@ -341,7 +380,7 @@ export async function fetchAggTrades(symbol, { limit = 1000 } = {}) {
   await ensureTradingPairCache();
   const pair = getPairSync(sym);
 
-  if (pair?.priceSource === 'coingecko') {
+  if (pair?.priceSource === 'coingecko' || pair?.priceSource === 'dexscreener') {
     return coingeckoMarket.fetchAggTrades(sym, { limit });
   }
 
@@ -433,7 +472,7 @@ export async function fetchDepth(symbol, { limit = 20 } = {}) {
     }
   }
 
-  if (pair?.priceSource === 'coingecko') {
+  if (pair?.priceSource === 'coingecko' || pair?.priceSource === 'dexscreener') {
     try {
       const ticker = await fetchTicker(sym);
       return syntheticOrderBook(ticker.price, limit);

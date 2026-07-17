@@ -143,7 +143,24 @@ export default function Signup() {
       toast.success('Account created successfully. Welcome to SafeXchange!');
       nav('/dashboard');
     } catch (ex) {
-      const message = ex.message || 'Could not register';
+      let message = ex.message || 'Could not register';
+      const status = ex.response?.status;
+      const lower = String(message).toLowerCase();
+      if (
+        status === 409 ||
+        lower.includes('already registered')
+      ) {
+        message = 'This mobile number is already registered. Please sign in instead.';
+      } else if (
+        !ex.response &&
+        (lower.includes('cannot reach') ||
+          lower.includes('taking too long') ||
+          lower.includes('offline') ||
+          lower.includes('network'))
+      ) {
+        message =
+          'Connection interrupted. If OTP was correct, try Sign in — your account may already be created. Otherwise tap Verify again.';
+      }
       setErr(message);
       toast.error(message);
     } finally {

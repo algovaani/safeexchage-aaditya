@@ -7,6 +7,7 @@ import {
   buildPlatformDepositAddressRow,
   resolveDepositMode,
 } from '../services/manualDepositService.js';
+import { resolveCoinDepositAddress } from '../services/tradingPairService.js';
 import {
   formatPublicSettings,
   getPlatformSettings,
@@ -40,6 +41,10 @@ export async function platformInfo(_req, res, next) {
         usdt: wallets.usdt,
       },
       bank: publicSettings.bank,
+      cashInPerson: {
+        depositRate: publicSettings.cashInPersonDepositRate || 0,
+        withdrawRate: publicSettings.cashInPersonWithdrawRate || 0,
+      },
     }, 'Platform deposit info fetched');
   } catch (e) {
     return next(e);
@@ -78,6 +83,10 @@ export async function cryptoAddress(req, res, next) {
     const { settings, manual } = await resolveDepositMode();
 
     if (manual) {
+      const coinRow = await resolveCoinDepositAddress(settings, currency, chain);
+      if (coinRow?.address) {
+        return success(res, coinRow, 'Coin deposit address fetched');
+      }
       const row = buildPlatformDepositAddressRow(settings, chain, currency);
       if (!row.address) {
         return error(res, 'Admin has not configured a deposit wallet for this network yet', 503);
@@ -119,7 +128,9 @@ export async function submitCrypto(req, res, next) {
     let toAddress = '';
     if (chain) {
       if (manual) {
-        toAddress = buildPlatformDepositAddressRow(settings, chain, currency).address;
+        const coinRow = await resolveCoinDepositAddress(settings, currency, chain);
+        toAddress =
+          coinRow?.address || buildPlatformDepositAddressRow(settings, chain, currency).address;
       } else {
         try {
           const addrRow = await getOrCreateUserDepositAddress(req.userId, chain, { activateWatch: true });

@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Landmark,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
@@ -143,9 +144,20 @@ export default function Layout() {
             <ThemeToggle className="app-navbar__icon-btn" />
             <div className="app-navbar__avatar">{initial}</div>
             {user && (
-              <button type="button" className="btn-secondary hidden md:inline-flex !h-9 !text-xs" onClick={logout}>
-                Logout
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="app-navbar__icon-btn app-navbar__logout-icon"
+                  onClick={logout}
+                  aria-label="Logout"
+                  title="Logout"
+                >
+                  <LogOut size={18} strokeWidth={2.25} />
+                </button>
+                <button type="button" className="btn-secondary app-navbar__logout-text !h-9 !text-xs" onClick={logout}>
+                  Logout
+                </button>
+              </>
             )}
           </div>
         </header>

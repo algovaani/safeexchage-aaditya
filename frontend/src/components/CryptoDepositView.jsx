@@ -20,8 +20,8 @@ function userWalletForChain(profile, chain) {
   return map[chain] || profile.usdtWalletAddress || '';
 }
 
-export default function CryptoDepositView({ coin, className = '', onSubmitted }) {
-  const chainOptions = useMemo(() => chainsForCoin(coin) || [], [coin]);
+export default function CryptoDepositView({ coin, pairMeta, className = '', onSubmitted }) {
+  const chainOptions = useMemo(() => chainsForCoin(coin, pairMeta) || [], [coin, pairMeta]);
   const [chain, setChain] = useState(chainOptions[0]?.id || 'BNB');
   const [depositAddress, setDepositAddress] = useState(null);
   const [platformInfo, setPlatformInfo] = useState(null);

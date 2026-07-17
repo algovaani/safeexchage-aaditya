@@ -263,6 +263,17 @@
   color: var(--text-primary);
 }
 
+.app-navbar__logout-icon {
+  display: none;
+  color: #f6465d;
+}
+
+.app-navbar__logout-icon:hover {
+  color: #ff6b7d;
+  background: rgba(246, 70, 93, 0.1);
+  border-color: rgba(246, 70, 93, 0.35);
+}
+
 .app-navbar__avatar {
   width: 32px;
   height: 32px;
@@ -415,8 +426,14 @@
 
   .app-navbar__search,
   .app-navbar__balance,
-  .btn-secondary {
+  .btn-secondary,
+  .app-navbar__logout-text {
     display: none !important;
+  }
+
+  .app-navbar__logout-icon {
+    display: inline-flex !important;
+    color: #f6465d;
   }
 
   .app-navbar__actions {
@@ -563,8 +580,14 @@
   .app-navbar__search,
   .app-navbar__balance,
   .app-navbar .btn-secondary,
-  .app-navbar__actions .btn-secondary {
+  .app-navbar__actions .btn-secondary,
+  .app-navbar__logout-text {
     display: none !important;
+  }
+
+  .app-navbar__logout-icon {
+    display: inline-flex !important;
+    color: #f6465d;
   }
 
   .app-navbar__actions {

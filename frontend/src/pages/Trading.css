@@ -924,6 +924,71 @@
   flex-direction: column;
 }
 
+.ex-my-orders__split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ex-layout-gap, 0.65rem);
+  padding: 0.65rem;
+  min-height: 0;
+}
+
+.ex-my-orders__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--ex-border, #2b3139);
+  border-radius: 6px;
+  background: var(--ex-panel-2, #1e2329);
+  overflow: hidden;
+}
+
+.ex-my-orders__card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--ex-border, #2b3139);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ex-my-orders__card-head h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.ex-my-orders__card--buy {
+  border-top: 2px solid var(--ex-buy, #0ecb81);
+}
+
+.ex-my-orders__card--sell {
+  border-top: 2px solid var(--ex-sell, #f6465d);
+}
+
+.ex-my-orders__card--buy .ex-my-orders__card-head h3 {
+  color: var(--ex-buy, #0ecb81);
+}
+
+.ex-my-orders__card--sell .ex-my-orders__card-head h3 {
+  color: var(--ex-sell, #f6465d);
+}
+
+.ex-my-orders__card-count {
+  font-size: 0.7rem;
+  color: var(--ex-muted, #848e9c);
+}
+
+.ex-my-orders__card .ex-my-orders__scroll {
+  flex: 1;
+}
+
+.ex-my-orders__card .ex-my-orders__pagination {
+  border-top: 1px solid var(--ex-border, #2b3139);
+  margin-top: auto;
+}
+
 .ex-my-orders__scroll {
   min-height: 0;
   max-height: 320px;
@@ -970,31 +1035,29 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0.65rem;
-  border-top: 1px solid var(--ex-border, #2b3139);
-  font-size: 0.7rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.72rem;
   color: var(--ex-muted, #848e9c);
-  background: var(--ex-panel-2, #1e2329);
 }
 
 .ex-my-orders__pagination-actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .ex-my-orders__pagination-actions button {
   padding: 0.25rem 0.55rem;
   border: 1px solid var(--ex-border, #2b3139);
   border-radius: 4px;
-  background: var(--ex-input-bg, #1e2329);
+  background: transparent;
   color: var(--ex-text, #eaecef);
   font-size: 0.7rem;
   cursor: pointer;
 }
 
 .ex-my-orders__pagination-actions button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -1008,7 +1071,8 @@
 
 .ex-my-orders__tabs button,
 .ex-my-orders__subtabs button {
-  padding: 0.5rem 1rem;
+  flex: 1;
+  padding: 0.5rem 0.65rem;
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
@@ -1016,13 +1080,18 @@
   font-weight: 600;
   color: var(--ex-muted, #848e9c);
   cursor: pointer;
-  margin-bottom: -1px;
 }
 
 .ex-my-orders__tabs button.is-active,
 .ex-my-orders__subtabs button.is-active {
   color: var(--ex-text, #eaecef);
   border-bottom-color: var(--ex-gold, #f0b90b);
+}
+
+@media (max-width: 1023px) {
+  .ex-my-orders__split {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ex-my-orders table {

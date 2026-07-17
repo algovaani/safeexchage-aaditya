@@ -1,3 +1,5 @@
+import { resolveAssetUrl } from './assetUrl.js';
+
 /** Lowercase slug for spothq/cryptocurrency-icons CDN */
 const ICON_SLUG = {
   BTC: 'btc',
@@ -29,7 +31,7 @@ const CG_ICON = {
 };
 
 export function resolveCoinIconUrl({ imageUrl, symbol, coingeckoId, type, baseAsset } = {}) {
-  if (imageUrl) return imageUrl;
+  if (imageUrl) return resolveAssetUrl(imageUrl);
   if (type === 'commodity') return null;
 
   const cg = String(coingeckoId || '').trim();

@@ -18,11 +18,45 @@ function resolveBaseUrl() {
   return url;
 }
 
+const DEFAULT_TIMEOUT_MS = 25_000;
+const AUTH_TIMEOUT_MS = 35_000;
+const MAX_NETWORK_RETRIES = 2;
+
 export const api = axios.create({
   baseURL: resolveBaseUrl(),
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+  timeout: DEFAULT_TIMEOUT_MS,
 });
+
+function isAuthUrl(url = '') {
+  return (
+    url.includes('/auth/login') ||
+    url.includes('/auth/admin/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/otp/') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password')
+  );
+}
+
+function isRetryableNetworkError(error) {
+  if (error.response) return false;
+  const code = error.code || '';
+  const msg = String(error.message || '').toLowerCase();
+  return (
+    code === 'ERR_NETWORK' ||
+    code === 'ECONNABORTED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    msg.includes('network error') ||
+    msg.includes('timeout')
+  );
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getStoredToken() {
   return localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY);
@@ -60,18 +94,15 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const url = config.url || '';
+  if (isAuthUrl(url)) {
+    config.timeout = AUTH_TIMEOUT_MS;
+  }
   return config;
 });
 
 function isAuthAttempt(url = '') {
-  return (
-    url.includes('/auth/login') ||
-    url.includes('/auth/admin/login') ||
-    url.includes('/auth/register') ||
-    url.includes('/auth/otp/') ||
-    url.includes('/auth/forgot-password') ||
-    url.includes('/auth/reset-password')
-  );
+  return isAuthUrl(url);
 }
 
 function formatApiError(error) {
@@ -91,14 +122,25 @@ function formatApiError(error) {
   if (payload?.error) return payload.error;
 
   if (!error.response) {
+    const code = error.code || '';
     const base = resolveBaseUrl();
     const isLocal =
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (code === 'ECONNABORTED' || String(error.message || '').toLowerCase().includes('timeout')) {
+      return 'Server is taking too long to respond. Please wait a moment and try again.';
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return 'You appear to be offline. Check your internet connection and try again.';
+    }
+
     if (isLocal) {
       return `Cannot reach API (${base}). Ensure the backend is running, then refresh and try again.`;
     }
-    return 'Cannot reach API. Check your internet connection and try again.';
+
+    return 'Cannot reach the server right now. Please try again in a few seconds.';
   }
 
   return error.message || 'Request failed';
@@ -133,9 +175,17 @@ api.interceptors.response.use(
 
     return response;
   },
-  (error) => {
+  async (error) => {
     const config = error.config || {};
     const requestUrl = config.url || '';
+
+    // Auto-retry transient network/timeout failures (common on mobile 4G/5G).
+    const retryCount = config.__retryCount || 0;
+    if (isRetryableNetworkError(error) && retryCount < MAX_NETWORK_RETRIES && !config.__noRetry) {
+      config.__retryCount = retryCount + 1;
+      await sleep(400 * config.__retryCount);
+      return api.request(config);
+    }
 
     if (error.response?.status === 401 && !isAuthAttempt(requestUrl)) {
       clearAuthAndRedirect();
@@ -240,7 +290,8 @@ export const adminTradingPairsAPI = {
   searchCoins: (q) => unwrap(api.get('/admin/trading-pairs/coins/search', { params: { q } })),
   lookupContract: (address, chain) =>
     unwrap(api.get('/admin/trading-pairs/coins/contract', { params: { address, chain } })),
-  previewCoinGecko: (id) => unwrap(api.get('/admin/trading-pairs/coins/coingecko', { params: { id } })),
+  previewDex: (chain, pair) =>
+    unwrap(api.get('/admin/trading-pairs/coins/dex', { params: { chain, pair } })),
   create: (body) => unwrap(api.post('/admin/trading-pairs', body)),
   update: (id, body) => unwrap(api.patch(`/admin/trading-pairs/${id}`, body)),
   remove: (id) => unwrap(api.delete(`/admin/trading-pairs/${id}`)),

@@ -91,6 +91,8 @@ app.get('/', (_req, res) => {
   });
 });
 
+// Coin logos stored in storage/coins (writable) — served under /uploads/coins for URL compatibility
+app.use('/uploads/coins', express.static(path.join(process.cwd(), 'storage', 'coins')));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use('/api/', globalApiRateLimit);
@@ -210,6 +212,11 @@ async function main() {
     }
     process.exit(1);
   });
+
+  // Survive flaky mobile / Apache proxy connections (prevents idle socket drops mid-auth).
+  server.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT_MS) || 65_000;
+  server.headersTimeout = Number(process.env.HTTP_HEADERS_TIMEOUT_MS) || 70_000;
+  server.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS) || 60_000;
 
   server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
     console.log(`API + WebSocket listening on :${PORT}`);
