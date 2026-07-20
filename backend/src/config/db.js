@@ -1,12 +1,23 @@
 import mongoose from 'mongoose';
 import { resolveMongoUri } from './resolveMongoUri.js';
 
-const CONNECT_OPTS = {
-  serverSelectionTimeoutMS: 15_000,
-  socketTimeoutMS: 45_000,
-  maxPoolSize: 10,
-  retryWrites: true,
-};
+/**
+ * Production uses Atlas DB `test`; local/dev uses `safeexchange`.
+ * URI may omit the path — dbName is selected here.
+ */
+export function getMongoDbName() {
+  return process.env.NODE_ENV === 'production' ? 'test' : 'safeexchange';
+}
+
+export function getMongoConnectOptions() {
+  return {
+    serverSelectionTimeoutMS: 15_000,
+    socketTimeoutMS: 45_000,
+    maxPoolSize: 10,
+    retryWrites: true,
+    dbName: getMongoDbName(),
+  };
+}
 
 let resolvedUri = null;
 let reconnectTimer = null;
@@ -41,7 +52,7 @@ function scheduleReconnect() {
     if (mongoose.connection.readyState === 1) return;
     try {
       console.info('[mongodb] reconnecting…');
-      await mongoose.connect(resolvedUri, CONNECT_OPTS);
+      await mongoose.connect(resolvedUri, getMongoConnectOptions());
       console.info('[mongodb] reconnect succeeded');
     } catch (err) {
       console.error('[mongodb] reconnect failed:', err.message);
@@ -56,12 +67,15 @@ export async function connectDb(uri, { attempts = 5 } = {}) {
   resolvedUri = await resolveMongoUri(uri);
   attachConnectionEvents();
 
+  const opts = getMongoConnectOptions();
+  console.info(`[mongodb] connecting with dbName=${opts.dbName} (NODE_ENV=${process.env.NODE_ENV || 'undefined'})`);
+
   let lastErr;
   const max = Math.max(1, Number(attempts) || 1);
 
   for (let i = 1; i <= max; i += 1) {
     try {
-      await mongoose.connect(resolvedUri, CONNECT_OPTS);
+      await mongoose.connect(resolvedUri, opts);
       return mongoose.connection;
     } catch (err) {
       lastErr = err;

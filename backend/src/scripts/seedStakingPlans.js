@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
+import { getMongoConnectOptions } from '../config/db.js';
 import { StakingPlan } from '../models/StakingPlan.js';
 
 const DEFAULT_PLANS = [
@@ -50,7 +51,7 @@ async function run() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI missing');
 
-  await mongoose.connect(await resolveMongoUri(uri), { serverSelectionTimeoutMS: 20_000 });
+  await mongoose.connect(await resolveMongoUri(uri), getMongoConnectOptions());
 
   for (const p of DEFAULT_PLANS) {
     await StakingPlan.findOneAndUpdate(

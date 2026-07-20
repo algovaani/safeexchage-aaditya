@@ -2,6 +2,7 @@ import 'dotenv/config';
 import dns from 'dns/promises';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
+import { getMongoConnectOptions, getMongoDbName } from '../config/db.js';
 
 const uri = process.env.MONGODB_URI;
 if (!uri) {
@@ -13,6 +14,7 @@ const hostMatch = uri.match(/@([^/]+)/);
 const srvHost = hostMatch?.[1]?.replace(/:.*/, '') || '';
 
 console.log('Checking MongoDB…\n');
+console.log(`dbName: ${getMongoDbName()} (NODE_ENV=${process.env.NODE_ENV || 'undefined'})\n`);
 
 if (srvHost.includes('.mongodb.net')) {
   try {
@@ -26,8 +28,9 @@ if (srvHost.includes('.mongodb.net')) {
 try {
   const resolved = await resolveMongoUri(uri);
   if (resolved !== uri) console.log('Using direct MongoDB URI (SRV DNS fallback)');
-  await mongoose.connect(resolved, { serverSelectionTimeoutMS: 20_000 });
+  await mongoose.connect(resolved, getMongoConnectOptions());
   console.log('MongoDB: CONNECTED —', mongoose.connection.host);
+  console.log('Database:', mongoose.connection.name);
   await mongoose.disconnect();
   process.exit(0);
 } catch (e) {
@@ -38,7 +41,7 @@ try {
   console.log('  2. Atlas → Database → Connect → copy a NEW connection string into backend/.env');
   console.log('  3. Atlas → Database Access → reset user password; URL-encode special chars (! → %21)');
   console.log('  4. Disable VPN; try another network if port 27017 is blocked');
-  console.log('  5. Or use local: MONGODB_URI=mongodb://127.0.0.1:27017/safex');
+  console.log('  5. Or use local: MONGODB_URI=mongodb://127.0.0.1:27017 (dbName still applied)');
   console.log('  6. Do not run backend with sudo — it can break DNS on macOS');
   if (e.reason?.servers?.size) {
     console.log('\nShard status:');

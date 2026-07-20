@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
+import { getMongoConnectOptions } from '../config/db.js';
 import { User } from '../models/User.js';
 
 async function run() {
@@ -9,7 +10,7 @@ async function run() {
 
   const email = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
 
-  await mongoose.connect(await resolveMongoUri(uri), { serverSelectionTimeoutMS: 20_000 });
+  await mongoose.connect(await resolveMongoUri(uri), getMongoConnectOptions());
 
   const user = await User.findOneAndUpdate(
     { email },

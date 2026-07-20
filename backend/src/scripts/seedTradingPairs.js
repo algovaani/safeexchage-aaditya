@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
+import { getMongoConnectOptions } from '../config/db.js';
 import { TRADING_PAIRS } from '../config/tradingPairs.js';
 import { COINGECKO_IDS } from '../config/coingeckoIds.js';
 import { TradingPair } from '../models/TradingPair.js';
@@ -9,7 +10,7 @@ async function run() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI missing');
 
-  await mongoose.connect(await resolveMongoUri(uri), { serverSelectionTimeoutMS: 20_000 });
+  await mongoose.connect(await resolveMongoUri(uri), getMongoConnectOptions());
 
   for (let i = 0; i < TRADING_PAIRS.length; i += 1) {
     const p = TRADING_PAIRS[i];

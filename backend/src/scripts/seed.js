@@ -2,6 +2,7 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { resolveMongoUri } from '../config/resolveMongoUri.js';
+import { getMongoConnectOptions } from '../config/db.js';
 import { User } from '../models/User.js';
 import { Wallet } from '../models/Wallet.js';
 
@@ -62,7 +63,7 @@ async function run() {
   if (!uri) throw new Error('MONGODB_URI missing');
 
   const resolved = await resolveMongoUri(uri);
-  await mongoose.connect(resolved, { serverSelectionTimeoutMS: 20_000 });
+  await mongoose.connect(resolved, getMongoConnectOptions());
 
   const adminEmail = process.env.ADMIN_EMAIL || '';
   const adminPass = process.env.ADMIN_PASSWORD || '';
