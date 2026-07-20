@@ -1,4 +1,5 @@
-import { body, query } from 'express-validator';
+import { body, param, query } from 'express-validator';
+import mongoose from 'mongoose';
 import { datatableQueryValidators } from './adminListValidators.js';
 
 export function isValidWalletAddress(address, network) {
@@ -91,8 +92,51 @@ export const verifyWithdrawalValidators = [
   }),
 ];
 
+export const cancelWithdrawalValidators = [
+  param('id')
+    .custom((v) => mongoose.Types.ObjectId.isValid(v))
+    .withMessage('Invalid withdrawal id'),
+];
+
+export const editWithdrawalValidators = [
+  body('amount')
+    .optional()
+    .isFloat({ gt: 0 })
+    .withMessage('amount must be a positive number')
+    .toFloat(),
+  body('currency')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 16 })
+    .withMessage('currency must be 2–16 characters'),
+  body('wallet_address').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('network').optional({ values: 'falsy' }).trim().isLength({ max: 32 }),
+  body('bank_name').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('account_number').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
+  body('ifsc').optional({ values: 'falsy' }).trim().isLength({ max: 16 }),
+  body('account_holder').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('admin_note').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body().custom((_, { req }) => {
+    const editable = [
+      'amount',
+      'currency',
+      'wallet_address',
+      'network',
+      'bank_name',
+      'account_number',
+      'ifsc',
+      'account_holder',
+      'admin_note',
+    ];
+    if (!editable.some((key) => req.body[key] !== undefined)) {
+      throw new Error('At least one editable field is required');
+    }
+    return true;
+  }),
+];
+
 export const adminWithdrawalListValidators = [
   ...datatableQueryValidators,
   query('type').optional().isIn(['crypto', 'fiat']),
-  query('status').optional().isIn(['pending', 'approved', 'rejected']),
+  query('status').optional().isIn(['pending', 'approved', 'rejected', 'cancelled']),
 ];

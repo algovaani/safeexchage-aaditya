@@ -28,7 +28,7 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
 import futuresRoutes from './routes/futuresRoutes.js';
-import { ensureMarketStream, roomName } from './services/marketStreamService.js';
+import { handleMarketSubscribe, handleMarketUnsubscribe } from './services/marketStreamService.js';
 import { attachUserSockets } from './services/socketService.js';
 import { startMonitor } from './services/tpslMonitor.js';
 import { startFuturesMonitor, attachFuturesMonitorIo } from './services/futuresMonitor.js';
@@ -136,16 +136,14 @@ app.use(notFound);
 app.use(errorHandler);
 
 io.on('connection', (socket) => {
-  socket.on('market:subscribe', ({ symbol, interval }) => {
-    if (!symbol || !interval) return;
-    const room = roomName(symbol, interval);
-    socket.join(room);
-    ensureMarketStream(io, symbol, interval);
+  socket.on('market:subscribe', (payload) => {
+    handleMarketSubscribe(io, socket, payload || {}).catch((err) => {
+      console.warn('[market:subscribe]', err.message);
+    });
   });
 
-  socket.on('market:unsubscribe', ({ symbol, interval }) => {
-    if (!symbol || !interval) return;
-    socket.leave(roomName(symbol, interval));
+  socket.on('market:unsubscribe', (payload) => {
+    handleMarketUnsubscribe(socket, payload || {});
   });
 });
 

@@ -25,15 +25,16 @@ export function mergeCandles(binanceCandles, manualDocs) {
 
     for (const man of sorted) {
       if (man.mode === 'candle') {
-        o = man.open ?? o;
-        h = man.high ?? h;
-        l = man.low ?? l;
-        c = man.close ?? c;
-        v = man.volume ?? v;
+        if (man.open != null) o = man.open;
+        if (man.close != null) c = man.close;
+        if (man.high != null) h = Math.max(h, man.high);
+        if (man.low != null) l = Math.min(l, man.low);
+        if (man.volume != null) v = Math.max(v, man.volume);
       } else if (man.mode === 'tick' && man.price != null) {
-        c = man.price;
+        // Expand wick so pulsed prices remain visible on the chart
         h = Math.max(h, man.price);
         l = Math.min(l, man.price);
+        if (man.applyClose) c = man.price;
       }
     }
 
@@ -58,6 +59,16 @@ export function mergeCandles(binanceCandles, manualDocs) {
         high: best.high,
         low: best.low,
         close: best.close,
+        volume: best.volume ?? 0,
+        isFinal: true,
+      });
+    } else if (best.mode === 'tick' && best.price != null) {
+      merged.push({
+        openTime,
+        open: best.price,
+        high: best.price,
+        low: best.price,
+        close: best.price,
         volume: best.volume ?? 0,
         isFinal: true,
       });

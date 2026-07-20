@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, Zap } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { Loader2, Pencil, Trash2, Zap } from 'lucide-react';
 import { api, parseApiResponse } from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useTradingPairs } from '../../context/TradingPairsContext.jsx';
@@ -14,6 +14,43 @@ function fmtPrice(n) {
   return v.toLocaleString(undefined, { maximumFractionDigits: 8 });
 }
 
+function emptyStatsForm() {
+  return {
+    change_24h: '',
+    high_24h: '',
+    low_24h: '',
+    quoteVolume: '',
+    volume: '',
+  };
+}
+
+function formFromOverride(ov, live) {
+  return {
+    change_24h:
+      ov?.change_24h != null
+        ? String(ov.change_24h)
+        : live?.change != null
+          ? String(live.change)
+          : '',
+    high_24h:
+      ov?.high_24h != null
+        ? String(ov.high_24h)
+        : live?.high != null
+          ? String(live.high)
+          : '',
+    low_24h:
+      ov?.low_24h != null ? String(ov.low_24h) : live?.low != null ? String(live.low) : '',
+    quoteVolume:
+      ov?.quoteVolume != null
+        ? String(ov.quoteVolume)
+        : live?.quoteVolume != null
+          ? String(live.quoteVolume)
+          : '',
+    volume:
+      ov?.volume != null ? String(ov.volume) : live?.volume != null ? String(live.volume) : '',
+  };
+}
+
 export default function AdminPricesSection() {
   const toast = useToast();
   const { pairs } = useTradingPairs();
@@ -23,6 +60,10 @@ export default function AdminPricesSection() {
   const [busySymbol, setBusySymbol] = useState('');
   const [manual, setManual] = useState([]);
   const [search, setSearch] = useState('');
+  const [overrides, setOverrides] = useState({});
+  const [editSymbol, setEditSymbol] = useState('');
+  const [statsForm, setStatsForm] = useState(emptyStatsForm());
+  const [statsBusy, setStatsBusy] = useState(false);
 
   const pairBySymbol = useMemo(() => {
     const map = new Map();
@@ -58,12 +99,27 @@ export default function AdminPricesSection() {
     }
   }, []);
 
+  const loadOverrides = useCallback(async () => {
+    try {
+      const { data } = await api.get('/admin/ticker-stats');
+      const rows = asArray(parseApiResponse(data));
+      const map = {};
+      for (const row of rows) {
+        map[String(row.symbol).toUpperCase()] = row;
+      }
+      setOverrides(map);
+    } catch {
+      setOverrides({});
+    }
+  }, []);
+
   useEffect(() => {
     loadPrices();
     loadManual();
+    loadOverrides();
     const id = setInterval(loadPrices, LIST_MARKET_POLL_MS);
     return () => clearInterval(id);
-  }, [loadPrices, loadManual]);
+  }, [loadPrices, loadManual, loadOverrides]);
 
   const rows = useMemo(() => {
     const bySym = new Map();
@@ -86,10 +142,15 @@ export default function AdminPricesSection() {
         type: pair.category === 'commodity' || sym.endsWith('INR') ? 'commodity' : 'crypto',
         price,
         change: Number(live.change_24h ?? live.priceChangePercent ?? 0),
+        high: Number(live.high_24h ?? live.highPrice ?? 0) || null,
+        low: Number(live.low_24h ?? live.lowPrice ?? 0) || null,
+        volume: Number(live.volume ?? 0) || null,
+        quoteVolume: Number(live.quoteVolume ?? 0) || null,
+        statsOverride: Boolean(live.stats_override) || Boolean(overrides[sym]),
+        override: overrides[sym] || null,
       };
     });
 
-    // Include any live symbols missing from pairs config
     for (const [sym, live] of bySym) {
       if (list.some((r) => r.symbol === sym)) continue;
       list.push({
@@ -101,6 +162,12 @@ export default function AdminPricesSection() {
         type: sym.endsWith('INR') ? 'commodity' : 'crypto',
         price: Number(live.price ?? live.lastPrice ?? 0),
         change: Number(live.change_24h ?? live.priceChangePercent ?? 0),
+        high: Number(live.high_24h ?? 0) || null,
+        low: Number(live.low_24h ?? 0) || null,
+        volume: Number(live.volume ?? 0) || null,
+        quoteVolume: Number(live.quoteVolume ?? 0) || null,
+        statsOverride: Boolean(live.stats_override) || Boolean(overrides[sym]),
+        override: overrides[sym] || null,
       });
     }
 
@@ -114,7 +181,7 @@ export default function AdminPricesSection() {
           .toLowerCase()
           .includes(q)
     );
-  }, [pairs, prices, search]);
+  }, [pairs, prices, search, overrides]);
 
   async function runPulse(row) {
     const raw = pulseInputs[row.symbol];
@@ -128,20 +195,65 @@ export default function AdminPricesSection() {
       const { data } = await api.post('/admin/prices/pulse', {
         symbol: row.symbol,
         price,
-        holdMs: 2500,
+        holdMs: 2000,
       });
       const payload = parseApiResponse(data);
       const filled = payload?.filledOrders ?? 0;
       toast.success(
         filled
-          ? `${row.displayPair} → ${fmtPrice(price)} · ${filled} order(s) filled`
-          : `${row.displayPair} pulsed to ${fmtPrice(price)} · chart spiked & will revert`
+          ? `${row.displayPair} → ${fmtPrice(price)} on chart · ${filled} order(s) filled`
+          : `${row.displayPair} pulse set on chart at ${fmtPrice(price)}`
       );
-      await loadPrices();
+      await Promise.all([loadPrices(), loadManual()]);
     } catch (ex) {
       toast.error(ex?.response?.data?.message || ex.message || 'Pulse failed');
     } finally {
       setBusySymbol('');
+    }
+  }
+
+  function openStatsEditor(row) {
+    setEditSymbol(row.symbol);
+    setStatsForm(formFromOverride(row.override, row));
+  }
+
+  function closeStatsEditor() {
+    setEditSymbol('');
+    setStatsForm(emptyStatsForm());
+  }
+
+  async function saveStats(row) {
+    setStatsBusy(true);
+    try {
+      await api.put(`/admin/ticker-stats/${encodeURIComponent(row.symbol)}`, {
+        change_24h: statsForm.change_24h === '' ? null : Number(statsForm.change_24h),
+        high_24h: statsForm.high_24h === '' ? null : Number(statsForm.high_24h),
+        low_24h: statsForm.low_24h === '' ? null : Number(statsForm.low_24h),
+        quoteVolume: statsForm.quoteVolume === '' ? null : Number(statsForm.quoteVolume),
+        volume: statsForm.volume === '' ? null : Number(statsForm.volume),
+        enabled: true,
+      });
+      toast.success(`${row.displayPair} ticker stats updated`);
+      closeStatsEditor();
+      await Promise.all([loadOverrides(), loadPrices()]);
+    } catch (ex) {
+      toast.error(ex?.response?.data?.message || ex.message || 'Failed to save stats');
+    } finally {
+      setStatsBusy(false);
+    }
+  }
+
+  async function clearStats(row) {
+    setStatsBusy(true);
+    try {
+      await api.delete(`/admin/ticker-stats/${encodeURIComponent(row.symbol)}`);
+      toast.success(`${row.displayPair} ticker override cleared`);
+      if (editSymbol === row.symbol) closeStatsEditor();
+      await Promise.all([loadOverrides(), loadPrices()]);
+    } catch (ex) {
+      toast.error(ex?.response?.data?.message || ex.message || 'Failed to clear override');
+    } finally {
+      setStatsBusy(false);
     }
   }
 
@@ -150,10 +262,10 @@ export default function AdminPricesSection() {
       <div className="admin-card">
         <div className="admin-prices__head">
           <div>
-            <h2>Live prices &amp; order pulse</h2>
+            <h2>Live prices, pulse &amp; ticker stats</h2>
             <p className="admin-muted" style={{ margin: '0.35rem 0 0' }}>
-              Enter a price to spike the chart once, fill limit orders in that range, then revert to
-              market.
+              Pulse spikes last price on the chart. Use <strong>Edit stats</strong> to set the
+              trading header values: 24h Change, High, Low, and Volume (USDT).
             </p>
           </div>
           <input
@@ -171,7 +283,10 @@ export default function AdminPricesSection() {
               <tr>
                 <th>Coin</th>
                 <th>Live price</th>
-                <th>24h</th>
+                <th>24h %</th>
+                <th>High</th>
+                <th>Low</th>
+                <th>Vol (USDT)</th>
                 <th>Pulse price</th>
                 <th>Action</th>
               </tr>
@@ -179,7 +294,7 @@ export default function AdminPricesSection() {
             <tbody>
               {loading && !rows.length ? (
                 <tr>
-                  <td colSpan={5} className="admin-empty">
+                  <td colSpan={8} className="admin-empty">
                     <Loader2 className="spin" size={18} style={{ display: 'inline', verticalAlign: 'middle' }} />{' '}
                     Loading prices…
                   </td>
@@ -188,68 +303,183 @@ export default function AdminPricesSection() {
               {rows.map((row) => {
                 const busy = busySymbol === row.symbol;
                 const change = Number(row.change);
+                const editing = editSymbol === row.symbol;
                 return (
-                  <tr key={row.symbol}>
-                    <td>
-                      <CoinLabel
-                        symbol={row.symbol.replace(/USDT$|INR$/, '')}
-                        imageUrl={row.imageUrl}
-                        coingeckoId={row.coingeckoId}
-                        type={row.type}
-                        name={row.name}
-                        label={row.displayPair}
-                        sub={row.name}
-                        size={28}
-                      />
-                    </td>
-                    <td className="tabular-nums">{fmtPrice(row.price)}</td>
-                    <td
-                      className={`tabular-nums ${
-                        change > 0 ? 'text-profit' : change < 0 ? 'text-loss' : ''
-                      }`}
-                    >
-                      {Number.isFinite(change) && change !== 0
-                        ? `${change > 0 ? '+' : ''}${change.toFixed(2)}%`
-                        : '—'}
-                    </td>
-                    <td>
-                      <input
-                        className="admin-input admin-prices__pulse-input"
-                        type="number"
-                        step="any"
-                        min="0"
-                        placeholder={row.price ? String(row.price) : 'Target price'}
-                        value={pulseInputs[row.symbol] ?? ''}
-                        onChange={(e) =>
-                          setPulseInputs((prev) => ({ ...prev, [row.symbol]: e.target.value }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') runPulse(row);
-                        }}
-                      />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="admin-btn admin-btn--primary admin-btn--sm"
-                        disabled={busy}
-                        onClick={() => runPulse(row)}
+                  <Fragment key={row.symbol}>
+                    <tr>
+                      <td>
+                        <CoinLabel
+                          symbol={row.symbol.replace(/USDT$|INR$/, '')}
+                          imageUrl={row.imageUrl}
+                          coingeckoId={row.coingeckoId}
+                          type={row.type}
+                          name={row.name}
+                          label={row.displayPair}
+                          sub={row.name}
+                          size={28}
+                        />
+                        {row.statsOverride ? (
+                          <span className="admin-prices__override-badge">Override</span>
+                        ) : null}
+                      </td>
+                      <td className="tabular-nums">{fmtPrice(row.price)}</td>
+                      <td
+                        className={`tabular-nums ${
+                          change > 0 ? 'text-profit' : change < 0 ? 'text-loss' : ''
+                        }`}
                       >
-                        {busy ? (
-                          <Loader2 size={14} className="spin" />
-                        ) : (
-                          <>
-                            <Zap size={14} /> Pulse
-                          </>
-                        )}
-                      </button>
-                    </td>
-                  </tr>
+                        {Number.isFinite(change)
+                          ? `${change > 0 ? '+' : ''}${change.toFixed(2)}%`
+                          : '—'}
+                      </td>
+                      <td className="tabular-nums">{fmtPrice(row.high)}</td>
+                      <td className="tabular-nums">{fmtPrice(row.low)}</td>
+                      <td className="tabular-nums">
+                        {row.quoteVolume != null && Number.isFinite(row.quoteVolume)
+                          ? row.quoteVolume.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                          : '—'}
+                      </td>
+                      <td>
+                        <input
+                          className="admin-input admin-prices__pulse-input"
+                          type="number"
+                          step="any"
+                          min="0"
+                          placeholder={row.price ? String(row.price) : 'Target price'}
+                          value={pulseInputs[row.symbol] ?? ''}
+                          onChange={(e) =>
+                            setPulseInputs((prev) => ({ ...prev, [row.symbol]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') runPulse(row);
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <div className="admin-actions">
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--primary admin-btn--sm"
+                            disabled={busy}
+                            onClick={() => runPulse(row)}
+                          >
+                            {busy ? (
+                              <Loader2 size={14} className="spin" />
+                            ) : (
+                              <>
+                                <Zap size={14} /> Pulse
+                              </>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="admin-btn admin-btn--ghost admin-btn--sm"
+                            onClick={() => (editing ? closeStatsEditor() : openStatsEditor(row))}
+                          >
+                            <Pencil size={14} /> {editing ? 'Close' : 'Edit stats'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {editing ? (
+                      <tr className="admin-prices__stats-row">
+                        <td colSpan={8}>
+                          <div className="admin-prices__stats-form">
+                            <label>
+                              24h Change %
+                              <input
+                                className="admin-input"
+                                type="number"
+                                step="any"
+                                placeholder="e.g. 2.5 or -1.2"
+                                value={statsForm.change_24h}
+                                onChange={(e) =>
+                                  setStatsForm((f) => ({ ...f, change_24h: e.target.value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              24h High
+                              <input
+                                className="admin-input"
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={statsForm.high_24h}
+                                onChange={(e) =>
+                                  setStatsForm((f) => ({ ...f, high_24h: e.target.value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              24h Low
+                              <input
+                                className="admin-input"
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={statsForm.low_24h}
+                                onChange={(e) =>
+                                  setStatsForm((f) => ({ ...f, low_24h: e.target.value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              24h Volume (USDT)
+                              <input
+                                className="admin-input"
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={statsForm.quoteVolume}
+                                onChange={(e) =>
+                                  setStatsForm((f) => ({ ...f, quoteVolume: e.target.value }))
+                                }
+                              />
+                            </label>
+                            <label>
+                              Base volume (optional)
+                              <input
+                                className="admin-input"
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={statsForm.volume}
+                                onChange={(e) =>
+                                  setStatsForm((f) => ({ ...f, volume: e.target.value }))
+                                }
+                              />
+                            </label>
+                            <div className="admin-prices__stats-actions">
+                              <button
+                                type="button"
+                                className="admin-btn admin-btn--primary admin-btn--sm"
+                                disabled={statsBusy}
+                                onClick={() => saveStats(row)}
+                              >
+                                {statsBusy ? <Loader2 size={14} className="spin" /> : 'Save stats'}
+                              </button>
+                              {row.override ? (
+                                <button
+                                  type="button"
+                                  className="admin-btn admin-btn--danger admin-btn--sm"
+                                  disabled={statsBusy}
+                                  onClick={() => clearStats(row)}
+                                >
+                                  <Trash2 size={14} /> Clear override
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
                 );
               })}
               {!loading && !rows.length && (
                 <tr>
-                  <td colSpan={5} className="admin-empty">
+                  <td colSpan={8} className="admin-empty">
                     No trading pairs found.
                   </td>
                 </tr>
@@ -262,7 +492,8 @@ export default function AdminPricesSection() {
       <div className="admin-card">
         <h2>Manual candle overrides</h2>
         <p className="admin-muted" style={{ marginTop: 0 }}>
-          Legacy merge-layer candles (chart only). Prefer Pulse above to fill orders.
+          Pulse now auto-saves wick candles here. These merge into the live chart so pulsed prices
+          stay in history.
         </p>
         <div className="admin-table-wrap">
           <table className="admin-table">

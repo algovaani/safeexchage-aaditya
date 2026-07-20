@@ -253,6 +253,7 @@ export const withdrawalAPI = {
   submitCrypto: (body) => unwrap(api.post('/withdrawal/crypto/submit', body)),
   submitFiat: (body) => unwrap(api.post('/withdrawal/fiat/submit', body)),
   getHistory: () => unwrap(api.get('/withdrawals/history')),
+  cancel: (id) => unwrap(api.post(`/withdrawals/${id}/cancel`)),
 };
 
 export const cashInPersonAPI = {

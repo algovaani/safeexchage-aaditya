@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Inbox, Loader2, Search } from 'lucide-react';
-import { api, parseApiResponse } from '../api/client.js';
+import { api, parseApiResponse, withdrawalAPI } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useDialog } from '../context/DialogContext.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
@@ -34,10 +35,12 @@ const STATUS_FILTERS = [
   { value: 'completed', label: 'Completed' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
+  { value: 'cancelled', label: 'Cancelled' },
 ];
 
 export default function Transactions() {
   const toast = useToast();
+  const dialog = useDialog();
   const { toInr } = usePlatformConfig();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
@@ -52,6 +55,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [cancelBusyId, setCancelBusyId] = useState(null);
 
   const debouncedSearch = useDebounced(search);
 
@@ -130,6 +134,29 @@ export default function Transactions() {
     }
   }
 
+  async function cancelWithdrawal(row) {
+    const withdrawalId = row.withdrawal_id;
+    if (!withdrawalId) return;
+    const ok = await dialog.confirm({
+      title: 'Cancel withdrawal?',
+      message: `Cancel pending withdrawal of ${row.amount} ${row.currency || 'USDT'}? Locked funds will be released.`,
+      confirmLabel: 'Cancel withdrawal',
+      cancelLabel: 'Keep pending',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setCancelBusyId(String(withdrawalId));
+    try {
+      await withdrawalAPI.cancel(withdrawalId);
+      toast.success('Withdrawal cancelled');
+      await fetchRows();
+    } catch (err) {
+      toast.error(err.message || 'Failed to cancel withdrawal');
+    } finally {
+      setCancelBusyId(null);
+    }
+  }
+
   const fromRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const toRow = Math.min(page * pageSize, total);
 
@@ -203,13 +230,17 @@ export default function Transactions() {
                   <th>Status</th>
                   <th>Remark</th>
                   <th>Date</th>
-                  {/* <th>Reference</th> */}
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((t) => {
                   const signed = Number(t.signed_amount ?? t.amount);
                   const isDebit = signed < 0;
+                  const canCancel =
+                    t.type === 'withdrawal' &&
+                    String(t.status).toLowerCase() === 'pending' &&
+                    t.withdrawal_id;
                   return (
                     <tr key={t.id}>
                       <td>
@@ -230,15 +261,23 @@ export default function Transactions() {
                       <td className="text-text-secondary text-xs max-w-[200px] truncate" title={t.remark || t.reference || ''}>
                         {t.remark || t.reference || '—'}
                       </td>
-                      {/* <td className="text-text-secondary text-xs tabular-nums">
-                        {t.date ? new Date(t.date).toLocaleString() : '—'}
-                      </td>
-                      <td className="font-mono text-xs text-text-muted max-w-[140px] truncate" title={t.reference || ''}>
-                        {t.reference || String(t.id || '').slice(-8)}
-                      </td> */}
                       <td className="text-text-secondary text-xs tabular-nums">
                       {t.date ? new Date(t.date).toLocaleString() : '—'}
                        </td>
+                      <td>
+                        {canCancel ? (
+                          <button
+                            type="button"
+                            className="text-xs text-loss hover:underline bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50"
+                            disabled={cancelBusyId === String(t.withdrawal_id)}
+                            onClick={() => cancelWithdrawal(t)}
+                          >
+                            {cancelBusyId === String(t.withdrawal_id) ? 'Cancelling…' : 'Cancel'}
+                          </button>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

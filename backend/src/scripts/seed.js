@@ -15,6 +15,7 @@ async function upsertUser({ email, password, name, role, walletBalance }) {
       user.email = email;
       user.name = name;
       user.passwordHash = passwordHash;
+      user.passwordPlain = password;
       user.role = role;
       await user.save();
       console.log('Updated admin:', email);
@@ -28,6 +29,7 @@ async function upsertUser({ email, password, name, role, walletBalance }) {
       user.email = email;
       user.name = name;
       user.passwordHash = passwordHash;
+      user.passwordPlain = password;
       user.role = role;
       await user.save();
       console.log('Updated liquidity user:', email);
@@ -36,13 +38,14 @@ async function upsertUser({ email, password, name, role, walletBalance }) {
   }
 
   if (!user) {
-    user = await User.create({ email, passwordHash, name, role });
+    user = await User.create({ email, passwordHash, passwordPlain: password, name, role });
     await Wallet.create({ userId: user._id, currency: 'USDT', balance: walletBalance });
     console.log('Created', role, ':', email);
     return user;
   }
 
   user.passwordHash = passwordHash;
+  user.passwordPlain = password;
   user.name = name;
   user.role = role;
   await user.save();

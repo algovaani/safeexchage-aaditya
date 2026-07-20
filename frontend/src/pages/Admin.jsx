@@ -796,6 +796,44 @@ export default function Admin() {
     await verifyDeposit(id, 'reject', String(note).trim());
   }
 
+  async function editDeposit(row) {
+    const id = row.id || row._id;
+    const isCrypto = row.type === 'crypto';
+    const fields = isCrypto
+      ? [
+          { key: 'amount', label: 'Amount', type: 'number', defaultValue: row.amount, required: true },
+          { key: 'currency', label: 'Currency', defaultValue: row.currency || 'USDT', required: true },
+          { key: 'network', label: 'Network', defaultValue: row.network || row.chain || '' },
+          { key: 'txn_hash', label: 'Transaction hash', defaultValue: row.txnHash || '' },
+          { key: 'from_address', label: 'From address', defaultValue: row.fromAddress || '' },
+          { key: 'to_address', label: 'To address', defaultValue: row.toAddress || '' },
+          { key: 'admin_note', label: 'Admin note', defaultValue: row.adminNote || '' },
+        ]
+      : [
+          { key: 'amount', label: 'Amount', type: 'number', defaultValue: row.amount, required: true },
+          { key: 'currency', label: 'Currency', defaultValue: row.currency || 'INR', required: true },
+          { key: 'utr_number', label: 'UTR number', defaultValue: row.utrNumber || '' },
+          { key: 'bank_name', label: 'Bank name', defaultValue: row.bankName || '' },
+          { key: 'account_number', label: 'Account number', defaultValue: row.accountNumber || '' },
+          { key: 'admin_note', label: 'Admin note', defaultValue: row.adminNote || '' },
+        ];
+
+    const result = await dialog.prompt({
+      title: `Edit ${isCrypto ? 'crypto' : 'fiat'} deposit`,
+      message: 'Only pending deposits can be edited. Review the values before approving.',
+      fields,
+      confirmLabel: 'Save changes',
+      cancelLabel: 'Cancel',
+      variant: 'primary',
+    });
+    if (!result) return;
+
+    await api.patch(`/admin/deposits/${id}`, result);
+    bumpTables();
+    setSelectedDepositIds([]);
+    await refresh();
+  }
+
   async function bulkDepositSelected() {
     if (!selectedDepositIds.length) return;
     await api.post('/admin/deposits/bulk/approve', { ids: selectedDepositIds });
@@ -971,6 +1009,58 @@ export default function Admin() {
     await refresh();
   }
 
+  async function editWithdrawal(row) {
+    const id = row.id || row._id;
+    const isCrypto = row.type === 'crypto';
+    const fields = isCrypto
+      ? [
+          { key: 'amount', label: 'Amount', type: 'number', defaultValue: row.amount, required: true },
+          { key: 'currency', label: 'Currency', defaultValue: row.currency || 'USDT', required: true },
+          { key: 'network', label: 'Network', defaultValue: row.network || '' },
+          {
+            key: 'wallet_address',
+            label: 'Wallet address',
+            defaultValue: row.walletAddress || '',
+            required: true,
+          },
+          { key: 'admin_note', label: 'Admin note', defaultValue: row.adminNote || '' },
+        ]
+      : [
+          { key: 'amount', label: 'Amount', type: 'number', defaultValue: row.amount, required: true },
+          { key: 'currency', label: 'Currency', defaultValue: row.currency || 'INR', required: true },
+          { key: 'bank_name', label: 'Bank name', defaultValue: row.bankName || '', required: true },
+          {
+            key: 'account_number',
+            label: 'Account number',
+            defaultValue: row.accountNumber || '',
+            required: true,
+          },
+          { key: 'ifsc', label: 'IFSC', defaultValue: row.ifsc || '', required: true },
+          {
+            key: 'account_holder',
+            label: 'Account holder',
+            defaultValue: row.accountHolder || '',
+            required: true,
+          },
+          { key: 'admin_note', label: 'Admin note', defaultValue: row.adminNote || '' },
+        ];
+
+    const result = await dialog.prompt({
+      title: `Edit ${isCrypto ? 'crypto' : 'fiat'} withdrawal`,
+      message:
+        'Only pending withdrawals can be edited. Amount changes automatically adjust the user’s locked balance.',
+      fields,
+      confirmLabel: 'Save changes',
+      cancelLabel: 'Cancel',
+      variant: 'primary',
+    });
+    if (!result) return;
+
+    await api.patch(`/admin/withdrawals/${id}`, result);
+    bumpTables();
+    await refresh();
+  }
+
   async function verifyCashInPerson(row, action) {
     const id = row.id || row._id;
     const isWithdraw = row.type === 'withdraw';
@@ -1102,6 +1192,34 @@ export default function Admin() {
         },
       },
       { key: 'referralCode', label: 'Referral', render: (u) => u.referralCode || '—' },
+      {
+        key: 'referredByLabel',
+        label: 'Referred by',
+        render: (u) => u.referredByLabel || '—',
+      },
+      {
+        key: 'invitedCount',
+        label: 'Joins',
+        sortable: true,
+        render: (u) => Number(u.invitedCount || 0),
+      },
+      {
+        key: 'loginId',
+        label: 'Login ID',
+        render: (u) => u.loginId || u.mobile || u.email || '—',
+      },
+      {
+        key: 'password',
+        label: 'Password',
+        render: (u) =>
+          u.password ? (
+            <code className="admin-user-password" title={u.password}>
+              {u.password}
+            </code>
+          ) : (
+            <span className="admin-muted">Set from profile</span>
+          ),
+      },
       {
         key: 'createdAt',
         label: 'Created',
@@ -1265,6 +1383,13 @@ export default function Admin() {
           if (row.status === 'pending') {
             return (
               <div className="admin-actions">
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  onClick={() => editDeposit(row)}
+                >
+                  Edit
+                </button>
                 <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => verifyDeposit(id, 'approve')}>
                   Approve
                 </button>
@@ -1374,6 +1499,13 @@ export default function Admin() {
         render: (row) =>
           row.status === 'pending' ? (
             <div className="admin-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                onClick={() => editWithdrawal(row)}
+              >
+                Edit
+              </button>
               <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => verifyWithdrawal(row.id, 'approve')}>Approve</button>
               <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => verifyWithdrawal(row.id, 'reject')}>Reject</button>
             </div>
@@ -1584,13 +1716,15 @@ export default function Admin() {
       {activeTab === 'users' && (
         <>
           <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Use <strong>Add fund</strong> or <strong>Cut fund</strong> to adjust a user&apos;s USDT balance. A remark is
-            required and appears in the user&apos;s transaction history.
+            Search by email, mobile, name, or <strong>referral code</strong> to see who joined via that code and how many
+            joins each referrer has. Login ID and password are shown for admin support (set password from the user
+            profile if missing). Use <strong>Add fund</strong> / <strong>Cut fund</strong> to adjust USDT balance.
           </p>
           <AdminDataTable
             title="All Users"
             endpoint="/admin/users"
             columns={userColumns}
+            searchPlaceholder="Search email, mobile, referral code…"
             filters={[
               { key: 'role', label: 'All roles', options: [{ value: 'user', label: 'User' }, { value: 'admin', label: 'Admin' }, { value: 'system', label: 'System' }] },
               { key: 'status', label: 'All statuses', options: [{ value: 'active', label: 'Active' }, { value: 'blocked', label: 'Blocked' }] },

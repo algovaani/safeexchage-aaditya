@@ -6,11 +6,11 @@ import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
+import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import CoinIcon from '../components/CoinIcon.jsx';
 
 const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
-const ASSETS = ['BTCUSDT', 'ETHUSDT'];
 const TIMEFRAMES = ['1m', '5m', '15m', '1H', '4H', '1D'];
 
 const MOCK_GAINERS = [
@@ -25,9 +25,17 @@ const MOCK_LOSERS = [
   { name: 'DOT', price: 7.12, change: -1.76 },
 ];
 
+function resolveChartInterval(tf) {
+  if (tf === '1H') return '1h';
+  if (tf === '4H') return '4h';
+  if (tf === '1D') return '1d';
+  return tf;
+}
+
 export default function Dashboard() {
   const { toInr } = usePlatformConfig();
-  const { walletVersion } = useRealtime();
+  const { wallet: liveWallet, walletVersion } = useRealtime();
+  const { pairs: tradingPairs } = useTradingPairs();
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +43,18 @@ export default function Dashboard() {
   const [timeframe, setTimeframe] = useState('15m');
   const [candles, setCandles] = useState([]);
   const [ticker, setTicker] = useState(null);
+
+  const chartAssets = useMemo(() => {
+    const active = (tradingPairs || [])
+      .filter((p) => p.isActive !== false && (p.quoteAsset === 'USDT' || String(p.symbol).endsWith('USDT')))
+      .sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
+    const top = active.slice(0, 4).map((p) => p.symbol);
+    return top.length ? top : ['BTCUSDT', 'ETHUSDT'];
+  }, [tradingPairs]);
+
+  useEffect(() => {
+    if (!chartAssets.includes(symbol)) setSymbol(chartAssets[0]);
+  }, [chartAssets, symbol]);
 
   useEffect(() => {
     let active = true;
@@ -61,45 +81,78 @@ export default function Dashboard() {
     load();
 
     const onOrders = () => load();
+    const onWallet = () => load();
     window.addEventListener('orders:updated', onOrders);
+    window.addEventListener('wallet:updated', onWallet);
     return () => {
       active = false;
       window.removeEventListener('orders:updated', onOrders);
+      window.removeEventListener('wallet:updated', onWallet);
     };
   }, [walletVersion]);
 
   useEffect(() => {
     let active = true;
+    const interval = resolveChartInterval(timeframe);
     (async () => {
       try {
         const [tRes, kRes] = await Promise.all([
           api.get('/market/ticker', { params: { symbol } }),
-          api.get('/market/klines', { params: { symbol, interval: timeframe === '1H' ? '1h' : timeframe === '1D' ? '1d' : timeframe, limit: 200 } }),
+          api.get('/market/klines', { params: { symbol, interval, limit: 200 } }),
         ]);
         if (!active) return;
         setTicker(parseApiResponse(tRes.data));
         const k = parseApiResponse(kRes.data);
-        setCandles(k?.candles || []);
+        setCandles(Array.isArray(k?.candles) ? k.candles : []);
       } catch {
-        if (active) setCandles([]);
+        if (active) {
+          setCandles([]);
+          setTicker(null);
+        }
       }
     })();
-    return () => { active = false; };
+    const poll = setInterval(async () => {
+      try {
+        const [tRes, kRes] = await Promise.all([
+          api.get('/market/ticker', { params: { symbol } }),
+          api.get('/market/klines', { params: { symbol, interval, limit: 200 } }),
+        ]);
+        if (!active) return;
+        setTicker(parseApiResponse(tRes.data));
+        const k = parseApiResponse(kRes.data);
+        if (Array.isArray(k?.candles) && k.candles.length) setCandles(k.candles);
+      } catch {
+        /* keep last */
+      }
+    }, 15_000);
+    return () => {
+      active = false;
+      clearInterval(poll);
+    };
   }, [symbol, timeframe]);
 
-  const balance =
-    summary?.wallet?.balance_usdt ??
-    summary?.wallet_balance ??
-    summary?.total_balance ??
-    0;
+  const balance = useMemo(() => {
+    const fromSummary =
+      summary?.wallet?.total_balance_usdt ??
+      summary?.wallet?.balance_usdt ??
+      summary?.wallet_balance ??
+      summary?.total_balance;
+    if (fromSummary != null && Number.isFinite(Number(fromSummary))) return Number(fromSummary);
+
+    if (liveWallet) {
+      return Number(liveWallet.total_balance_usdt ?? liveWallet.balance_usdt ?? liveWallet.balance ?? 0);
+    }
+    return 0;
+  }, [summary, liveWallet]);
+
   const pnl = summary?.stats?.total_pnl ?? summary?.total_pnl ?? summary?.pnl ?? 0;
   const openPos =
     summary?.stats?.open_positions_count ??
     summary?.open_positions ??
     summary?.open_positions_count ??
     0;
-  const winRate = summary?.stats?.win_rate ?? summary?.win_rate ?? 62.4;
   const pnlUp = Number(pnl) >= 0;
+  const lastPrice = Number(ticker?.lastPrice ?? ticker?.price ?? 0);
 
   const stats = useMemo(
     () => [
@@ -111,9 +164,8 @@ export default function Dashboard() {
         up: pnlUp,
       },
       { label: 'Open Positions', value: String(openPos) },
-      { label: 'Win Rate', value: `${Number(winRate).toFixed(1)}%` },
     ],
-    [balance, pnl, openPos, winRate, pnlUp, toInr]
+    [balance, pnl, openPos, pnlUp, toInr]
   );
 
   return (
@@ -123,9 +175,9 @@ export default function Dashboard() {
         <p className="text-sm text-text-secondary">Portfolio overview and market activity</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {loading
-          ? Array.from({ length: 4 }).map((_, i) => (
+          ? Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="stat-card">
                 <div className="skeleton h-3 w-20 mb-3" />
                 <div className="skeleton h-7 w-32" />
@@ -150,7 +202,7 @@ export default function Dashboard() {
         <div className="ui-card p-0 overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-border">
             <div className="tab-row !inline-flex !p-0.5 !bg-transparent gap-1">
-              {ASSETS.map((a) => (
+              {chartAssets.map((a) => (
                 <button
                   key={a}
                   type="button"
@@ -158,19 +210,16 @@ export default function Dashboard() {
                   onClick={() => setSymbol(a)}
                 >
                   <span className="inline-flex items-center gap-1.5">
-                    <CoinIcon symbol={a.replace(/USDT$/, '')} size={16} />
-                    {a.replace('USDT', '/USDT')}
+                    <CoinIcon symbol={a.replace(/USDT$|INR$/, '')} size={16} />
+                    {a.replace('USDT', '/USDT').replace('INR', '/INR')}
                   </span>
                 </button>
               ))}
-              <button type="button" className="!flex-none px-3 py-1.5 rounded-btn text-xs text-text-muted">
-                NIFTY
-              </button>
             </div>
             <div className="flex items-center gap-3">
               <div>
                 <span className="text-2xl font-medium tabular-nums">
-                  {ticker?.lastPrice ? fmtINR(toInr(ticker.lastPrice)) : '—'}
+                  {lastPrice > 0 ? fmtINR(toInr(lastPrice)) : '—'}
                 </span>
                 {ticker?.priceChangePercent != null && (
                   <span className={`badge ml-2 ${Number(ticker.priceChangePercent) >= 0 ? 'badge-green' : 'badge-red'}`}>
@@ -310,4 +359,3 @@ export default function Dashboard() {
     </div>
   );
 }
-

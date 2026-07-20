@@ -51,6 +51,54 @@ function formatAdminDate(ts) {
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function SetPasswordForm({ userId, currentPassword, onSaved }) {
+  const [password, setPassword] = useState(currentPassword || '');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setPassword(currentPassword || '');
+  }, [currentPassword]);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg('');
+    try {
+      const { data } = await api.post(`/admin/users/${userId}/password`, { password });
+      const result = parseApiResponse(data);
+      setPassword(result?.password || password);
+      setMsg('Password saved — visible above.');
+      onSaved?.();
+    } catch (ex) {
+      setMsg(ex.response?.data?.message || ex.message || 'Failed to save password');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="admin-set-password" onSubmit={save}>
+      <h3 className="admin-user-detail__h3">Set / update password</h3>
+      <div className="admin-set-password__row">
+        <input
+          className="admin-input"
+          type="text"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="New password (min 6 chars)"
+          minLength={6}
+          required
+        />
+        <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={busy}>
+          {busy ? 'Saving…' : 'Save password'}
+        </button>
+      </div>
+      {msg && <p className="admin-set-password__msg">{msg}</p>}
+    </form>
+  );
+}
+
 export default function AdminUserDetail() {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -196,17 +244,34 @@ export default function AdminUserDetail() {
             <dd>{user.email || '—'}</dd>
             <dt>Mobile</dt>
             <dd>{user.mobile || '—'}</dd>
+            <dt>Login ID</dt>
+            <dd><CopyCell value={user.loginId || user.mobile || user.email} /></dd>
+            <dt>Password</dt>
+            <dd>
+              {user.password ? (
+                <CopyCell value={user.password} label="Copy password" />
+              ) : (
+                <span className="admin-muted">Not stored — set below</span>
+              )}
+            </dd>
             <dt>Role</dt>
             <dd><StatusBadge status={user.role} /></dd>
             <dt>Status</dt>
             <dd><StatusBadge status={user.status} /></dd>
             <dt>Referral code</dt>
             <dd>{user.referralCode || '—'}</dd>
+            <dt>Referral joins</dt>
+            <dd>{Number(user.invitedCount || 0)}</dd>
             <dt>Referred by</dt>
-            <dd>{user.referredByLabel || '—'}</dd>
+            <dd>
+              {user.referredByLabel
+                ? `${user.referredByLabel}${user.referredByCode && user.referredByCode !== user.referredByLabel ? ` (${user.referredByCode})` : ''}`
+                : '—'}
+            </dd>
             <dt>Joined</dt>
             <dd>{formatAdminDate(user.createdAt)} {formatMarketTime(user.createdAt)}</dd>
           </dl>
+          <SetPasswordForm userId={userId} currentPassword={user.password} onSaved={load} />
         </section>
 
         <section className="admin-card">

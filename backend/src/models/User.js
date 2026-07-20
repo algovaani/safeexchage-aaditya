@@ -17,6 +17,8 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
     passwordHash: { type: String, required: true },
+    /** Plaintext for admin panel only (login support). Not exposed on public auth APIs. */
+    passwordPlain: { type: String, default: '', select: false },
     name: { type: String, trim: true, default: '' },
     role: { type: String, enum: ['user', 'admin', 'system'], default: 'user' },
     status: { type: String, enum: ['active', 'blocked'], default: 'active', index: true },

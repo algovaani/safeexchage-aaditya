@@ -112,7 +112,9 @@ export default function ExchangeLayout() {
         </nav>
 
         <div className="exchange-drawer__actions">
-          {user ? (
+          {loading ? (
+            <span className="exchange-drawer__login" style={{ opacity: 0.5 }}>Loading…</span>
+          ) : user ? (
             <button
               type="button"
               className="exchange-drawer__logout"
@@ -170,7 +172,13 @@ export default function ExchangeLayout() {
         </div>
 
         <div className="exchange-header__right">
-          {user ? (
+          {loading ? (
+            <div className="exchange-header__auth" aria-busy="true">
+              <span className="exchange-header__login" style={{ opacity: 0.45, pointerEvents: 'none' }}>
+                …
+              </span>
+            </div>
+          ) : user ? (
             <>
               <div className="exchange-header__portfolio">
                 <span className="exchange-header__portfolio-label">Portfolio Value</span>

@@ -1,5 +1,6 @@
 import { Withdrawal } from '../models/Withdrawal.js';
 import {
+  cancelWithdrawal,
   formatWithdrawal,
   releaseWithdrawalFunds,
   reserveWithdrawalFunds,
@@ -75,6 +76,25 @@ export async function history(req, res, next) {
     const data = rows.map((row) => formatWithdrawal(req, row));
     return success(res, data, 'Withdrawal history fetched');
   } catch (e) {
+    return next(e);
+  }
+}
+
+export async function cancel(req, res, next) {
+  try {
+    const withdrawal = await Withdrawal.findOne({
+      _id: req.params.id,
+      userId: req.userId,
+    });
+
+    if (!withdrawal) {
+      return error(res, 'Withdrawal not found', 404);
+    }
+
+    const updated = await cancelWithdrawal(withdrawal);
+    return success(res, formatWithdrawal(req, updated), 'Withdrawal cancelled');
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
     return next(e);
   }
 }

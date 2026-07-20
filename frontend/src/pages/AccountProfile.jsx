@@ -35,6 +35,7 @@ function ProfileTab() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '',
+    email: '',
     bnbWalletAddress: '',
     ethWalletAddress: '',
     trcWalletAddress: '',
@@ -52,6 +53,7 @@ function ProfileTab() {
       setKycStatus(kyc);
       setForm({
         name: userData?.name || '',
+        email: userData?.email || '',
         bnbWalletAddress: userData?.bnbWalletAddress || '',
         ethWalletAddress: userData?.ethWalletAddress || '',
         trcWalletAddress: userData?.trcWalletAddress || '',
@@ -125,10 +127,20 @@ function ProfileTab() {
               placeholder="Your name"
               maxLength={120}
             />
-            <div>
-              <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Email</p>
-              <p className="text-text-primary">{profile?.email || '—'}</p>
-            </div>
+            <Input
+              label="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              placeholder="you@example.com"
+              maxLength={254}
+              autoComplete="email"
+            />
+            {profile?.email && form.email.trim().toLowerCase() !== String(profile.email).toLowerCase() && (
+              <p className="text-xs text-text-muted -mt-2">
+                Changing email will reset email verification on your account.
+              </p>
+            )}
             <div>
               <p className="text-xs text-text-secondary uppercase tracking-wider mb-1">Mobile</p>
               <p className="text-text-primary tabular-nums">{formatMobile(profile?.mobile)}</p>
@@ -280,11 +292,11 @@ function KycStatusBanner({ status, adminNote }) {
 
   return (
     <div className="bg-bg-tertiary border border-border rounded-xl p-4 flex items-start gap-3 mb-6">
-      <Clock className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+      <Clock className="w-5 h-5 text-accent shrink-0 mt-0.5" />
       <div>
-        <p className="text-text-primary font-medium text-sm">Identity Verification Required</p>
+        <p className="text-text-primary font-medium text-sm">Identity Verification (Optional)</p>
         <p className="text-text-secondary text-sm mt-0.5">
-          Complete KYC to unlock trading and withdrawals
+          KYC is optional — you can trade and withdraw without it. Submit anytime for added account trust.
         </p>
       </div>
     </div>
@@ -518,7 +530,7 @@ export default function AccountProfile() {
   const SETTINGS_NAV = [
     { to: '/account/profile', end: true, label: 'Profile' },
     { to: '/account/profile/security', label: 'Security' },
-    { to: '/account/profile/kyc', label: 'KYC Verification' },
+    { to: '/account/profile/kyc', label: 'KYC Verification (Optional)' },
     { to: '/account/profile/refer', label: 'Refer & Earn' },
     { to: '/account/profile/notifications', label: 'Notifications' },
     { to: '/account/profile/preferences', label: 'Preferences' },

@@ -5,6 +5,7 @@ import { UserOrder } from '../models/UserOrder.js';
 import { AdminTrade } from '../models/AdminTrade.js';
 import { UserStake } from '../models/UserStake.js';
 import { StakingPlan } from '../models/StakingPlan.js';
+import { listUserAssets } from '../services/assetBalanceService.js';
 import { fetchPriceMap } from '../services/marketDataProvider.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { success } from '../utils/response.js';
@@ -46,9 +47,11 @@ export async function getSummary(req, res, next) {
   try {
     const userId = req.userId;
 
-    const [wallet, totalDeposited, totalWithdrawnRaw, openPositionsCount, pnlRows, stakeRows] =
+    const [wallet, assets, priceData, totalDeposited, totalWithdrawnRaw, openPositionsCount, pnlRows, stakeRows] =
       await Promise.all([
         Wallet.findOne({ userId }).lean(),
+        listUserAssets(userId).catch(() => []),
+        fetchPriceMap().catch(() => ({ prices: {} })),
         sumTransactions(userId, 'deposit'),
         sumTransactions(userId, 'withdrawal', ['completed', 'approved']),
         UserOrder.countDocuments({ userId, status: 'open' }),
@@ -78,13 +81,29 @@ export async function getSummary(req, res, next) {
         ]),
       ]);
 
+    const prices = priceData?.prices || {};
+    const usdtBalance = Number(wallet?.balance) || 0;
+    let assetsUsdt = 0;
+    for (const row of assets || []) {
+      const asset = String(row.asset || '').toUpperCase();
+      if (!asset || asset === 'USDT') continue;
+      const qty = Number(row.balance) || 0;
+      if (!(qty > 0)) continue;
+      const px = Number(prices[`${asset}USDT`] ?? prices[`${asset}INR`] ?? 0);
+      if (px > 0) assetsUsdt += qty * px;
+    }
+
     const totalPnl = pnlRows[0]?.total || 0;
     const stakeStats = stakeRows[0] || { count: 0, total: 0 };
+    const totalBalanceUsdt = usdtBalance + assetsUsdt;
 
     return success(res, {
       wallet: {
-        balance_usdt: roundMoney(wallet?.balance || 0),
+        balance_usdt: roundMoney(usdtBalance),
         locked_balance: roundMoney(wallet?.lockedBalance || 0),
+        assets_usdt: roundMoney(assetsUsdt),
+        total_balance_usdt: roundMoney(totalBalanceUsdt),
+        assets,
       },
       stats: {
         total_deposited: roundMoney(totalDeposited),

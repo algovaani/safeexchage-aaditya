@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, authAPI, depositAPI, parseApiResponse } from '../api/client.js';
+import { api, authAPI, depositAPI, parseApiResponse, withdrawalAPI } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import DepositModal from '../components/DepositModal.jsx';
 import WithdrawModal from '../components/WithdrawModal.jsx';
 import CashInPersonModal from '../components/CashInPersonModal.jsx';
 import CoinIcon from '../components/CoinIcon.jsx';
+import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD } from '../utils/format.js';
 import { isCryptoDepositSupported } from '../config/cryptoDepositChains.js';
 import { FIAT_DEPOSIT_SYMBOLS } from '../config/depositNetworks.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
+import { useDialog } from '../context/DialogContext.jsx';
 
 function fmtQty(value) {
   const n = Number(value);
@@ -60,6 +63,10 @@ export default function Account() {
     usdtWalletAddress: '',
   });
   const [walletBusy, setWalletBusy] = useState(false);
+  const [withdrawals, setWithdrawals] = useState([]);
+  const [cancelBusyId, setCancelBusyId] = useState(null);
+  const toast = useToast();
+  const dialog = useDialog();
 
   const applyWallet = useCallback((wallet) => {
     if (!wallet) return;
@@ -89,11 +96,45 @@ export default function Account() {
     }
   }, [applyWallet]);
 
+  const refreshWithdrawals = useCallback(async () => {
+    try {
+      const rows = await withdrawalAPI.getHistory();
+      setWithdrawals(Array.isArray(rows) ? rows : []);
+    } catch {
+      setWithdrawals([]);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     // Balance and prices must not share one Promise.all — slow/hung prices
     // previously blocked Total Balance from ever rendering.
-    await Promise.all([refreshBalance(), refreshPrices()]);
-  }, [refreshBalance, refreshPrices]);
+    await Promise.all([refreshBalance(), refreshPrices(), refreshWithdrawals()]);
+  }, [refreshBalance, refreshPrices, refreshWithdrawals]);
+
+  async function cancelPendingWithdrawal(row) {
+    const ok = await dialog.confirm({
+      title: 'Cancel withdrawal?',
+      message: `Cancel pending withdrawal of ${row.amount} ${row.currency || 'USDT'}? Locked funds will be released.`,
+      confirmLabel: 'Cancel withdrawal',
+      cancelLabel: 'Keep pending',
+    });
+    if (!ok) return;
+    setCancelBusyId(row.id);
+    try {
+      await withdrawalAPI.cancel(row.id);
+      toast.success('Withdrawal cancelled');
+      await refresh();
+    } catch (ex) {
+      toast.error(ex.message || 'Failed to cancel withdrawal');
+    } finally {
+      setCancelBusyId(null);
+    }
+  }
+
+  const pendingWithdrawals = useMemo(
+    () => withdrawals.filter((w) => String(w.status).toLowerCase() === 'pending'),
+    [withdrawals]
+  );
 
   // Seed from realtime wallet (same source as navbar / transactions layout)
   useEffect(() => {
@@ -288,7 +329,7 @@ export default function Account() {
           <button type="button" className="btn-primary" onClick={() => onDeposit('USDT')}>
             Deposit
           </button>
-          <button type="button" className="btn-secondary" onClick={() => onWithdraw('USDT')}>
+          <button type="button" className="btn-outline-accent" onClick={() => onWithdraw('USDT')}>
             Withdraw
           </button>
           <button type="button" className="btn-cash-in-person" onClick={() => setCashInPersonOpen(true)}>
@@ -296,6 +337,65 @@ export default function Account() {
           </button>
         </div>
       </div>
+
+      {pendingWithdrawals.length > 0 && (
+        <div className="ui-card p-0 overflow-hidden">
+          <div className="p-5 border-b border-border">
+            <h2 className="text-sm font-medium text-text-primary">Pending withdrawals</h2>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Cancel a request before admin approval to unlock your funds
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Amount</th>
+                  <th>Type</th>
+                  <th>Details</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingWithdrawals.map((w) => (
+                  <tr key={w.id}>
+                    <td className="tabular-nums">
+                      {w.amount} {w.currency || 'USDT'}
+                    </td>
+                    <td className="capitalize">{w.type}</td>
+                    <td className="text-xs text-text-secondary max-w-[220px] truncate">
+                      {w.type === 'crypto'
+                        ? `${w.network || ''} · ${w.walletAddress || '—'}`
+                        : `${w.bankName || ''} · ${w.accountNumber || '—'}`}
+                    </td>
+                    <td>
+                      <StatusBadge status={w.status} />
+                    </td>
+                    <td className="text-xs text-text-secondary tabular-nums">
+                      {w.createdAt || w.submittedAt
+                        ? new Date(w.createdAt || w.submittedAt).toLocaleString()
+                        : '—'}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="text-xs text-loss hover:underline bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50"
+                        disabled={cancelBusyId === w.id}
+                        onClick={() => cancelPendingWithdrawal(w)}
+                      >
+                        {cancelBusyId === w.id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="ui-card p-0 overflow-hidden">
         <div className="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>

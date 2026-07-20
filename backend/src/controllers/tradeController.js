@@ -3,7 +3,6 @@ import { AdminTrade } from '../models/AdminTrade.js';
 import { UserOrder } from '../models/UserOrder.js';
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
-import { KycSubmission } from '../models/KycSubmission.js';
 import { fetchPriceMap } from '../services/marketDataProvider.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { error, success } from '../utils/response.js';
@@ -49,12 +48,6 @@ export async function joinTrade(req, res, next) {
     if (margin < MIN_MARGIN) {
       await session.abortTransaction();
       return error(res, `Minimum margin is ${MIN_MARGIN} USDT`, 400);
-    }
-
-    const kyc = await KycSubmission.findOne({ userId: req.userId, status: 'approved' }).session(session);
-    if (!kyc) {
-      await session.abortTransaction();
-      return error(res, 'Approved KYC is required to join trades', 403);
     }
 
     const trade = await AdminTrade.findById(trade_id).session(session);

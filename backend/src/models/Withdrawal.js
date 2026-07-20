@@ -8,7 +8,7 @@ const withdrawalSchema = new mongoose.Schema(
     currency: { type: String, default: 'USDT' },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'cancelled'],
       default: 'pending',
       index: true,
     },

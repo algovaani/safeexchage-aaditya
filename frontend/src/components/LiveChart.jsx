@@ -6,18 +6,30 @@ function toChartTime(openTime) {
   if (openTime == null) return null;
   const n = typeof openTime === 'number' ? openTime : Number(openTime);
   if (!Number.isFinite(n)) return null;
-  return (n > 1e12 ? Math.floor(n / 1000) : Math.floor(n));
+  return n > 1e12 ? Math.floor(n / 1000) : Math.floor(n);
+}
+
+/** Ensure OHLC is valid for lightweight-charts (invalid bars stop rendering). */
+function sanitizeOhlc(open, high, low, close) {
+  const o = Number(open);
+  const c = Number(close);
+  if (![o, c].every(Number.isFinite)) return null;
+  let h = Number(high);
+  let l = Number(low);
+  if (!Number.isFinite(h)) h = Math.max(o, c);
+  if (!Number.isFinite(l)) l = Math.min(o, c);
+  h = Math.max(h, o, c);
+  l = Math.min(l, o, c);
+  if (!(l > 0)) l = Math.min(o, c);
+  return { open: o, high: h, low: l, close: c };
 }
 
 function toBar(c) {
   const time = toChartTime(c?.openTime ?? c?.time);
   if (time == null) return null;
-  const open = Number(c.open);
-  const high = Number(c.high);
-  const low = Number(c.low);
-  const close = Number(c.close);
-  if (![open, high, low, close].every(Number.isFinite)) return null;
-  return { time, open, high, low, close };
+  const ohlc = sanitizeOhlc(c.open, c.high, c.low, c.close);
+  if (!ohlc) return null;
+  return { time, ...ohlc };
 }
 
 function toVolumeBar(c, prevClose) {
@@ -39,17 +51,21 @@ function prepareBars(candles) {
     if (bar) byTime.set(bar.time, { bar, raw: c });
   }
   const sorted = [...byTime.values()].sort((a, b) => a.bar.time - b.bar.time);
-  const bars = sorted.map((x) => x.bar);
+  // Times must be strictly ascending for lightweight-charts
+  const bars = [];
   const volumes = [];
   let prevClose = null;
+  let prevTime = null;
   for (const { bar, raw } of sorted) {
+    if (prevTime != null && bar.time <= prevTime) continue;
+    bars.push(bar);
     volumes.push(toVolumeBar(raw, prevClose));
     prevClose = bar.close;
+    prevTime = bar.time;
   }
   return { bars, volumes: volumes.filter(Boolean) };
 }
 
-/** Binance spot chart palette */
 const THEMES = {
   dark: {
     bg: '#0a0e13',
@@ -111,6 +127,7 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
       rightPriceScale: {
         borderColor: theme.border,
         scaleMargins: { top: 0.08, bottom: 0.22 },
+        autoScale: true,
       },
       timeScale: {
         borderColor: theme.border,
@@ -188,24 +205,49 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
 
     const last = bars[bars.length - 1];
     const lastVol = volumes[volumes.length - 1];
+    const lastRaw = candles[candles.length - 1];
+    const chartReset = Boolean(lastRaw?._chartReset);
+    const forceFull =
+      chartReset ||
+      Boolean(lastRaw?.pulse) ||
+      Boolean(lastRaw?._forceChart);
+    const pulseZoom = Boolean(lastRaw?._pulseZoom) || Boolean(lastRaw?.pulse);
 
     try {
       const prevCount = barCountRef.current;
       const prevTime = lastBarTimeRef.current;
 
-      if (prevCount === 0 || bars.length < prevCount - 1) {
+      if (forceFull || prevCount === 0 || Math.abs(bars.length - prevCount) > 2) {
         series.setData(bars);
         volumeSeries.setData(volumes);
-        chart?.timeScale().fitContent();
-      } else if (bars.length === prevCount && last.time === prevTime) {
-        series.update(last);
-        if (lastVol) volumeSeries.update(lastVol);
+        if (chartReset) {
+          // After pulse: hard-reset Y scale so market candles fill the chart again
+          try {
+            series.priceScale().applyOptions({ autoScale: true });
+            chart?.priceScale('right')?.applyOptions({ autoScale: true });
+            series.priceScale().setAutoScale?.(true);
+          } catch {
+            /* older lightweight-charts */
+          }
+          chart?.timeScale().fitContent();
+          chart?.timeScale().scrollToRealTime();
+        } else if (pulseZoom) {
+          const from = Math.max(0, bars.length - 60);
+          chart?.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: bars.length + 3 });
+        } else if (prevCount === 0) {
+          chart?.timeScale().fitContent();
+        }
       } else if (last.time === prevTime) {
         series.update(last);
         if (lastVol) volumeSeries.update(lastVol);
-      } else {
+      } else if (last.time > (prevTime || 0)) {
         series.update(last);
         if (lastVol) volumeSeries.update(lastVol);
+        chart?.timeScale().scrollToRealTime();
+      } else {
+        // Out-of-order / corrupt update — full redraw
+        series.setData(bars);
+        volumeSeries.setData(volumes);
         chart?.timeScale().scrollToRealTime();
       }
 
@@ -213,11 +255,15 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
       lastBarTimeRef.current = last.time;
     } catch (err) {
       console.warn('LiveChart update:', err.message);
-      series.setData(bars);
-      volumeSeries.setData(volumes);
-      chart?.timeScale().fitContent();
-      barCountRef.current = bars.length;
-      lastBarTimeRef.current = last.time;
+      try {
+        series.setData(bars);
+        volumeSeries.setData(volumes);
+        chart?.timeScale().fitContent();
+        barCountRef.current = bars.length;
+        lastBarTimeRef.current = last.time;
+      } catch {
+        /* chart may be disposed */
+      }
     }
   }, [candles]);
 

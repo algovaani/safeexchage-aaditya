@@ -213,6 +213,7 @@ export async function fetchDexPairPrices(pairDefs = []) {
           low_24h: price,
           volume: volume24h(pair),
           quoteVolume: volume24h(pair),
+          marketCap: Number(pair?.marketCap || pair?.fdv) || 0,
           provider: 'dexscreener',
         };
       } catch (err) {

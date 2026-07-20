@@ -32,7 +32,11 @@ const transactionSchema = new mongoose.Schema(
     amount: { type: Number, required: true },
     balanceAfter: { type: Number, default: null },
     currency: { type: String, default: 'USDT' },
-    status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected', 'completed', 'cancelled'],
+      default: 'pending',
+    },
     method: { type: String, enum: ['manual', 'gateway', 'crypto', 'fiat'], default: 'manual' },
     depositId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deposit', default: null },
     withdrawalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Withdrawal', default: null },

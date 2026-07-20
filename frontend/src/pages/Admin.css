@@ -310,6 +310,44 @@ body.admin-theme #root {
   color: var(--adm-muted, #94a3b8);
 }
 
+.admin-user-password {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  background: var(--adm-surface-2, rgba(148, 163, 184, 0.12));
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.admin-muted {
+  color: var(--adm-muted, #94a3b8);
+  font-size: 0.8rem;
+}
+
+.admin-set-password {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--adm-border, rgba(148, 163, 184, 0.2));
+}
+
+.admin-set-password__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-set-password__row .admin-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.admin-set-password__msg {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: var(--adm-muted, #94a3b8);
+}
+
 .admin-user-link {
   font-weight: 600;
 }
@@ -1941,8 +1979,103 @@ html.dark .admin-badge--cancelled {
   border-radius: 4px;
 }
 
+.admin-coins__addr-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 220px;
+}
+
 .admin-coins__row--hidden {
   opacity: 0.55;
+}
+
+.admin-coins__dnd-wrap {
+  max-height: min(70vh, 720px);
+  overflow: auto;
+}
+
+.admin-coins__order-cell {
+  width: 72px;
+  vertical-align: middle;
+}
+
+.admin-coins__order {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.admin-coins__order-num {
+  font-size: 0.75rem;
+  color: var(--adm-muted);
+  min-width: 1.1rem;
+}
+
+.admin-coins__drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--adm-muted);
+  cursor: grab;
+  touch-action: none;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.admin-coins__drag-handle:hover:not(.is-disabled):not(:disabled) {
+  color: var(--adm-gold-bright);
+  background: var(--adm-surface-2);
+  border-color: rgba(234, 179, 8, 0.35);
+}
+
+.admin-coins__drag-handle:active:not(.is-disabled):not(:disabled),
+.admin-coins__drag-handle.is-active {
+  cursor: grabbing;
+  color: var(--adm-gold-bright);
+  transform: scale(1.05);
+}
+
+.admin-coins__drag-handle.is-disabled,
+.admin-coins__drag-handle:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.admin-coins__row--dragging td {
+  background: transparent !important;
+}
+
+.admin-coins__row--overlay {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: var(--adm-surface);
+  border: 1px solid rgba(234, 179, 8, 0.45);
+}
+
+.admin-coins__row--overlay td {
+  background: var(--adm-surface) !important;
+  border-bottom: none;
+}
+
+.admin-coins__drag-overlay-table {
+  width: auto;
+  min-width: 420px;
+  border-collapse: collapse;
+  background: var(--adm-surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.admin-coins__table tbody tr {
+  transition: background 0.18s ease;
+}
+
+.admin-coins__table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .admin-coins__row--hidden td {
@@ -1995,6 +2128,50 @@ html.dark .admin-badge--cancelled {
 .admin-prices__pulse-input {
   width: 140px;
   max-width: 100%;
+}
+
+.admin-prices__override-badge {
+  display: inline-block;
+  margin-top: 0.25rem;
+  margin-left: 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--adm-gold-bright, #d4a017);
+  background: rgba(212, 160, 23, 0.12);
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  vertical-align: middle;
+}
+
+.admin-prices__stats-row td {
+  background: var(--adm-surface-2, rgba(148, 163, 184, 0.06));
+  border-top: none;
+}
+
+.admin-prices__stats-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: end;
+  padding: 0.35rem 0;
+}
+
+.admin-prices__stats-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--adm-muted, #94a3b8);
+}
+
+.admin-prices__stats-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }
 
 .admin-muted {

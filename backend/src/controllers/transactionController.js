@@ -36,6 +36,8 @@ function formatTransaction(tx) {
     reference: tx.reference || null,
     remark: tx.adminNote || '',
     admin_note: tx.adminNote || '',
+    withdrawal_id: tx.withdrawalId || null,
+    deposit_id: tx.depositId || null,
   };
 }
 

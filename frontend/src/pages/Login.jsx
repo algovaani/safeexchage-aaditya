@@ -15,7 +15,7 @@ const PLATFORM_STATS = [
 ];
 
 const STATIC_TICKERS = [
-  { symbol: 'NIFTY', price: '24,850.30', change: 0.42 },
+  // { symbol: 'NIFTY', price: '24,850.30', change: 0.42 },
   { symbol: 'SENSEX', price: '81,432.15', change: -0.18 },
   { symbol: 'USDINR', price: '83.24', change: 0.05 },
 ];

@@ -155,3 +155,20 @@ export async function rejectWithdrawal(withdrawal, reviewedBy, note = '') {
 
   return withdrawal;
 }
+
+/** User cancels their own pending withdrawal and unlocks funds. */
+export async function cancelWithdrawal(withdrawal, note = 'Cancelled by user') {
+  if (withdrawal.status !== 'pending') {
+    throw Object.assign(new Error('Withdrawal is not pending'), { status: 400 });
+  }
+
+  await releaseWithdrawalFunds(withdrawal.userId, withdrawal.amount);
+  await rejectLinkedTransaction(withdrawal, note, 'cancelled');
+
+  withdrawal.status = 'cancelled';
+  withdrawal.adminNote = note?.trim() || 'Cancelled by user';
+  withdrawal.reviewedAt = new Date();
+  await withdrawal.save();
+
+  return withdrawal;
+}

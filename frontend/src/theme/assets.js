@@ -7,7 +7,7 @@ export const WALLET_ASSETS = [
   { symbol: 'TRX', color: '#ef0027' },
   { symbol: 'USDT', color: '#26a17b' },
   // { symbol: 'VENX', color: '#2563eb' },
-  { symbol: 'INR', color: '#0f766e' },
+  // { symbol: 'INR', color: '#0f766e' },
   // { symbol: 'DOGE', color: '#c2a633' },
   // { symbol: 'SHIB', color: '#e91e63' },
   // { symbol: '1INCH', color: '#94a6c3' },

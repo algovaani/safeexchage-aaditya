@@ -20,6 +20,7 @@ function depositStatusToTransactionStatus(status) {
 function withdrawalStatusToTransactionStatus(status) {
   if (status === 'approved') return 'completed';
   if (status === 'rejected') return 'rejected';
+  if (status === 'cancelled') return 'cancelled';
   return 'pending';
 }
 
@@ -251,12 +252,12 @@ export async function completeLinkedTransaction(
   return Transaction.findByIdAndUpdate(record.transactionId, update, { new: true });
 }
 
-export async function rejectLinkedTransaction(record, note = '') {
+export async function rejectLinkedTransaction(record, note = '', status = 'rejected') {
   if (!record?.transactionId) return null;
   return Transaction.findByIdAndUpdate(
     record.transactionId,
     {
-      status: 'rejected',
+      status,
       adminNote: note?.trim() || '',
     },
     { new: true }

@@ -39,6 +39,7 @@ export default function AdminDataTable({
   exportFilename = 'export.csv',
   refreshKey = 0,
   emptyMessage = 'No records found.',
+  searchPlaceholder = 'Search…',
   selectable = false,
   selectedIds: controlledSelectedIds,
   onSelectionChange,
@@ -193,7 +194,7 @@ export default function AdminDataTable({
           <Search size={16} />
           <input
             type="search"
-            placeholder="Search…"
+            placeholder={searchPlaceholder}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

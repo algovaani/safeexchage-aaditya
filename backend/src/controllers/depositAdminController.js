@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Deposit } from '../models/Deposit.js';
+import { Transaction } from '../models/Transaction.js';
 import { UserDepositAddress } from '../models/UserDepositAddress.js';
 import {
   creditWalletForDeposit,
@@ -136,6 +137,89 @@ export async function getDeposit(req, res, next) {
     );
     return success(res, enrichDepositRow(req, row, { settings, addressMap }), 'Deposit fetched');
   } catch (e) {
+    return next(e);
+  }
+}
+
+export async function editDeposit(req, res, next) {
+  try {
+    const deposit = await Deposit.findById(req.params.id);
+    if (!deposit) return error(res, 'Deposit not found', 404);
+    if (deposit.status !== 'pending') {
+      return error(res, 'Only pending deposits can be edited', 400);
+    }
+
+    const nextTxnHash =
+      req.body.txn_hash !== undefined ? String(req.body.txn_hash || '').trim() : deposit.txnHash;
+    if (nextTxnHash && nextTxnHash !== deposit.txnHash) {
+      const duplicate = await Deposit.findOne({
+        _id: { $ne: deposit._id },
+        txnHash: nextTxnHash,
+      })
+        .select('_id')
+        .lean();
+      if (duplicate) return error(res, 'Transaction hash already exists', 409);
+    }
+
+    if (req.body.amount !== undefined) deposit.amount = Number(req.body.amount);
+    if (req.body.currency !== undefined) {
+      deposit.currency = String(req.body.currency || '').trim().toUpperCase();
+    }
+    if (req.body.txn_hash !== undefined) deposit.txnHash = nextTxnHash;
+    if (req.body.network !== undefined) deposit.network = String(req.body.network || '').trim();
+    if (req.body.from_address !== undefined) {
+      deposit.fromAddress = String(req.body.from_address || '').trim();
+    }
+    if (req.body.to_address !== undefined) {
+      deposit.toAddress = String(req.body.to_address || '').trim();
+    }
+    if (req.body.utr_number !== undefined) {
+      deposit.utrNumber = String(req.body.utr_number || '').trim();
+    }
+    if (req.body.bank_name !== undefined) {
+      deposit.bankName = String(req.body.bank_name || '').trim();
+    }
+    if (req.body.account_number !== undefined) {
+      deposit.accountNumber = String(req.body.account_number || '').trim();
+    }
+    if (req.body.admin_note !== undefined) {
+      deposit.adminNote = String(req.body.admin_note || '').trim();
+    }
+
+    // Pending conversion values must be recalculated from the edited amount/currency on approval.
+    deposit.usdtAmount = null;
+    deposit.conversionRate = null;
+    if (deposit.type === 'crypto') {
+      deposit.chain = normalizeChainFromNetwork(deposit.network) || '';
+    }
+    await deposit.save();
+
+    if (deposit.transactionId) {
+      const reference =
+        deposit.type === 'crypto'
+          ? deposit.txnHash || String(deposit._id)
+          : deposit.utrNumber || String(deposit._id);
+      await Transaction.updateOne(
+        { _id: deposit.transactionId, status: 'pending' },
+        {
+          $set: {
+            amount: deposit.amount,
+            currency: String(deposit.currency || 'USDT').toUpperCase(),
+            reference,
+            adminNote: deposit.adminNote || '',
+          },
+        }
+      );
+    }
+
+    await deposit.populate('userId', 'email mobile name');
+    return success(
+      res,
+      formatDeposit(req, deposit.toObject(), { includeUser: true }),
+      'Deposit updated'
+    );
+  } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
     return next(e);
   }
 }

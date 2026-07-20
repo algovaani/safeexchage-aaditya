@@ -79,6 +79,7 @@ function mapMarketsRow(symbol, coin) {
     low_24h: Number(coin.low_24h) || 0,
     volume: Number(coin.total_volume) || 0,
     quoteVolume: Number(coin.total_volume) || 0,
+    marketCap: Number(coin.market_cap) || 0,
   };
 }
 

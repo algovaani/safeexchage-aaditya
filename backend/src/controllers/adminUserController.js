@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 import { User } from '../models/User.js';
 import { Wallet } from '../models/Wallet.js';
 import { Deposit } from '../models/Deposit.js';
@@ -18,6 +19,8 @@ import {
   paginatedPayload,
   parseDatatableQuery,
 } from '../utils/datatable.js';
+
+const BCRYPT_ROUNDS = 12;
 
 function formatUserTrade(trade, userId, orderById = new Map()) {
   const uid = String(userId);
@@ -71,25 +74,38 @@ export async function getUserDetail(req, res, next) {
       return error(res, 'Invalid user id', 400);
     }
 
-    const user = await User.findById(userId).select('-passwordHash').lean();
+    const user = await User.findById(userId).select('+passwordPlain -passwordHash').lean();
     if (!user) return error(res, 'User not found', 404);
 
-    const [wallet, assets, depositAddresses, kyc, depositCount, withdrawalCount, tradeCount, orderCount] =
-      await Promise.all([
-        Wallet.findOne({ userId }).lean(),
-        listUserAssets(userId),
-        UserDepositAddress.find({ userId }).lean(),
-        KycSubmission.findOne({ userId }).sort({ createdAt: -1 }).lean(),
-        Deposit.countDocuments({ userId }),
-        Withdrawal.countDocuments({ userId }),
-        Trade.countDocuments({ $or: [{ buyerUserId: userId }, { sellerUserId: userId }] }),
-        Order.countDocuments({ userId }),
-      ]);
+    const [
+      wallet,
+      assets,
+      depositAddresses,
+      kyc,
+      depositCount,
+      withdrawalCount,
+      tradeCount,
+      orderCount,
+      invitedCount,
+    ] = await Promise.all([
+      Wallet.findOne({ userId }).lean(),
+      listUserAssets(userId),
+      UserDepositAddress.find({ userId }).lean(),
+      KycSubmission.findOne({ userId }).sort({ createdAt: -1 }).lean(),
+      Deposit.countDocuments({ userId }),
+      Withdrawal.countDocuments({ userId }),
+      Trade.countDocuments({ $or: [{ buyerUserId: userId }, { sellerUserId: userId }] }),
+      Order.countDocuments({ userId }),
+      User.countDocuments({ referredBy: userId }),
+    ]);
 
     let referredByLabel = null;
+    let referredByCode = null;
     if (user.referredBy) {
-      const ref = await User.findById(user.referredBy).select('email mobile name').lean();
-      referredByLabel = ref?.email || ref?.mobile || ref?.name || String(user.referredBy);
+      const ref = await User.findById(user.referredBy).select('email mobile name referralCode').lean();
+      referredByCode = ref?.referralCode || null;
+      referredByLabel =
+        ref?.referralCode || ref?.email || ref?.mobile || ref?.name || String(user.referredBy);
     }
 
     return success(
@@ -103,9 +119,13 @@ export async function getUserDetail(req, res, next) {
         status: user.status,
         emailVerified: user.emailVerified,
         mobileVerified: user.mobileVerified,
+        loginId: user.mobile || user.email || '',
+        password: user.passwordPlain || '',
         referralCode: user.referralCode || '',
         referredBy: user.referredBy,
         referredByLabel,
+        referredByCode,
+        invitedCount,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         wallet: formatWalletSnapshot(wallet, assets),
@@ -132,6 +152,39 @@ export async function getUserDetail(req, res, next) {
         },
       },
       'User detail fetched'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function setUserPassword(req, res, next) {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return error(res, 'Invalid user id', 400);
+    }
+
+    const password = String(req.body.password || '').trim();
+    if (password.length < 6) {
+      return error(res, 'Password must be at least 6 characters', 400);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return error(res, 'User not found', 404);
+
+    user.passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    user.passwordPlain = password;
+    await user.save();
+
+    return success(
+      res,
+      {
+        id: user._id,
+        loginId: user.mobile || user.email || '',
+        password,
+      },
+      'User password updated'
     );
   } catch (e) {
     return next(e);

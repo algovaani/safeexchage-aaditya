@@ -29,7 +29,7 @@ const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/markets', icon: LineChart, label: 'Markets' },
   { to: '/trade', icon: ArrowLeftRight, label: 'Trade' },
-  { to: '/dashboard', icon: PieChart, label: 'Portfolio', match: '/dashboard' },
+  // { to: '/dashboard', icon: PieChart, label: 'Portfolio', match: '/dashboard' },
   { to: '/trade', icon: ListOrdered, label: 'Orders', match: '/trade' },
   { to: '/wallet', icon: Wallet, label: 'Wallet' },
   { to: '/staking', icon: Landmark, label: 'Invest' },
@@ -66,7 +66,9 @@ export default function Layout() {
       return;
     }
     if (liveWallet) {
-      setPortfolio(liveWallet.balance_usdt ?? liveWallet.balance ?? 0);
+      setPortfolio(
+        liveWallet.total_balance_usdt ?? liveWallet.balance_usdt ?? liveWallet.balance ?? 0
+      );
     }
   }, [user, liveWallet, walletVersion]);
 

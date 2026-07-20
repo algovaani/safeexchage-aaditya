@@ -82,6 +82,45 @@ export const verifyDepositValidators = [
   }),
 ];
 
+export const editDepositValidators = [
+  body('amount')
+    .optional()
+    .isFloat({ gt: 0 })
+    .withMessage('amount must be a positive number')
+    .toFloat(),
+  body('currency')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 16 })
+    .withMessage('currency must be 2–16 characters'),
+  body('txn_hash').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('network').optional({ values: 'falsy' }).trim().isLength({ max: 32 }),
+  body('from_address').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('to_address').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
+  body('utr_number').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
+  body('bank_name').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('account_number').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
+  body('admin_note').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body().custom((_, { req }) => {
+    const editable = [
+      'amount',
+      'currency',
+      'txn_hash',
+      'network',
+      'from_address',
+      'to_address',
+      'utr_number',
+      'bank_name',
+      'account_number',
+      'admin_note',
+    ];
+    if (!editable.some((key) => req.body[key] !== undefined)) {
+      throw new Error('At least one editable field is required');
+    }
+    return true;
+  }),
+];
+
 export const adminDepositListValidators = [
   ...datatableQueryValidators,
   query('type').optional().isIn(['crypto', 'fiat']),
@@ -95,4 +134,11 @@ export const userWalletProfileValidators = [
   body('trcWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
   body('usdtWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
   body('name').optional({ values: 'falsy' }).trim().isLength({ max: 120 }),
+  body('email')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isEmail()
+    .withMessage('Enter a valid email address')
+    .normalizeEmail()
+    .isLength({ max: 254 }),
 ];

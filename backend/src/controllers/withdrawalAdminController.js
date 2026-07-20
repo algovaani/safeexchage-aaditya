@@ -1,11 +1,16 @@
+import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Withdrawal } from '../models/Withdrawal.js';
+import { Wallet } from '../models/Wallet.js';
+import { Transaction } from '../models/Transaction.js';
 import {
   approveWithdrawal,
   formatWithdrawal,
   rejectWithdrawal,
 } from '../services/withdrawalService.js';
+import { emitWalletUpdate } from '../services/socketService.js';
 import { error, success } from '../utils/response.js';
+import { roundMoney } from '../utils/money.js';
 import {
   buildDateRangeFilter,
   getExportLimit,
@@ -107,6 +112,120 @@ export async function getWithdrawal(req, res, next) {
     return success(res, formatWithdrawal(req, row, { includeUser: true }), 'Withdrawal fetched');
   } catch (e) {
     return next(e);
+  }
+}
+
+export async function editWithdrawal(req, res, next) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const withdrawal = await Withdrawal.findById(req.params.id).session(session);
+    if (!withdrawal) {
+      await session.abortTransaction();
+      return error(res, 'Withdrawal not found', 404);
+    }
+    if (withdrawal.status !== 'pending') {
+      await session.abortTransaction();
+      return error(res, 'Only pending withdrawals can be edited', 400);
+    }
+
+    const previousAmount = roundMoney(withdrawal.amount);
+    const nextAmount =
+      req.body.amount !== undefined ? roundMoney(Number(req.body.amount)) : previousAmount;
+    const lockDelta = roundMoney(nextAmount - previousAmount);
+
+    if (lockDelta > 0) {
+      const wallet = await Wallet.findOneAndUpdate(
+        {
+          userId: withdrawal.userId,
+          $expr: {
+            $gte: [{ $subtract: ['$balance', '$lockedBalance'] }, lockDelta],
+          },
+        },
+        { $inc: { lockedBalance: lockDelta } },
+        { new: true, session }
+      );
+      if (!wallet) {
+        throw Object.assign(
+          new Error('Insufficient available balance for the increased withdrawal amount'),
+          { status: 400 }
+        );
+      }
+    } else if (lockDelta < 0) {
+      const release = Math.abs(lockDelta);
+      const wallet = await Wallet.findOneAndUpdate(
+        { userId: withdrawal.userId, lockedBalance: { $gte: release } },
+        { $inc: { lockedBalance: -release } },
+        { new: true, session }
+      );
+      if (!wallet) {
+        throw Object.assign(new Error('Wallet locked balance mismatch'), { status: 409 });
+      }
+    }
+
+    withdrawal.amount = nextAmount;
+    if (req.body.currency !== undefined) {
+      withdrawal.currency = String(req.body.currency || '').trim().toUpperCase();
+    }
+    if (req.body.wallet_address !== undefined) {
+      withdrawal.walletAddress = String(req.body.wallet_address || '').trim();
+    }
+    if (req.body.network !== undefined) {
+      withdrawal.network = String(req.body.network || '').trim();
+    }
+    if (req.body.bank_name !== undefined) {
+      withdrawal.bankName = String(req.body.bank_name || '').trim();
+    }
+    if (req.body.account_number !== undefined) {
+      withdrawal.accountNumber = String(req.body.account_number || '').trim();
+    }
+    if (req.body.ifsc !== undefined) {
+      withdrawal.ifsc = String(req.body.ifsc || '').trim().toUpperCase();
+    }
+    if (req.body.account_holder !== undefined) {
+      withdrawal.accountHolder = String(req.body.account_holder || '').trim();
+    }
+    if (req.body.admin_note !== undefined) {
+      withdrawal.adminNote = String(req.body.admin_note || '').trim();
+    }
+    await withdrawal.save({ session });
+
+    if (withdrawal.transactionId) {
+      const reference =
+        withdrawal.type === 'crypto'
+          ? withdrawal.walletAddress
+          : withdrawal.accountNumber || String(withdrawal._id);
+      await Transaction.updateOne(
+        { _id: withdrawal.transactionId, status: 'pending' },
+        {
+          $set: {
+            amount: withdrawal.amount,
+            currency: withdrawal.currency || 'USDT',
+            reference: reference || '',
+            adminNote: withdrawal.adminNote || '',
+          },
+        },
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+    await emitWalletUpdate(req.app.get('io'), withdrawal.userId, {
+      reason: 'withdrawal_edited',
+    });
+    await withdrawal.populate('userId', 'email mobile name');
+    return success(
+      res,
+      formatWithdrawal(req, withdrawal.toObject(), { includeUser: true }),
+      'Withdrawal updated'
+    );
+  } catch (e) {
+    await session.abortTransaction().catch(() => {});
+    if (e.status) return error(res, e.message, e.status);
+    return next(e);
+  } finally {
+    await session.endSession();
   }
 }
 

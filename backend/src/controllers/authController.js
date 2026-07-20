@@ -219,6 +219,7 @@ export async function register(req, res, next) {
       email,
       mobile,
       passwordHash,
+      passwordPlain: password,
       name: name || '',
       status: 'active',
       mobileVerified: true,
@@ -454,6 +455,7 @@ export async function resetPassword(req, res, next) {
     }
 
     user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    user.passwordPlain = newPassword;
     await user.save();
 
     record.used = true;
@@ -512,6 +514,33 @@ export async function updateProfile(req, res, next) {
     const user = await User.findById(req.userId);
     if (!user) return error(res, 'User not found', 404);
 
+    if (req.body.email !== undefined) {
+      const raw = String(req.body.email || '').trim();
+      if (!raw) {
+        if (!user.mobile) {
+          return error(res, 'Email or mobile is required', 400);
+        }
+        user.email = undefined;
+        user.emailVerified = false;
+      } else {
+        const nextEmail = normalizeEmail(raw);
+        if (!nextEmail.includes('@')) {
+          return error(res, 'Enter a valid email address', 400);
+        }
+        if (nextEmail !== (user.email || '')) {
+          const taken = await User.findOne({
+            email: nextEmail,
+            _id: { $ne: user._id },
+          })
+            .select('_id')
+            .lean();
+          if (taken) return error(res, 'This email is already registered', 409);
+          user.email = nextEmail;
+          user.emailVerified = false;
+        }
+      }
+    }
+
     const allowed = ['name', 'bnbWalletAddress', 'ethWalletAddress', 'trcWalletAddress', 'usdtWalletAddress'];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
@@ -525,6 +554,9 @@ export async function updateProfile(req, res, next) {
     await user.save();
     return success(res, publicUser(user.toObject()), 'Profile updated');
   } catch (e) {
+    if (e?.code === 11000 && e?.keyPattern?.email) {
+      return error(res, 'This email is already registered', 409);
+    }
     return next(e);
   }
 }

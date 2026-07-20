@@ -5,6 +5,7 @@ import { validateRequest } from '../middleware/validateRequest.js';
 import {
   cryptoWithdrawValidators,
   fiatWithdrawValidators,
+  cancelWithdrawalValidators,
 } from '../validators/withdrawalValidators.js';
 
 const withdrawalRouter = Router();
@@ -26,5 +27,12 @@ withdrawalRouter.post(
 );
 
 withdrawalsRouter.get('/history', authMiddleware, withdrawal.history);
+withdrawalsRouter.post(
+  '/:id/cancel',
+  authMiddleware,
+  cancelWithdrawalValidators,
+  validateRequest,
+  withdrawal.cancel
+);
 
 export { withdrawalRouter, withdrawalsRouter };

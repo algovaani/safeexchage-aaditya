@@ -28,18 +28,30 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
+    let cancelled = false;
     (async () => {
       try {
-        const { data } = await api.get('/auth/me');
+        const { data } = await api.get('/auth/me', { __noRetry: false });
+        if (cancelled) return;
         setUser(parseApiResponse(data));
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-        setToken(null);
-        setUser(null);
+      } catch (err) {
+        if (cancelled) return;
+        const status = err?.response?.status;
+        // Only clear session on real auth failures — not timeouts / offline blips
+        if (status === 401 || status === 403) {
+          localStorage.removeItem(STORAGE_KEY);
+          setToken(null);
+          setUser(null);
+        } else {
+          console.warn('[auth] /me failed, keeping session:', err?.message || err);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const persistSession = (payload) => {

@@ -16,7 +16,12 @@ import {
 import * as coingeckoMarket from './coingeckoService.js';
 import { fetchCommodityPrices, fetchCommodityTicker, fetchCommodityKlines, fetchCommodityDepth, isCommoditySymbol } from './commodityService.js';
 import { fetchDexPairPrices } from './dexscreenerService.js';
-import { getActivePulsePrice } from './pricePulseService.js';
+import { getActivePulsePrice, getPulseDepthOverlay } from './pricePulseService.js';
+import {
+  applyTickerStatsOverride,
+  applyTickerStatsOverridesToPairs,
+  getTickerStatsOverride,
+} from './tickerStatsOverrideService.js';
 import {
   normalizeSymbol,
   toDisplayPair,
@@ -139,8 +144,9 @@ function mapTickerRow(sym, t) {
 export async function fetchAllPairPrices({ force = false } = {}) {
   const now = Date.now();
   if (!force && priceCache.pairs && now - priceCache.fetchedAt < CACHE_TTL_MS) {
+    const pairs = await applyTickerStatsOverridesToPairs(priceCache.pairs);
     return {
-      pairs: priceCache.pairs,
+      pairs,
       stale: priceCache.stale,
       updatedAt: new Date(priceCache.fetchedAt).toISOString(),
       provider: 'binance',
@@ -183,13 +189,21 @@ export async function fetchAllPairPrices({ force = false } = {}) {
       ...binanceSyms.filter((sym) => !bySymbol.has(sym) && getPairSync(sym)?.coingeckoId),
     ];
 
+    // CoinGecko is optional — never block Binance/Dex prices (429 storms hang the API).
     if (needCg.length) {
-      const cgResult = await coingeckoMarket.fetchAllPairPrices({ force: true });
-      for (const row of cgResult.pairs || []) {
-        if (needCg.includes(row.symbol)) {
-          bySymbol.set(row.symbol, { ...row, provider: 'coingecko' });
-          recordPriceTick(row.symbol, row.price);
+      try {
+        const cgResult = await Promise.race([
+          coingeckoMarket.fetchAllPairPrices({ force: false }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('coingecko timeout')), 4_000)),
+        ]);
+        for (const row of cgResult.pairs || []) {
+          if (needCg.includes(row.symbol)) {
+            bySymbol.set(row.symbol, { ...row, provider: 'coingecko' });
+            recordPriceTick(row.symbol, row.price);
+          }
         }
+      } catch (err) {
+        console.warn('[prices] CoinGecko skip:', err.message);
       }
     }
 
@@ -219,16 +233,18 @@ export async function fetchAllPairPrices({ force = false } = {}) {
     }
 
     priceCache = { pairs, fetchedAt: now, stale: false };
+    const pairsWithOverrides = await applyTickerStatsOverridesToPairs(pairs);
     return {
-      pairs,
+      pairs: pairsWithOverrides,
       stale: false,
       updatedAt: new Date(now).toISOString(),
       provider: 'mixed',
     };
   } catch (err) {
     if (priceCache.pairs) {
+      const pairsWithOverrides = await applyTickerStatsOverridesToPairs(priceCache.pairs);
       return {
-        pairs: priceCache.pairs,
+        pairs: pairsWithOverrides,
         stale: true,
         updatedAt: new Date(priceCache.fetchedAt).toISOString(),
         provider: 'binance',
@@ -248,6 +264,29 @@ export async function fetchTicker(symbol, opts = {}) {
     throw err;
   }
 
+  // Prefer cache / fast path so refresh storms don't hang on CoinGecko
+  if (priceCache.pairs?.length && !opts.force) {
+    const cached = priceCache.pairs.find((p) => p.symbol === sym);
+    const age = Date.now() - (priceCache.fetchedAt || 0);
+    if (cached && age < Math.max(CACHE_TTL_MS * 3, 12_000)) {
+      const pulsed = getActivePulsePrice(sym);
+      const price = pulsed != null ? pulsed : cached.price;
+      const override = await getTickerStatsOverride(sym);
+      const withStats = applyTickerStatsOverride(
+        {
+          ...cached,
+          price,
+          lastPrice: price,
+          pulsed: pulsed != null,
+          stale: age > CACHE_TTL_MS,
+          updatedAt: new Date(priceCache.fetchedAt).toISOString(),
+        },
+        override
+      );
+      return withStats;
+    }
+  }
+
   const result = await fetchAllPairPrices(opts);
   const row = result.pairs.find((p) => p.symbol === sym);
   if (!row) {
@@ -259,14 +298,19 @@ export async function fetchTicker(symbol, opts = {}) {
   const pulsed = getActivePulsePrice(sym);
   const price = pulsed != null ? pulsed : row.price;
   recordPriceTick(sym, price);
-  return {
-    ...row,
-    price,
-    lastPrice: price,
-    pulsed: pulsed != null,
-    stale: result.stale,
-    updatedAt: result.updatedAt,
-  };
+  // fetchAllPairPrices already applied overrides; re-apply after pulse price swap
+  const override = await getTickerStatsOverride(sym);
+  return applyTickerStatsOverride(
+    {
+      ...row,
+      price,
+      lastPrice: price,
+      pulsed: pulsed != null,
+      stale: result.stale,
+      updatedAt: result.updatedAt,
+    },
+    override
+  );
 }
 
 export async function fetchPriceMap(opts = {}) {
@@ -283,12 +327,13 @@ export async function fetchTicker24h(symbol) {
   return {
     symbol: row.symbol,
     lastPrice: row.price,
-    priceChange: null,
+    priceChange: row.change_24h_abs ?? null,
     priceChangePercent: row.change_24h,
     highPrice: row.high_24h,
     lowPrice: row.low_24h,
     volume: row.volume,
     quoteVolume: row.quoteVolume,
+    stats_override: Boolean(row.stats_override),
   };
 }
 
@@ -461,6 +506,16 @@ export async function fetchDepth(symbol, { limit = 20 } = {}) {
     const err = new Error(`Unsupported trading pair: ${symbol}`);
     err.status = 400;
     throw err;
+  }
+
+  const pulseDepth = getPulseDepthOverlay(sym);
+  if (pulseDepth?.bids?.length || pulseDepth?.asks?.length) {
+    return {
+      bids: (pulseDepth.bids || []).slice(0, limit),
+      asks: (pulseDepth.asks || []).slice(0, limit),
+      mid: pulseDepth.mid,
+      pulse: true,
+    };
   }
 
   const pair = getPairSync(sym);

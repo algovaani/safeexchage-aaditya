@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Coins,
+  Copy,
+  GripVertical,
   ImageUp,
   Link2,
   Loader2,
@@ -13,11 +15,61 @@ import {
   EyeOff,
   X,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { api, parseApiResponse } from '../../services/api.js';
 import { resolveAssetUrl } from '../../utils/assetUrl.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useDialog } from '../../context/DialogContext.jsx';
 import { CoinLabel } from '../../components/CoinIcon.jsx';
+
+function CopyAddressCell({ value, label }) {
+  const toast = useToast();
+  const text = String(value || '').trim();
+  if (!text) return <span className="admin-copy-key__missing">—</span>;
+
+  const short = text.length > 14 ? `${text.slice(0, 8)}…${text.slice(-4)}` : text;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label || 'Address'} copied`);
+    } catch {
+      toast.error('Copy failed');
+    }
+  }
+
+  return (
+    <div className="admin-copy-key admin-coins__addr-copy">
+      <code className="admin-coins__cg-id" title={text}>
+        {short}
+      </code>
+      <button
+        type="button"
+        className="admin-btn admin-btn--ghost admin-btn--sm"
+        onClick={copy}
+        title={`Copy ${label || 'address'}`}
+      >
+        <Copy size={12} />
+      </button>
+    </div>
+  );
+}
 
 const CHAINS = [
   { value: 'ethereum', label: 'Ethereum' },
@@ -50,11 +102,160 @@ function fmtUsd(n) {
   return `$${v.toPrecision(4)}`;
 }
 
+function isSeedPair(pair) {
+  return String(pair?.id || '').startsWith('default-');
+}
+
+function SortablePairRow({ pair, index, onEdit, onToggle, onRemove }) {
+  const seed = isSeedPair(pair);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(pair.id),
+    disabled: seed,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition || 'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: isDragging ? 0.35 : 1,
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={[
+        !pair.isActive ? 'admin-coins__row--hidden' : '',
+        isDragging ? 'admin-coins__row--dragging' : '',
+        seed ? 'admin-coins__row--fixed' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <td className="admin-coins__order-cell">
+        <div className="admin-coins__order">
+          <button
+            type="button"
+            className={`admin-coins__drag-handle${seed ? ' is-disabled' : ''}`}
+            title={seed ? 'Seed pairs stay fixed' : 'Drag to reorder'}
+            disabled={seed}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={16} />
+          </button>
+          <span className="admin-coins__order-num tabular-nums">{index + 1}</span>
+        </div>
+      </td>
+      <td>
+        <CoinLabel
+          symbol={pair.baseAsset || String(pair.symbol).replace(/USDT$|INR$/, '')}
+          imageUrl={pair.imageUrl}
+          type={pair.category === 'commodity' ? 'commodity' : 'crypto'}
+          name={pair.name}
+          label={pair.displayPair}
+          size={24}
+        />
+      </td>
+      <td>{pair.name || pair.baseAsset}</td>
+      <td>
+        <span className={`admin-coins__tag admin-coins__tag--${pair.priceSource || 'binance'}`}>
+          {pair.priceSource || 'binance'}
+        </span>
+      </td>
+      <td>
+        {pair.contractAddress ? (
+          <CopyAddressCell value={pair.contractAddress} label="Contract address" />
+        ) : pair.dexPairAddress ? (
+          <CopyAddressCell value={pair.dexPairAddress} label="DEX pair address" />
+        ) : (
+          <span className="admin-copy-key__missing">—</span>
+        )}
+      </td>
+      <td>
+        <span className={`admin-badge ${pair.isActive ? 'admin-badge--approved' : 'admin-badge--pending'}`}>
+          {pair.isActive ? 'Active' : 'Hidden'}
+        </span>
+      </td>
+      <td>
+        <div className="admin-actions">
+          {!seed && (
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              onClick={() => onEdit(pair)}
+              title="Edit logo & deposit"
+            >
+              <Pencil size={14} /> Edit
+            </button>
+          )}
+          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => onToggle(pair)}>
+            {pair.isActive ? (
+              <>
+                <EyeOff size={14} /> Hide
+              </>
+            ) : (
+              <>
+                <Eye size={14} /> Show
+              </>
+            )}
+          </button>
+          {!seed && (
+            <button
+              type="button"
+              className="admin-btn admin-btn--danger admin-btn--sm"
+              onClick={() => onRemove(pair)}
+              title="Remove"
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function DragOverlayRow({ pair, index }) {
+  if (!pair) return null;
+  return (
+    <table className="admin-table admin-coins__table admin-coins__drag-overlay-table">
+      <tbody>
+        <tr className="admin-coins__row--overlay">
+          <td className="admin-coins__order-cell">
+            <div className="admin-coins__order">
+              <span className="admin-coins__drag-handle is-active">
+                <GripVertical size={16} />
+              </span>
+              <span className="admin-coins__order-num tabular-nums">{index + 1}</span>
+            </div>
+          </td>
+          <td>
+            <CoinLabel
+              symbol={pair.baseAsset || String(pair.symbol).replace(/USDT$|INR$/, '')}
+              imageUrl={pair.imageUrl}
+              type={pair.category === 'commodity' ? 'commodity' : 'crypto'}
+              name={pair.name}
+              label={pair.displayPair}
+              size={24}
+            />
+          </td>
+          <td>{pair.name || pair.baseAsset}</td>
+          <td>
+            <span className={`admin-coins__tag admin-coins__tag--${pair.priceSource || 'binance'}`}>
+              {pair.priceSource || 'binance'}
+            </span>
+          </td>
+          <td colSpan={3} />
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 export default function TradingPairsAdminSection() {
   const toast = useToast();
   const dialog = useDialog();
   const [pairs, setPairs] = useState([]);
-  const [pairsPage, setPairsPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [addTab, setAddTab] = useState('search');
@@ -87,7 +288,6 @@ export default function TradingPairsAdminSection() {
     try {
       const { data } = await api.get('/admin/trading-pairs', { params: { include_inactive: '1' } });
       setPairs(parseApiResponse(data) || []);
-      setPairsPage(1);
     } catch (ex) {
       toast.error(ex.message || 'Failed to load pairs');
     } finally {
@@ -329,16 +529,87 @@ export default function TradingPairsAdminSection() {
     }
   }
 
-  const PAGE_SIZE = 10;
-  const pairsTotal = pairs.length;
-  const pairsTotalPages = Math.max(1, Math.ceil(pairsTotal / PAGE_SIZE));
-  const pairsPageSafe = Math.min(pairsPage, pairsTotalPages);
-  const pagedPairs = useMemo(() => {
-    const start = (pairsPageSafe - 1) * PAGE_SIZE;
-    return pairs.slice(start, start + PAGE_SIZE);
-  }, [pairs, pairsPageSafe]);
-  const pairsFrom = pairsTotal === 0 ? 0 : (pairsPageSafe - 1) * PAGE_SIZE + 1;
-  const pairsTo = Math.min(pairsPageSafe * PAGE_SIZE, pairsTotal);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const orderedPairs = useMemo(
+    () =>
+      [...pairs].sort(
+        (a, b) =>
+          (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.symbol).localeCompare(String(b.symbol))
+      ),
+    [pairs]
+  );
+
+  const sortableIds = useMemo(() => orderedPairs.map((p) => String(p.id)), [orderedPairs]);
+  const [activeDragId, setActiveDragId] = useState(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
+
+  const activeDragPair = useMemo(
+    () => orderedPairs.find((p) => String(p.id) === String(activeDragId)) || null,
+    [orderedPairs, activeDragId]
+  );
+  const activeDragIndex = useMemo(
+    () => orderedPairs.findIndex((p) => String(p.id) === String(activeDragId)),
+    [orderedPairs, activeDragId]
+  );
+
+  async function persistOrder(nextOrdered) {
+    const updates = nextOrdered
+      .map((p, i) => ({ pair: p, sortOrder: i + 1 }))
+      .filter(({ pair, sortOrder }) => !isSeedPair(pair) && Number(pair.sortOrder) !== sortOrder);
+
+    if (!updates.length) return;
+
+    setReorderBusy(true);
+    try {
+      await Promise.all(
+        updates.map(({ pair, sortOrder }) =>
+          api.patch(`/admin/trading-pairs/${pair.id}`, { sort_order: sortOrder })
+        )
+      );
+      notifyPairsUpdated();
+    } catch (ex) {
+      toast.error(ex.message || 'Failed to save order');
+      await loadPairs();
+    } finally {
+      setReorderBusy(false);
+    }
+  }
+
+  function onDragStart(event) {
+    setActiveDragId(String(event.active.id));
+  }
+
+  function onDragCancel() {
+    setActiveDragId(null);
+  }
+
+  async function onDragEnd(event) {
+    const { active, over } = event;
+    setActiveDragId(null);
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = orderedPairs.findIndex((p) => String(p.id) === String(active.id));
+    const newIndex = orderedPairs.findIndex((p) => String(p.id) === String(over.id));
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+    if (isSeedPair(orderedPairs[oldIndex]) || isSeedPair(orderedPairs[newIndex])) {
+      toast.error('Seed pairs cannot be reordered');
+      return;
+    }
+
+    const next = arrayMove(orderedPairs, oldIndex, newIndex).map((p, i) => ({
+      ...p,
+      sortOrder: i + 1,
+    }));
+    setPairs(next);
+    await persistOrder(next);
+  }
+
+  const pairsTotal = orderedPairs.length;
   const activeCount = pairs.filter((p) => p.isActive).length;
   const dexCount = pairs.filter((p) => p.priceSource === 'dexscreener').length;
 
@@ -380,7 +651,8 @@ export default function TradingPairsAdminSection() {
           <div>
             <h2>Exchange pairs</h2>
             <p className="admin-coins__panel-sub">
-              {pairsTotal} pair{pairsTotal !== 1 ? 's' : ''} configured · 10 / page
+              {pairsTotal} pair{pairsTotal !== 1 ? 's' : ''} configured · drag ⋮⋮ to reorder
+              {reorderBusy ? ' · saving…' : ''}
             </p>
           </div>
         </div>
@@ -397,119 +669,48 @@ export default function TradingPairsAdminSection() {
             </button>
           </div>
         ) : (
-          <>
-            <div className="admin-table-wrap">
+          <div className="admin-table-wrap admin-coins__dnd-wrap">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onDragCancel={onDragCancel}
+            >
               <table className="admin-table admin-coins__table">
                 <thead>
                   <tr>
+                    <th style={{ width: 72 }}>Order</th>
                     <th>Pair</th>
                     <th>Name</th>
                     <th>Source</th>
-                    <th>Dex / Contract</th>
+                    <th>Contract</th>
                     <th>Status</th>
                     <th>Action</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {pagedPairs.map((p) => (
-                    <tr key={p.id || p.symbol} className={!p.isActive ? 'admin-coins__row--hidden' : ''}>
-                      <td>
-                        <CoinLabel
-                          symbol={p.baseAsset || String(p.symbol).replace(/USDT$|INR$/, '')}
-                          imageUrl={p.imageUrl}
-                          type={p.category === 'commodity' ? 'commodity' : 'crypto'}
-                          name={p.name}
-                          label={p.displayPair}
-                          size={24}
-                        />
-                      </td>
-                      <td>{p.name || p.baseAsset}</td>
-                      <td>
-                        <span className={`admin-coins__tag admin-coins__tag--${p.priceSource || 'binance'}`}>
-                          {p.priceSource || 'binance'}
-                        </span>
-                      </td>
-                      <td>
-                        <code className="admin-coins__cg-id">
-                          {p.dexChainId && p.dexPairAddress
-                            ? `${p.dexChainId}/${String(p.dexPairAddress).slice(0, 6)}…`
-                            : p.contractAddress
-                              ? `${String(p.contractAddress).slice(0, 10)}…`
-                              : '—'}
-                        </code>
-                      </td>
-                      <td>
-                        <span className={`admin-badge ${p.isActive ? 'admin-badge--approved' : 'admin-badge--pending'}`}>
-                          {p.isActive ? 'Active' : 'Hidden'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="admin-actions">
-                          {!String(p.id).startsWith('default-') && (
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--ghost admin-btn--sm"
-                              onClick={() => openEditModal(p)}
-                              title="Edit logo & deposit"
-                            >
-                              <Pencil size={14} /> Edit
-                            </button>
-                          )}
-                          <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => togglePair(p)}>
-                            {p.isActive ? (
-                              <>
-                                <EyeOff size={14} /> Hide
-                              </>
-                            ) : (
-                              <>
-                                <Eye size={14} /> Show
-                              </>
-                            )}
-                          </button>
-                          {!String(p.id).startsWith('default-') && (
-                            <button
-                              type="button"
-                              className="admin-btn admin-btn--danger admin-btn--sm"
-                              onClick={() => removePair(p)}
-                              title="Remove"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+                  <tbody>
+                    {orderedPairs.map((p, index) => (
+                      <SortablePairRow
+                        key={p.id || p.symbol}
+                        pair={p}
+                        index={index}
+                        onEdit={openEditModal}
+                        onToggle={togglePair}
+                        onRemove={removePair}
+                      />
+                    ))}
+                  </tbody>
+                </SortableContext>
               </table>
-            </div>
-            <div className="admin-pager">
-              <span className="admin-pager__range">
-                Showing {pairsFrom}–{pairsTo} of {pairsTotal}
-              </span>
-              <div className="admin-pager__actions">
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                  disabled={pairsPageSafe <= 1}
-                  onClick={() => setPairsPage((p) => Math.max(1, p - 1))}
-                >
-                  Previous
-                </button>
-                <span>
-                  Page {pairsPageSafe} of {pairsTotalPages}
-                </span>
-                <button
-                  type="button"
-                  className="admin-btn admin-btn--ghost admin-btn--sm"
-                  disabled={pairsPageSafe >= pairsTotalPages}
-                  onClick={() => setPairsPage((p) => Math.min(pairsTotalPages, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          </>
+              <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.25, 1, 0.5, 1)' }}>
+                {activeDragPair ? (
+                  <DragOverlayRow pair={activeDragPair} index={Math.max(0, activeDragIndex)} />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          </div>
         )}
       </div>
 
@@ -705,15 +906,13 @@ export default function TradingPairsAdminSection() {
                     {preview.contractAddress && (
                       <div className="admin-coins__preview-item admin-coins__preview-item--wide">
                         <span>Contract</span>
-                        <code>{preview.contractAddress}</code>
+                        <CopyAddressCell value={preview.contractAddress} label="Contract address" />
                       </div>
                     )}
                     {preview.dexPairAddress && (
                       <div className="admin-coins__preview-item admin-coins__preview-item--wide">
                         <span>Dex pair</span>
-                        <code>
-                          {preview.dexChainId}/{preview.dexPairAddress}
-                        </code>
+                        <CopyAddressCell value={preview.dexPairAddress} label="DEX pair address" />
                       </div>
                     )}
                   </div>

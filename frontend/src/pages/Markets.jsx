@@ -22,7 +22,10 @@ const COMMODITY_DEFAULTS = TRADING_PAIRS.filter(
   price: 0,
   change: 0,
   volume: '—',
+  volumeRaw: 0,
   cap: '—',
+  capRaw: 0,
+  sortOrder: p.sortOrder ?? 9999,
   type: 'commodity',
   unit: p.unit || 'g',
 }));
@@ -38,10 +41,23 @@ function isCommodityPair(meta, liveRow) {
   );
 }
 
+function formatCompactUsd(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return '—';
+  if (v >= 1e12) return `${(v / 1e12).toFixed(2)}T`;
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  return v.toFixed(0);
+}
+
 function mapLiveRow(liveRow, tradingPairs) {
   const sym = liveRow.symbol;
   const meta = tradingPairs.find((p) => p.symbol === sym);
   const commodity = isCommodityPair(meta, liveRow);
+  const quoteVol = Number(liveRow.quoteVolume ?? liveRow.volume ?? 0) || 0;
+  const marketCap = Number(liveRow.marketCap ?? liveRow.market_cap ?? 0) || 0;
+  const sortOrder = Number(meta?.sortOrder ?? liveRow.sortOrder ?? 9999);
 
   if (commodity) {
     return {
@@ -51,7 +67,10 @@ function mapLiveRow(liveRow, tradingPairs) {
       price: Number(liveRow.price_inr ?? liveRow.price ?? 0),
       change: Number(liveRow.change_24h ?? 0),
       volume: '—',
+      volumeRaw: 0,
       cap: '—',
+      capRaw: 0,
+      sortOrder,
       type: 'commodity',
       unit: meta?.unit || liveRow.unit || 'g',
       imageUrl: meta?.imageUrl || '',
@@ -65,8 +84,11 @@ function mapLiveRow(liveRow, tradingPairs) {
     name: meta?.name || meta?.baseAsset || sym.replace(/USDT$/, ''),
     price: Number(liveRow.price ?? 0),
     change: Number(liveRow.change_24h ?? 0),
-    volume: liveRow.volume ? `${(Number(liveRow.volume) / 1e6).toFixed(1)}M` : '—',
-    cap: '—',
+    volume: formatCompactUsd(quoteVol),
+    volumeRaw: quoteVol,
+    cap: formatCompactUsd(marketCap),
+    capRaw: marketCap,
+    sortOrder,
     type: 'crypto',
     imageUrl: meta?.imageUrl || '',
     coingeckoId: meta?.coingeckoId || '',
@@ -127,7 +149,7 @@ export default function Markets() {
   const { pairs: tradingPairs } = useTradingPairs();
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('volume');
+  const [sort, setSort] = useState('order');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -177,9 +199,9 @@ export default function Markets() {
 
         if (active) setRows(nextRows);
       } catch {
+        // Keep last good rows so the table does not go blank on transient errors
         if (!active) return;
-        const fallbackRows = COMMODITY_DEFAULTS.map((c) => ({ ...c }));
-        setRows(fallbackRows);
+        setRows((prev) => (prev.length ? prev : COMMODITY_DEFAULTS.map((c) => ({ ...c }))));
       } finally {
         if (active) setLoading(false);
       }
@@ -187,7 +209,7 @@ export default function Markets() {
 
     loadPrices().catch(() => {
       if (active) {
-        setRows(COMMODITY_DEFAULTS.map((c) => ({ ...c })));
+        setRows((prev) => (prev.length ? prev : COMMODITY_DEFAULTS.map((c) => ({ ...c }))));
         setLoading(false);
       }
     });
@@ -214,12 +236,10 @@ export default function Markets() {
       );
     }
 
-    if (sort === 'volume') {
-      list = [...list].sort((a, b) => {
-        const av = a.volume === '—' ? -1 : parseFloat(a.volume) || 0;
-        const bv = b.volume === '—' ? -1 : parseFloat(b.volume) || 0;
-        return bv - av;
-      });
+    if (sort === 'order') {
+      list = [...list].sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || a.symbol.localeCompare(b.symbol));
+    } else if (sort === 'volume') {
+      list = [...list].sort((a, b) => (b.volumeRaw || 0) - (a.volumeRaw || 0));
     } else if (sort === 'change') {
       list = [...list].sort((a, b) => b.change - a.change);
     }
@@ -267,12 +287,14 @@ export default function Markets() {
         key: 'volume',
         label: '24h Volume',
         sortable: true,
-        sortValue: (row) => row.volume,
+        sortValue: (row) => row.volumeRaw,
         render: (row) => <span className="text-text-secondary">{row.volume}</span>,
       },
       {
         key: 'cap',
         label: 'Market Cap',
+        sortable: true,
+        sortValue: (row) => row.capRaw,
         render: (row) => <span className="text-text-secondary">{row.cap}</span>,
       },
       {
@@ -301,7 +323,7 @@ export default function Markets() {
     <div className="markets-page space-y-5 md:space-y-6">
       <div>
         <h1 className="text-lg md:text-xl font-medium text-text-primary mb-1">Markets</h1>
-        <p className="text-sm text-text-secondary">Browse and trade crypto &amp; commodities (Gold/Silver in INR)</p>
+        <p className="text-sm text-text-secondary">Browse and trade crypto &amp; commodities  </p>
       </div>
 
       <div className="markets-page__toolbar">
@@ -335,6 +357,7 @@ export default function Markets() {
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
+            <option value="order">Exchange order</option>
             <option value="volume">Sort by Volume</option>
             <option value="change">Sort by Change</option>
           </select>

@@ -426,7 +426,8 @@
 
   .app-navbar__search,
   .app-navbar__balance,
-  .btn-secondary,
+  .app-navbar .btn-secondary,
+  .app-navbar__actions .btn-secondary,
   .app-navbar__logout-text {
     display: none !important;
   }
