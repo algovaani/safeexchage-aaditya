@@ -16,12 +16,12 @@ function StatusBadge({ status }) {
   return <span className={`admin-badge ${cls}`}>{status}</span>;
 }
 
-function CopyCell({ value, label = 'Copy' }) {
+function CopyCell({ value, label = 'Copy', full = false }) {
   const [copied, setCopied] = useState(false);
   const text = String(value || '').trim();
   if (!text) return <span className="admin-copy-key__missing">—</span>;
 
-  const short = text.length > 16 ? `${text.slice(0, 8)}…${text.slice(-6)}` : text;
+  const short = full || text.length <= 16 ? text : `${text.slice(0, 8)}…${text.slice(-6)}`;
 
   async function copy() {
     try {
@@ -35,7 +35,7 @@ function CopyCell({ value, label = 'Copy' }) {
 
   return (
     <div className="admin-copy-key">
-      <code className="admin-copy-key__text" title={text}>
+      <code className={full ? 'admin-user-password' : 'admin-copy-key__text'} title={text}>
         {short}
       </code>
       <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={copy}>
@@ -203,6 +203,41 @@ export default function AdminUserDetail() {
     []
   );
 
+  const referralColumns = useMemo(
+    () => [
+      { key: 'mobile', label: 'Mobile', sortable: true, render: (r) => r.mobile || '—' },
+      { key: 'email', label: 'Email', sortable: true, render: (r) => r.email || '—' },
+      { key: 'name', label: 'Name', sortable: true, render: (r) => r.name || '—' },
+      {
+        key: 'loginId',
+        label: 'Login ID',
+        render: (r) => r.loginId || r.mobile || r.email || '—',
+      },
+      {
+        key: 'password',
+        label: 'Password',
+        render: (r) =>
+          r.password ? <CopyCell value={r.password} label="Copy" full /> : <span className="admin-muted">—</span>,
+      },
+      {
+        key: 'balance',
+        label: 'Balance',
+        sortable: true,
+        render: (r) => `${Number(r.balance || 0).toFixed(2)} USDT`,
+      },
+      { key: 'status', label: 'Status', sortable: true, render: (r) => <StatusBadge status={r.status} /> },
+      { key: 'referralCode', label: 'Their code', render: (r) => r.referralCode || '—' },
+      {
+        key: 'createdAt',
+        label: 'Joined',
+        sortable: true,
+        render: (r) =>
+          r.createdAt ? `${formatAdminDate(r.createdAt)} ${formatMarketTime(r.createdAt)}` : '—',
+      },
+    ],
+    []
+  );
+
   if (loading) {
     return <p className="admin-loading">Loading user…</p>;
   }
@@ -249,7 +284,7 @@ export default function AdminUserDetail() {
             <dt>Password</dt>
             <dd>
               {user.password ? (
-                <CopyCell value={user.password} label="Copy password" />
+                <CopyCell value={user.password} label="Copy password" full />
               ) : (
                 <span className="admin-muted">Not stored — set below</span>
               )}
@@ -309,6 +344,8 @@ export default function AdminUserDetail() {
             <dd>{user.stats?.trades ?? 0}</dd>
             <dt>Orders</dt>
             <dd>{user.stats?.orders ?? 0}</dd>
+            <dt>Referral joins</dt>
+            <dd>{Number(user.invitedCount || 0)}</dd>
             <dt>KYC</dt>
             <dd>{user.kyc ? <StatusBadge status={user.kyc.status} /> : '—'}</dd>
           </dl>
@@ -317,6 +354,31 @@ export default function AdminUserDetail() {
           </Link>
         </section>
       </div>
+
+      <AdminDataTable
+        title={`Referred users (${Number(user.invitedCount || 0)})`}
+        endpoint={`/admin/users/${userId}/referrals`}
+        columns={referralColumns}
+        searchPlaceholder="Search referred users…"
+        filters={[
+          {
+            key: 'status',
+            label: 'All statuses',
+            options: [
+              { value: 'active', label: 'Active' },
+              { value: 'blocked', label: 'Blocked' },
+            ],
+          },
+        ]}
+        exportFilename={`referrals-${userId}.csv`}
+        emptyMessage="No users joined with this referral code yet."
+        onRowClick={(row) => {
+          const id = row.id || row._id;
+          if (id) navigate(`/admin/users/${id}`);
+        }}
+      />
+
+      <div style={{ height: '1.25rem' }} />
 
       <AdminDataTable
         title="Deposit history"

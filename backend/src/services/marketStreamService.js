@@ -8,12 +8,17 @@ import {
   intervalToMs,
   recordPriceTick,
   bucketTicksToIntervalCandles,
+  syntheticOrderBook,
 } from './marketDataProvider.js';
 import { getActivePulsePrice, getPulseDepthOverlay } from './pricePulseService.js';
+import { getPairSync } from './tradingPairService.js';
+import { getCachedDexPrice } from './dexscreenerService.js';
 
 const TICK_POLL_MS = Number(process.env.MARKET_STREAM_POLL_MS) || 1000;
+const DEX_TICK_POLL_MS = Number(process.env.MARKET_DEX_STREAM_POLL_MS) || 4000;
 const KLINE_POLL_MS = Number(process.env.MARKET_KLINE_POLL_MS) || 10_000;
 const LIVE_BAR_POLL_MS = Number(process.env.MARKET_LIVE_BAR_MS) || 1000;
+const DEX_LIVE_BAR_POLL_MS = Number(process.env.MARKET_DEX_LIVE_BAR_MS) || 3000;
 const DEPTH_POLL_MS = Number(process.env.MARKET_DEPTH_POLL_MS) || 1000;
 
 const activeStreams = new Map();
@@ -21,6 +26,43 @@ const aggState = new Map();
 /** Last depth emitted per symbol — used for instant snapshot on subscribe */
 const lastDepthBySymbol = new Map();
 const lastCandleByKey = new Map();
+/** Throttle identical error logs per symbol */
+const lastStreamErrAt = new Map();
+
+function isExternalDexPair(symbol) {
+  const pair = getPairSync(symbol);
+  const src = pair?.priceSource;
+  return src === 'dexscreener' || src === 'coingecko' || src === 'commodity_inr';
+}
+
+function logStreamErr(tag, symbol, err) {
+  const key = `${tag}|${symbol}|${err?.message || ''}`;
+  const now = Date.now();
+  if (now - (lastStreamErrAt.get(key) || 0) < 60_000) return;
+  lastStreamErrAt.set(key, now);
+  console.warn(`[marketStream] ${tag} ${symbol}: ${err?.message || err}`);
+}
+
+async function safeFetchTicker(sym) {
+  try {
+    return await fetchTicker(sym);
+  } catch (err) {
+    const cached = getCachedDexPrice(sym);
+    if (cached?.price > 0) {
+      return {
+        symbol: sym,
+        price: cached.price,
+        lastPrice: cached.price,
+        change_24h: cached.change_24h,
+        volume: cached.volume,
+        quoteVolume: cached.quoteVolume,
+        provider: 'dexscreener',
+        stale: true,
+      };
+    }
+    throw err;
+  }
+}
 
 export function roomName(symbol, interval) {
   return `m:${String(symbol).toUpperCase()}:${interval}`;
@@ -79,14 +121,18 @@ function startBinanceTickStream({ symbol, io }) {
   let depthTimer = null;
   let stopped = false;
   let lastTradeTime = 0;
+  const dexLike = isExternalDexPair(sym);
+  const tickMs = dexLike ? DEX_TICK_POLL_MS : TICK_POLL_MS;
+  const depthMs = dexLike ? Math.max(DEPTH_POLL_MS * 3, 3000) : DEPTH_POLL_MS;
 
   const poll = async () => {
     if (stopped) return;
     try {
-      const ticker = await fetchTicker(sym);
+      const ticker = await safeFetchTicker(sym);
       const livePrice = ticker.price;
       const pulsed = getActivePulsePrice(sym);
       const price = pulsed != null ? pulsed : livePrice;
+      if (!(price > 0)) return;
       recordPriceTick(sym, price);
 
       const bucket = Math.floor(Date.now() / 1000) * 1000;
@@ -119,7 +165,7 @@ function startBinanceTickStream({ symbol, io }) {
         tickerOnly: true,
       });
     } catch (err) {
-      console.error(`[binanceStream] tick ${sym}:`, err.message);
+      logStreamErr('tick', sym, err);
     }
   };
 
@@ -129,14 +175,25 @@ function startBinanceTickStream({ symbol, io }) {
       const pulseDepth = getPulseDepthOverlay(sym);
       if (pulseDepth?.bids?.length || pulseDepth?.asks?.length) {
         emitDepth(io, sym, pulseDepth);
+        return;
+      }
+
+      // Dex / CG pairs are not on Binance — never hit Binance depth/trades APIs.
+      if (dexLike) {
+        const ticker = await safeFetchTicker(sym).catch(() => null);
+        const mid = Number(ticker?.price);
+        if (mid > 0) {
+          emitDepth(io, sym, syntheticOrderBook(mid, 20));
+        }
+        return;
       }
 
       const [depth, trades] = await Promise.all([
-        pulseDepth ? Promise.resolve(null) : fetchDepth(sym, { limit: 20 }),
+        fetchDepth(sym, { limit: 20 }),
         fetchAggTrades(sym, { limit: 20 }),
       ]);
 
-      if (!pulseDepth && depth && (depth.bids.length || depth.asks.length)) {
+      if (depth && (depth.bids.length || depth.asks.length)) {
         emitDepth(io, sym, depth);
       }
 
@@ -154,14 +211,14 @@ function startBinanceTickStream({ symbol, io }) {
         io.to(room).emit('market:trade', tradePayload);
       }
     } catch (err) {
-      console.error(`[binanceStream] depth/trades ${sym}:`, err.message);
+      logStreamErr('depth', sym, err);
     }
   };
 
   poll();
   pollDepthAndTrades();
-  timer = setInterval(poll, TICK_POLL_MS);
-  depthTimer = setInterval(pollDepthAndTrades, DEPTH_POLL_MS);
+  timer = setInterval(poll, tickMs);
+  depthTimer = setInterval(pollDepthAndTrades, depthMs);
   timer.unref?.();
   depthTimer.unref?.();
 
@@ -179,10 +236,12 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
   let liveTimer = null;
   let stopped = false;
   const intervalMs = intervalToMs(interval);
+  const dexLike = isExternalDexPair(sym);
+  const liveMs = dexLike ? DEX_LIVE_BAR_POLL_MS : LIVE_BAR_POLL_MS;
 
   const pushCandle = async (candle) => {
     if (!candle) return;
-    await persistCandleExpand(sym, interval, candle, 'binance');
+    await persistCandleExpand(sym, interval, candle, dexLike ? 'dexscreener' : 'binance');
     const merged =
       (await getMergedCandleAt(sym, interval, candle.openTime, candle.close)) || candle;
     emitCandle(io, sym, interval, merged);
@@ -195,16 +254,17 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
       const latest = candles[candles.length - 1];
       await pushCandle(latest);
     } catch (err) {
-      console.error(`[binanceStream] kline ${sym} ${interval}:`, err.message);
+      logStreamErr(`kline:${interval}`, sym, err);
     }
   };
 
   const pollLiveBar = async () => {
     if (stopped || !intervalMs) return;
     try {
-      const ticker = await fetchTicker(sym);
+      const ticker = await safeFetchTicker(sym);
       const pulsed = getActivePulsePrice(sym);
       const price = pulsed != null ? pulsed : ticker.price;
+      if (!(price > 0)) return;
       recordPriceTick(sym, price);
       const live = bucketTicksToIntervalCandles(sym, intervalMs, 2);
       const latest = live[live.length - 1];
@@ -212,16 +272,20 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
         await pushCandle({ ...latest, isFinal: false });
       }
     } catch (err) {
-      console.error(`[binanceStream] live bar ${sym} ${interval}:`, err.message);
+      logStreamErr(`live:${interval}`, sym, err);
     }
   };
 
   pollHistory();
   pollLiveBar();
 
-  const historyMs = interval === '1m' || interval === '5m' ? 30_000 : KLINE_POLL_MS;
+  const historyMs = dexLike
+    ? 60_000
+    : interval === '1m' || interval === '5m'
+      ? 30_000
+      : KLINE_POLL_MS;
   historyTimer = setInterval(pollHistory, historyMs);
-  liveTimer = setInterval(pollLiveBar, LIVE_BAR_POLL_MS);
+  liveTimer = setInterval(pollLiveBar, liveMs);
   historyTimer.unref?.();
   liveTimer.unref?.();
 
@@ -272,7 +336,13 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
     socket.emit('market:depth', cachedDepth);
   } else {
     try {
-      const depth = getPulseDepthOverlay(sym) || (await fetchDepth(sym, { limit: 20 }));
+      let depth = getPulseDepthOverlay(sym);
+      if (!depth && isExternalDexPair(sym)) {
+        const ticker = await safeFetchTicker(sym).catch(() => null);
+        if (ticker?.price > 0) depth = syntheticOrderBook(ticker.price, 20);
+      } else if (!depth) {
+        depth = await fetchDepth(sym, { limit: 20 });
+      }
       if (depth && (depth.bids?.length || depth.asks?.length)) {
         const payload = { symbol: sym, ...depth };
         lastDepthBySymbol.set(sym, payload);
@@ -284,16 +354,18 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
   }
 
   try {
-    const ticker = await fetchTicker(sym);
+    const ticker = await safeFetchTicker(sym);
     const pulsed = getActivePulsePrice(sym);
     const price = pulsed != null ? pulsed : ticker.price;
-    socket.emit('market:trade', {
-      symbol: sym,
-      price,
-      qty: 0,
-      time: Date.now(),
-      tickerOnly: true,
-    });
+    if (price > 0) {
+      socket.emit('market:trade', {
+        symbol: sym,
+        price,
+        qty: 0,
+        time: Date.now(),
+        tickerOnly: true,
+      });
+    }
   } catch {
     /* ignore */
   }

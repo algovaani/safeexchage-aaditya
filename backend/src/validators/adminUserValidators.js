@@ -37,3 +37,8 @@ export const adminUserOrdersValidators = [
   ...adminUserIdParamValidators,
   ...datatableQueryValidators,
 ];
+
+export const adminUserReferralsValidators = [
+  ...adminUserIdParamValidators,
+  ...datatableQueryValidators,
+];

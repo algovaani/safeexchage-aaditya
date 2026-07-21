@@ -1,5 +1,6 @@
 import { error } from '../utils/response.js';
 import { applyCorsHeaders } from '../config/cors.js';
+import { recordSystemLog } from '../services/systemLogService.js';
 
 function duplicateKeyMessage(err) {
   const field = Object.keys(err.keyPattern || {})[0] || 'field';
@@ -47,6 +48,22 @@ export function errorHandler(err, req, res, next) {
         ? 'Internal server error'
         : err.message || 'Internal server error'
       : err.message || 'Request failed';
+
+  if (status >= 500) {
+    void recordSystemLog({
+      level: 'error',
+      source: 'http',
+      error: err,
+      message: err.message || 'Internal server error',
+      stack: err.stack || '',
+      method: req.method,
+      path: req.originalUrl || req.url,
+      statusCode: status,
+      userId: req.user?._id || req.user?.id || null,
+      ip: req.ip || req.headers['x-forwarded-for'] || '',
+      location: `${req.method} ${req.originalUrl || req.url}`,
+    });
+  }
 
   return error(res, message, status);
 }

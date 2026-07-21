@@ -312,11 +312,15 @@ body.admin-theme #root {
 
 .admin-user-password {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--adm-text, #e2e8f0);
   background: var(--adm-surface-2, rgba(148, 163, 184, 0.12));
-  padding: 0.15rem 0.4rem;
+  padding: 0.2rem 0.45rem;
   border-radius: 4px;
   word-break: break-all;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .admin-muted {
@@ -2391,3 +2395,68 @@ html.dark .admin-badge--cancelled {
     grid-template-columns: 1fr;
   }
 }
+
+/* System logs detail */
+.admin-logs-detail__body {
+  padding: 0 1.25rem 1.5rem;
+  overflow: auto;
+  max-height: calc(100vh - 5rem);
+}
+
+.admin-logs-detail__meta {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+}
+
+.admin-logs-detail__meta div {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.5rem;
+  align-items: start;
+  font-size: 0.875rem;
+}
+
+.admin-logs-detail__meta dt {
+  margin: 0;
+  color: var(--adm-muted);
+  font-weight: 500;
+}
+
+.admin-logs-detail__meta dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.admin-logs-detail h4 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--adm-muted);
+}
+
+.admin-logs-detail__pre {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--adm-border, rgba(255, 255, 255, 0.08));
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.admin-logs-detail__pre--stack {
+  max-height: 22rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.admin-logs-source,
+.admin-logs-where {
+  font-size: 0.78rem;
+}
+

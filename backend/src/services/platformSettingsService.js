@@ -27,12 +27,9 @@ export async function getPlatformSettings({ includeSecrets = false } = {}) {
   return doc;
 }
 
-export function isManualDepositMode(settings) {
-  const envOff =
-    String(process.env.DEPOSIT_AUTO_CREDIT ?? '').toLowerCase() === '0' ||
-    String(process.env.DEPOSIT_AUTO_CREDIT ?? '').toLowerCase() === 'false';
-  if (envOff) return true;
-  return (settings?.depositMode || 'manual') !== 'auto';
+/** On-chain auto-credit (Moralis/Tatum) removed — deposits are always manual admin credit. */
+export function isManualDepositMode() {
+  return true;
 }
 
 export function formatBankSettings(doc) {
@@ -51,8 +48,8 @@ export function formatPublicSettings(doc) {
     ethWalletAddress: doc.ethWalletAddress || '',
     usdtWalletAddress: doc.usdtWalletAddress || '',
     trcWalletAddress: doc.trcWalletAddress || '',
-    depositMode: doc.depositMode || 'manual',
-    manualDeposits: isManualDepositMode(doc),
+    depositMode: 'manual',
+    manualDeposits: true,
     bank: formatBankSettings(doc),
     hasBnbPrivateKey: Boolean(doc.bnbPrivateKey),
     hasEthPrivateKey: Boolean(doc.ethPrivateKey),
@@ -124,8 +121,7 @@ export async function updatePlatformSettings(adminUserId, body) {
       continue;
     }
     if (key === 'depositMode') {
-      const mode = String(body[key] || 'manual').toLowerCase();
-      update[key] = mode === 'auto' ? 'auto' : 'manual';
+      update[key] = 'manual';
       continue;
     }
     let val = String(body[key] || '').trim();
@@ -149,7 +145,7 @@ export async function updatePlatformSettings(adminUserId, body) {
     '+bnbPrivateKey +ethPrivateKey +trcPrivateKey +evmMnemonic'
   );
 
-  if (!isManualDepositMode(doc)) {
+  if (!isManualDepositMode()) {
     const { refreshAllUserDepositAddresses } = await import('./userDepositAddressService.js');
     await refreshAllUserDepositAddresses().catch((err) => {
       console.error('[platformSettings] address refresh failed:', err.message);

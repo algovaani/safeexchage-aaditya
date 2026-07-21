@@ -92,6 +92,7 @@ export default function Trading() {
   const [tableSearch, setTableSearch] = useState('');
   const [tablePageSize, setTablePageSize] = useState(10);
   const [orderStatusTab, setOrderStatusTab] = useState('pending');
+  const [ordersRefreshTick, setOrdersRefreshTick] = useState(0);
   const [buyTable, setBuyTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
   const [sellTable, setSellTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
   const [ticker, setTicker] = useState(null);
@@ -312,7 +313,7 @@ export default function Trading() {
   }, []);
 
   const socketRef = useRef(null);
-  /** Brief lock so live ticks cannot wipe the one-shot pulse wick before it paints */
+  /** Brief lock so live ticks keep the pulse wick while mid is pulsed */
   const pulseLockRef = useRef(null);
 
   useEffect(() => {
@@ -337,7 +338,8 @@ export default function Trading() {
       }
     };
 
-    const applyPulseWick = (candle, lock) => {
+    /** Merge pulse wick into a candle without forcing full chart redraw */
+    const withPulseWick = (candle, lock, { zoomOnce = false } = {}) => {
       if (!lock?.active || Date.now() > lock.until) return candle;
       const open = Number(candle.open) || lock.from;
       const close = lock.price;
@@ -348,58 +350,46 @@ export default function Trading() {
         low: Math.min(open, close, lock.low, Number(candle.low) || close),
         close,
         pulse: true,
-        _forceChart: true,
-        _pulseZoom: true,
+        ...(zoomOnce ? { _pulseZoom: true } : {}),
       };
-    };
-
-    const reloadCleanCandles = async () => {
-      try {
-        const { data } = await api.get('/market/klines', {
-          params: { symbol: sym, interval: chartInterval, limit: 500 },
-        });
-        const klines = parseApiResponse(data);
-        const rows = Array.isArray(klines?.candles) ? klines.candles : [];
-        if (rows.length) {
-          setCandles(rows.map((c) => ({ ...c, _forceChart: true, _chartReset: true })));
-        }
-      } catch {
-        /* keep last */
-      }
     };
 
     const onMerged = (payload) => {
       if (!payload?.candle || payload.symbol !== sym || payload.interval !== chartInterval) return;
       const lock = pulseLockRef.current;
-      // While restoring after pulse, ignore stale pulsed merges
-      if (lock?.restoring) return;
+      let c = { ...payload.candle, pulse: Boolean(payload.candle.pulse) };
 
-      let c = { ...payload.candle };
-      if (lock?.active) c = applyPulseWick(c, lock);
+      if (lock?.active && Date.now() <= lock.until) {
+        c = withPulseWick(c, lock);
+      } else if (lock?.active && Date.now() > lock.until) {
+        pulseLockRef.current = null;
+      }
 
       setCandles((prev) => {
         if (!prev.length) return [c];
         const last = prev[prev.length - 1];
-        if (lock?.active) {
-          // Paint pulse only on the visible last bar
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...last,
-              high: Math.max(Number(last.high) || 0, Number(c.high) || 0, lock.high),
-              low: Math.min(
-                Number(last.low) > 0 ? Number(last.low) : lock.low,
-                Number(c.low) > 0 ? Number(c.low) : lock.low,
-                lock.low
-              ),
-              close: lock.price,
-              pulse: true,
-              _forceChart: true,
-              _pulseZoom: true,
-            },
-          ];
+        if (c.openTime === last.openTime) {
+          // Server candle is source of truth after pulse — never glue old extreme wick forever
+          if (lock?.active && Date.now() <= lock.until) {
+            return [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                ...c,
+                open: Number(last.open) > 0 ? Number(last.open) : Number(c.open),
+                high: Math.max(Number(last.high) || 0, Number(c.high) || 0, lock.high),
+                low: Math.min(
+                  Number(last.low) > 0 ? Number(last.low) : lock.low,
+                  Number(c.low) > 0 ? Number(c.low) : lock.low,
+                  lock.low
+                ),
+                close: lock.price,
+                pulse: true,
+              },
+            ];
+          }
+          return [...prev.slice(0, -1), { ...c, pulse: false }];
         }
-        if (c.openTime === last.openTime) return [...prev.slice(0, -1), c];
         if (c.openTime > last.openTime) return [...prev.slice(-499), c];
         const idx = prev.findIndex((x) => x.openTime === c.openTime);
         if (idx >= 0) {
@@ -410,7 +400,7 @@ export default function Trading() {
         return prev;
       });
 
-      const displayPrice = lock?.active ? lock.price : Number(c.close);
+      const displayPrice = lock?.active && Date.now() <= lock.until ? lock.price : Number(c.close);
       if (displayPrice > 0) {
         setTicker((prev) => ({ ...prev, lastPrice: displayPrice, symbol: sym }));
         setWatchPrices((prev) => ({
@@ -422,7 +412,6 @@ export default function Trading() {
 
     const onManual = (payload) => {
       if (payload?.symbol && payload.symbol !== sym) return;
-      if (pulseLockRef.current?.restoring) return;
       if (payload?.candles?.length) setCandles(payload.candles.slice(-400));
     };
 
@@ -452,7 +441,6 @@ export default function Trading() {
         low: lo,
         until,
         active: true,
-        restoring: false,
       };
 
       setTicker((prev) => ({ ...prev, lastPrice: price, symbol: sym }));
@@ -472,7 +460,6 @@ export default function Trading() {
               close: price,
               volume: 1,
               pulse: true,
-              _forceChart: true,
               _pulseZoom: true,
             },
           ];
@@ -493,7 +480,6 @@ export default function Trading() {
             ),
             close: price,
             pulse: true,
-            _forceChart: true,
             _pulseZoom: true,
           },
         ];
@@ -503,7 +489,7 @@ export default function Trading() {
     const onPulseEnd = (payload) => {
       if (!payload || payload.symbol !== sym) return;
       const marketPrice = Number(payload.price);
-      pulseLockRef.current = { restoring: true, active: false, until: 0 };
+      pulseLockRef.current = null;
 
       if (marketPrice > 0) {
         setTicker((prev) => ({ ...prev, lastPrice: marketPrice, symbol: sym }));
@@ -514,10 +500,44 @@ export default function Trading() {
       }
       setDepth((prev) => ({ ...prev, pulse: false }));
 
-      // Reload clean market candles from DB (pulse wick removed) + reset chart scale
-      reloadCleanCandles().finally(() => {
-        pulseLockRef.current = null;
-      });
+      // Reload clean market candles from DB and reset Y-scale (drop extreme pulse wick)
+      (async () => {
+        try {
+          const { data } = await api.get('/market/klines', {
+            params: { symbol: sym, interval: chartInterval, limit: 500 },
+          });
+          const klines = parseApiResponse(data);
+          const rows = Array.isArray(klines?.candles) ? klines.candles : [];
+          if (rows.length) {
+            setCandles(
+              rows.map((c, i) =>
+                i === rows.length - 1
+                  ? { ...c, pulse: false, _chartReset: true, _forceChart: true }
+                  : { ...c, pulse: false }
+              )
+            );
+            return;
+          }
+        } catch {
+          /* fall through */
+        }
+        setCandles((prev) => {
+          if (!prev.length || !(marketPrice > 0)) return prev;
+          const last = prev[prev.length - 1];
+          return [
+            ...prev.slice(0, -1),
+            {
+              ...last,
+              high: Math.max(Number(last.open) || marketPrice, marketPrice),
+              low: Math.min(Number(last.open) || marketPrice, marketPrice),
+              close: marketPrice,
+              pulse: false,
+              _chartReset: true,
+              _forceChart: true,
+            },
+          ];
+        });
+      })();
     };
 
     const onTrade = (payload) => {
@@ -542,12 +562,20 @@ export default function Trading() {
       }
     };
 
+    const onOrdersFilled = (payload) => {
+      if (!payload || payload.symbol !== sym) return;
+      if (!user) return;
+      refreshBalance().catch(() => {});
+      setOrdersRefreshTick((n) => n + 1);
+    };
+
     socket.on('market:klines:merged', onMerged);
     socket.on('market:manual:updated', onManual);
     socket.on('market:depth', onDepth);
     socket.on('market:trade', onTrade);
     socket.on('market:price:pulse', onPulse);
     socket.on('market:price:pulse:end', onPulseEnd);
+    socket.on('market:orders:filled', onOrdersFilled);
     socket.on('connect', subscribe);
     if (socket.connected) subscribe();
     else socket.connect();
@@ -564,6 +592,7 @@ export default function Trading() {
       socket.off('market:trade', onTrade);
       socket.off('market:price:pulse', onPulse);
       socket.off('market:price:pulse:end', onPulseEnd);
+      socket.off('market:orders:filled', onOrdersFilled);
       pulseLockRef.current = null;
     };
   }, [symbol, chartInterval, refreshBalance, user]);
@@ -672,7 +701,7 @@ export default function Trading() {
 
   useEffect(() => {
     fetchTableData();
-  }, [fetchTableData]);
+  }, [fetchTableData, ordersRefreshTick]);
 
   useEffect(() => {
     setBuyTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
@@ -1002,7 +1031,7 @@ export default function Trading() {
 
   return (
     <div className={`trading-page${mobileView === 'orders' ? ' trading-page--orders-view' : ''}`}>
-      {!authLoading && !user && (
+      {/* {!authLoading && !user && (
         <div className="ex-guest-banner">
           <span>You are viewing live markets as a guest.</span>
           <Link to="/login" state={loginReturn}>Log in</Link>
@@ -1010,7 +1039,7 @@ export default function Trading() {
           <Link to="/signup">Sign up</Link>
           <span>to place orders.</span>
         </div>
-      )}
+      )} */}
       <div className="ex-ticker ex-ticker--scroll">
         <div className="ex-ticker__pair-wrap">
           <CoinIcon

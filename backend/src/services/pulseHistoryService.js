@@ -1,8 +1,6 @@
 import { ManualPriceData } from '../models/ManualPriceData.js';
 import { MarketData } from '../models/MarketData.js';
-import { fetchKlines, recordPriceTick } from './marketDataProvider.js';
 import { clearPulseDepthOverlay, setPulseDepthOverlay } from './pricePulseService.js';
-import { persistMarketKlinesForce } from './marketDataService.js';
 
 const INTERVALS = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
 
@@ -39,67 +37,97 @@ export function buildPulseDepth(mid, levels = 20) {
 }
 
 /**
- * After pulse flash: remove temporary extremes so chart Y-scale returns to market.
- * Only touches pulse rows + current openTime buckets (never historical ATH candles).
+ * After pulse flash: remove temporary extremes, restore live market OHLC so chart
+ * scale stays usable and candles keep designing around real price.
+ * Order fills already happened during the pulse — chart does not keep a permanent wick.
  */
-export async function finalizePulseAfterRevert(symbol, marketPrice) {
+export async function finalizePulseAfterRevert(symbol, marketPrice, { openTimes } = {}) {
   const sym = String(symbol || '').toUpperCase();
   const px = Number(marketPrice);
-  if (!sym) return;
-
   clearPulseDepthOverlay(sym);
-  if (!(px > 0)) return;
+  if (!sym || !(px > 0)) return { restored: 0 };
 
-  const now = Date.now();
-  const currentOpenTimes = INTERVALS.map((interval) => alignOpenTime(now, interval));
-  const hiCut = px * 1.08;
-  const loCut = px * 0.92;
+  const { fetchKlines } = await import('./marketDataProvider.js');
+  const { persistMarketKlinesForce } = await import('./marketDataService.js');
 
+  const times = openTimes ? Object.values(openTimes).filter((t) => Number.isFinite(t)) : [];
+  if (times.length) {
+    await ManualPriceData.deleteMany({ symbol: sym, openTime: { $in: times } });
+  }
+
+  // Drop any leftover extreme manuals vs live price (e.g. pulse 200 then 600)
   await ManualPriceData.deleteMany({
     symbol: sym,
-    mode: 'tick',
-    $or: [{ price: { $gt: hiCut } }, { price: { $lt: loCut } }],
+    $or: [{ high: { $gt: px * 1.06 } }, { low: { $lt: px * 0.94 } }, { price: { $gt: px * 1.06 } }, { price: { $lt: px * 0.94 } }],
   });
 
-  const dirty = await MarketData.find({
-    symbol: sym,
-    $or: [
-      { source: 'pulse' },
-      { openTime: { $in: currentOpenTimes }, high: { $gt: hiCut } },
-      { openTime: { $in: currentOpenTimes }, low: { $lt: loCut } },
-    ],
-  }).lean();
+  await MarketData.deleteMany({ symbol: sym, source: 'pulse' });
 
-  for (const row of dirty) {
-    const o = Number(row.open);
-    const c = Number(row.close);
-    const open = Number.isFinite(o) && o > 0 ? o : px;
-    const close = px;
-    await MarketData.updateOne(
-      { _id: row._id },
-      {
-        $set: {
-          open,
-          high: Math.max(open, close),
-          low: Math.min(open, close),
-          close,
-          source: 'binance',
-          isFinal: false,
-        },
-      }
-    );
-  }
-
-  // Overwrite latest bars with real Binance OHLC
+  let restored = 0;
   for (const interval of INTERVALS) {
-    if (interval === '1s') continue;
+    const openTime = openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+    if (interval === '1s') {
+      await MarketData.findOneAndUpdate(
+        { symbol: sym, interval, openTime },
+        {
+          $set: {
+            open: px,
+            high: px,
+            low: px,
+            close: px,
+            volume: 0,
+            isFinal: false,
+            source: 'binance',
+          },
+        },
+        { upsert: true }
+      );
+      restored += 1;
+      continue;
+    }
+
     try {
-      const external = await fetchKlines(sym, interval, { limit: 8 });
-      await persistMarketKlinesForce(sym, interval, external, 'binance');
+      const external = await fetchKlines(sym, interval, { limit: 3 });
+      if (external?.length) {
+        await persistMarketKlinesForce(sym, interval, external, 'binance');
+        restored += external.length;
+      } else {
+        await MarketData.findOneAndUpdate(
+          { symbol: sym, interval, openTime },
+          {
+            $set: {
+              open: px,
+              high: px,
+              low: px,
+              close: px,
+              isFinal: false,
+              source: 'binance',
+            },
+          },
+          { upsert: true }
+        );
+        restored += 1;
+      }
     } catch {
-      /* rate-limit — clamped current bars above still ok */
+      await MarketData.findOneAndUpdate(
+        { symbol: sym, interval, openTime },
+        {
+          $set: {
+            open: px,
+            high: px,
+            low: px,
+            close: px,
+            isFinal: false,
+            source: 'binance',
+          },
+        },
+        { upsert: true }
+      );
+      restored += 1;
     }
   }
+
+  return { restored };
 }
 
 export async function clearPulseChartArtifacts(symbol, marketPrice) {
@@ -110,14 +138,13 @@ export async function clearPulseChartArtifacts(symbol, marketPrice) {
  * Repair chart DB for a symbol: pull fresh Binance history (force overwrite).
  */
 export async function repairMarketChartFromExchange(symbol, { limit = 500 } = {}) {
+  const { fetchKlines } = await import('./marketDataProvider.js');
+  const { persistMarketKlinesForce } = await import('./marketDataService.js');
+
   const sym = String(symbol || '').toUpperCase();
   if (!sym) return { repaired: 0 };
 
-  await ManualPriceData.deleteMany({
-    symbol: sym,
-    mode: 'tick',
-  });
-
+  await ManualPriceData.deleteMany({ symbol: sym });
   await MarketData.deleteMany({ symbol: sym, source: 'pulse' });
 
   let repaired = 0;
@@ -135,8 +162,8 @@ export async function repairMarketChartFromExchange(symbol, { limit = 500 } = {}
 }
 
 /**
- * Ephemeral pulse: depth + temp MarketData for the flash window only.
- * Extreme wick is removed on finalizePulseAfterRevert so graph scale stays usable.
+ * Temporary pulse flash in MarketData (source:'pulse').
+ * Extreme wick is removed on finalize — order matching uses in-memory from→to path.
  */
 export async function persistPulseMarketHistory({
   symbol,
@@ -149,6 +176,8 @@ export async function persistPulseMarketHistory({
   const from = Number(fromPrice);
   const to = Number(pulsePrice);
   if (!sym || !(to > 0)) return { saved: 0 };
+
+  const { recordPriceTick } = await import('./marketDataProvider.js');
 
   const hi = Math.max(Number.isFinite(from) && from > 0 ? from : to, to);
   const lo = Math.min(Number.isFinite(from) && from > 0 ? from : to, to);
@@ -164,27 +193,56 @@ export async function persistPulseMarketHistory({
 
   const openTimes = {};
   let saved = 0;
+  const candles = [];
 
   for (const interval of INTERVALS) {
     const openTime = alignOpenTime(now, interval);
     openTimes[interval] = openTime;
 
-    await MarketData.findOneAndUpdate(
+    const existing = await MarketData.findOne({ symbol: sym, interval, openTime }).lean();
+    // Keep real open for the bar; only flash high/low/close for the pulse window
+    const open =
+      existing && Number(existing.open) > 0 && existing.source !== 'pulse'
+        ? Number(existing.open)
+        : openBase;
+    const high = Math.max(Number(existing?.high) || 0, hi, open, to);
+    const low = Math.min(
+      Number(existing?.low) > 0 && existing?.source !== 'pulse' ? Number(existing.low) : lo,
+      lo,
+      open,
+      to
+    );
+
+    const doc = await MarketData.findOneAndUpdate(
       { symbol: sym, interval, openTime },
       {
         $set: {
-          open: openBase,
-          high: hi,
-          low: lo,
+          open,
+          high,
+          low,
           close: to,
           isFinal: false,
           source: 'pulse',
-          volume: 1,
+          volume: Math.max(Number(existing?.volume) || 0, 1),
         },
       },
-      { upsert: true }
-    );
+      { upsert: true, new: true }
+    ).lean();
+
     saved += 1;
+    candles.push({
+      interval,
+      candle: {
+        openTime,
+        open: doc.open,
+        high: doc.high,
+        low: doc.low,
+        close: doc.close,
+        volume: doc.volume || 1,
+        isFinal: false,
+        pulse: true,
+      },
+    });
   }
 
   return {
@@ -193,6 +251,7 @@ export async function persistPulseMarketHistory({
     high: hi,
     low: lo,
     openTimes,
+    candles,
     adminId: adminId || null,
   };
 }

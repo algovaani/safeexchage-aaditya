@@ -15,7 +15,7 @@ import {
 } from './tradingPairService.js';
 import * as coingeckoMarket from './coingeckoService.js';
 import { fetchCommodityPrices, fetchCommodityTicker, fetchCommodityKlines, fetchCommodityDepth, isCommoditySymbol } from './commodityService.js';
-import { fetchDexPairPrices } from './dexscreenerService.js';
+import { fetchDexPairPrices, getCachedDexPrice } from './dexscreenerService.js';
 import { getActivePulsePrice, getPulseDepthOverlay } from './pricePulseService.js';
 import {
   applyTickerStatsOverride,
@@ -208,10 +208,26 @@ export async function fetchAllPairPrices({ force = false } = {}) {
     }
 
     if (dexPairs.length) {
-      const dexRows = await fetchDexPairPrices(dexPairs);
-      for (const row of dexRows) {
-        bySymbol.set(row.symbol, row);
-        recordPriceTick(row.symbol, row.price);
+      try {
+        const dexRows = await fetchDexPairPrices(dexPairs);
+        for (const row of dexRows) {
+          bySymbol.set(row.symbol, row);
+          recordPriceTick(row.symbol, row.price);
+        }
+        // Keep last-known Dex prices if this refresh was partially rate-limited
+        for (const def of dexPairs) {
+          if (bySymbol.has(def.symbol)) continue;
+          const cached = getCachedDexPrice(def.symbol);
+          if (cached?.price > 0) {
+            bySymbol.set(def.symbol, { ...cached, stale: true });
+          }
+        }
+      } catch (err) {
+        console.warn('[prices] DexScreener skip:', err.message);
+        for (const def of dexPairs) {
+          const cached = getCachedDexPrice(def.symbol);
+          if (cached?.price > 0) bySymbol.set(def.symbol, { ...cached, stale: true });
+        }
       }
     }
 
@@ -288,7 +304,12 @@ export async function fetchTicker(symbol, opts = {}) {
   }
 
   const result = await fetchAllPairPrices(opts);
-  const row = result.pairs.find((p) => p.symbol === sym);
+  const row =
+    result.pairs.find((p) => p.symbol === sym) ||
+    (() => {
+      const cached = getCachedDexPrice(sym);
+      return cached?.price > 0 ? cached : null;
+    })();
   if (!row) {
     const err = new Error(`Ticker not found for ${sym}`);
     err.status = 404;

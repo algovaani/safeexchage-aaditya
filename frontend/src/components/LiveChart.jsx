@@ -207,11 +207,9 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
     const lastVol = volumes[volumes.length - 1];
     const lastRaw = candles[candles.length - 1];
     const chartReset = Boolean(lastRaw?._chartReset);
-    const forceFull =
-      chartReset ||
-      Boolean(lastRaw?.pulse) ||
-      Boolean(lastRaw?._forceChart);
-    const pulseZoom = Boolean(lastRaw?._pulseZoom) || Boolean(lastRaw?.pulse);
+    // Prefer incremental update(last) — full setData only on reset / first paint / big gaps
+    const forceFull = chartReset || Boolean(lastRaw?._forceChart);
+    const pulseZoom = Boolean(lastRaw?._pulseZoom);
 
     try {
       const prevCount = barCountRef.current;
@@ -221,7 +219,6 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
         series.setData(bars);
         volumeSeries.setData(volumes);
         if (chartReset) {
-          // After pulse: hard-reset Y scale so market candles fill the chart again
           try {
             series.priceScale().applyOptions({ autoScale: true });
             chart?.priceScale('right')?.applyOptions({ autoScale: true });
@@ -232,8 +229,8 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
           chart?.timeScale().fitContent();
           chart?.timeScale().scrollToRealTime();
         } else if (pulseZoom) {
-          const from = Math.max(0, bars.length - 60);
-          chart?.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: bars.length + 3 });
+          const from = Math.max(0, bars.length - 80);
+          chart?.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: bars.length + 4 });
         } else if (prevCount === 0) {
           chart?.timeScale().fitContent();
         }
@@ -245,7 +242,6 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
         if (lastVol) volumeSeries.update(lastVol);
         chart?.timeScale().scrollToRealTime();
       } else {
-        // Out-of-order / corrupt update — full redraw
         series.setData(bars);
         volumeSeries.setData(volumes);
         chart?.timeScale().scrollToRealTime();
@@ -258,7 +254,7 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
       try {
         series.setData(bars);
         volumeSeries.setData(volumes);
-        chart?.timeScale().fitContent();
+        chart?.timeScale().scrollToRealTime();
         barCountRef.current = bars.length;
         lastBarTimeRef.current = last.time;
       } catch {

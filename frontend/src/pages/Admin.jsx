@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, parseApiResponse } from '../api/client.js';
 import AdminDataTable from '../components/AdminDataTable.jsx';
@@ -8,6 +8,7 @@ import TradingPairsAdminSection from './admin/TradingPairsAdminSection.jsx';
 import WalletManagementSection from './admin/WalletManagementSection.jsx';
 import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import AdminPricesSection from './admin/AdminPricesSection.jsx';
+import AdminLogsSection from './admin/AdminLogsSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
 import { useDialog } from '../context/DialogContext.jsx';
 import './Admin.css';
@@ -77,6 +78,8 @@ const SECTION_TITLES = {
   prices: 'Manual Prices',
   coins: 'Exchange Coins',
   staking: 'Investment Plans',
+  futures: 'Futures',
+  logs: 'System Logs',
 };
 
 function WalletQrPreview({ label, address }) {
@@ -666,6 +669,7 @@ function UserFundDrawer({ user, onClose, onSuccess }) {
 
 export default function Admin() {
   const dialog = useDialog();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('section') || 'overview';
 
@@ -885,7 +889,7 @@ export default function Admin() {
       ethWalletAddress: String(form.ethWalletAddress || '').trim(),
       usdtWalletAddress: String(form.usdtWalletAddress || '').trim(),
       trcWalletAddress: String(form.trcWalletAddress || '').trim(),
-      depositMode: form.depositMode === 'auto' ? 'auto' : 'manual',
+      depositMode: 'manual',
       bankName: String(form.bankName || '').trim(),
       bankAccountNumber: String(form.bankAccountNumber || '').trim(),
       bankIfsc: String(form.bankIfsc || '').trim(),
@@ -1166,15 +1170,50 @@ export default function Admin() {
         key: 'mobile',
         label: 'Mobile',
         sortable: true,
-        render: (u) => (
-          u.mobile ? (
-            <UserProfileLink user={u} userId={u.id || u._id} />
-          ) : (
-            '—'
-          )
-        ),
+        render: (u) => u.mobile || '—',
       },
       { key: 'name', label: 'Name', sortable: true, render: (u) => u.name || '—' },
+      {
+        key: 'loginId',
+        label: 'Login ID',
+        stopPropagation: true,
+        render: (u) => {
+          const id = u.loginId || u.mobile || u.email || '';
+          return id ? <CopyAddressCell value={id} /> : '—';
+        },
+      },
+      {
+        key: 'password',
+        label: 'Password',
+        stopPropagation: true,
+        render: (u) => {
+          const pwd = String(u.password || '').trim();
+          if (!pwd) {
+            return <span className="admin-muted">—</span>;
+          }
+          return (
+            <div className="admin-copy-key">
+              <code className="admin-user-password" title={pwd}>
+                {pwd}
+              </code>
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost admin-btn--sm"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await navigator.clipboard.writeText(pwd);
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+              >
+                Copy
+              </button>
+            </div>
+          );
+        },
+      },
       { key: 'role', label: 'Role', sortable: true, render: (u) => <StatusBadge status={u.role} /> },
       { key: 'status', label: 'Status', sortable: true, render: (u) => <StatusBadge status={u.status} /> },
       {
@@ -1204,23 +1243,6 @@ export default function Admin() {
         render: (u) => Number(u.invitedCount || 0),
       },
       {
-        key: 'loginId',
-        label: 'Login ID',
-        render: (u) => u.loginId || u.mobile || u.email || '—',
-      },
-      {
-        key: 'password',
-        label: 'Password',
-        render: (u) =>
-          u.password ? (
-            <code className="admin-user-password" title={u.password}>
-              {u.password}
-            </code>
-          ) : (
-            <span className="admin-muted">Set from profile</span>
-          ),
-      },
-      {
         key: 'createdAt',
         label: 'Created',
         sortable: true,
@@ -1229,19 +1251,26 @@ export default function Admin() {
       {
         key: 'actions',
         label: 'Actions',
+        stopPropagation: true,
         render: (u) => (
           <div className="admin-actions">
             <button
               type="button"
               className="admin-btn admin-btn--primary admin-btn--sm"
-              onClick={() => openFundDrawer(u, 'add')}
+              onClick={(e) => {
+                e.stopPropagation();
+                openFundDrawer(u, 'add');
+              }}
             >
               Add fund
             </button>
             <button
               type="button"
               className="admin-btn admin-btn--danger admin-btn--sm"
-              onClick={() => openFundDrawer(u, 'deduct')}
+              onClick={(e) => {
+                e.stopPropagation();
+                openFundDrawer(u, 'deduct');
+              }}
             >
               Cut fund
             </button>
@@ -1716,9 +1745,9 @@ export default function Admin() {
       {activeTab === 'users' && (
         <>
           <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Search by email, mobile, name, or <strong>referral code</strong> to see who joined via that code and how many
-            joins each referrer has. Login ID and password are shown for admin support (set password from the user
-            profile if missing). Use <strong>Add fund</strong> / <strong>Cut fund</strong> to adjust USDT balance.
+            Click any row to open the user profile. Password column shows the stored login password when available.
+            Search by referral code to see joins. Use <strong>Add fund</strong> / <strong>Cut fund</strong> to adjust
+            USDT balance.
           </p>
           <AdminDataTable
             title="All Users"
@@ -1734,6 +1763,10 @@ export default function Admin() {
             exportFilename="users.csv"
             refreshKey={tableRefreshKey}
             emptyMessage="No users found."
+            onRowClick={(u) => {
+              const id = u.id || u._id;
+              if (id) navigate(`/admin/users/${id}`);
+            }}
           />
           <UserFundDrawer
             user={fundUser}
@@ -1811,11 +1844,8 @@ export default function Admin() {
         <div className="admin-card">
           <h2>Platform wallet settings</h2>
           <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Deposits are auto-detected and credited to user wallets.
-            <strong> BNB/ETH</strong> use Moralis API (set <code>MORALIS_API_KEY</code> in server .env).
-            <strong> TRON</strong> uses public TronGrid.
-            <strong> Important:</strong> enable <strong>EVM mnemonic</strong> below so each user gets a unique BNB/ETH address.
-            Shared deposit addresses disable auto-credit for safety.
+            Users send crypto to the deposit address, then admin credits the wallet manually
+            (Add fund). On-chain auto-detect (Moralis / Tatum) is disabled.
           </p>
           <form className="admin-form-grid" onSubmit={saveSettings}>
             <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
@@ -2205,6 +2235,8 @@ export default function Admin() {
       {activeTab === 'coins' && <TradingPairsAdminSection />}
 
       {activeTab === 'futures' && <FuturesAdminSection refreshKey={tableRefreshKey} />}
+
+      {activeTab === 'logs' && <AdminLogsSection refreshKey={tableRefreshKey} />}
 
       {treasuryDeposit && (
         <TreasurySweepDrawer

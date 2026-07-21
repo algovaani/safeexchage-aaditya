@@ -44,6 +44,7 @@ export default function AdminDataTable({
   selectedIds: controlledSelectedIds,
   onSelectionChange,
   onRowsChange,
+  onRowClick,
   rowIdKey = 'id',
 }) {
   const toast = useToast();
@@ -273,10 +274,35 @@ export default function AdminDataTable({
             {!loading &&
               rows.map((row) => {
                 const id = rowId(row);
+                const clickable = typeof onRowClick === 'function';
                 return (
-                <tr key={id} className={selectedIds.includes(id) ? 'admin-dt__row--selected' : ''}>
+                <tr
+                  key={id}
+                  className={[
+                    selectedIds.includes(id) ? 'admin-dt__row--selected' : '',
+                    clickable ? 'admin-dt__row--clickable' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={clickable ? () => onRowClick(row) : undefined}
+                  onKeyDown={
+                    clickable
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onRowClick(row);
+                          }
+                        }
+                      : undefined
+                  }
+                  tabIndex={clickable ? 0 : undefined}
+                  role={clickable ? 'link' : undefined}
+                >
                   {selectable && (
-                    <td>
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       <input
                         type="checkbox"
                         aria-label={`Select row ${id}`}
@@ -286,10 +312,16 @@ export default function AdminDataTable({
                     </td>
                   )}
                   {columns.map((col) => (
-                    <td key={col.key}>{col.render ? col.render(row) : row[col.key] ?? '—'}</td>
+                    <td
+                      key={col.key}
+                      onClick={col.stopPropagation ? (e) => e.stopPropagation() : undefined}
+                    >
+                      {col.render ? col.render(row) : row[col.key] ?? '—'}
+                    </td>
                   ))}
                 </tr>
-              );})}
+              );
+              })}
             {!loading && !rows.length && (
               <tr>
                 <td colSpan={columns.length + (selectable ? 1 : 0)} className="admin-empty">

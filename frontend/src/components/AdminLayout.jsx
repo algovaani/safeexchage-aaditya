@@ -23,6 +23,7 @@ const SECTIONS = [
   { id: 'prices', label: 'Prices', icon: '📈' },
   { id: 'coins', label: 'Exchange Coins', icon: '🪙' },
   { id: 'futures', label: 'Futures', icon: '⚡' },
+  { id: 'logs', label: 'Logs', icon: '📜' },
 ];
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));

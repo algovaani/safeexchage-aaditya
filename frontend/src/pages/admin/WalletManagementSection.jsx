@@ -207,7 +207,7 @@ export default function WalletManagementSection() {
     setBusy(true);
     try {
       await api.put('/admin/settings', {
-        depositMode: platform.depositMode,
+        depositMode: 'manual',
         usdtInrRate: Number(platform.usdtInrRate || 83.5),
         cashInPersonDepositRate: Number(platform.cashInPersonDepositRate || 0),
         cashInPersonWithdrawRate: Number(platform.cashInPersonWithdrawRate || 0),
@@ -309,12 +309,8 @@ export default function WalletManagementSection() {
           <div className="admin-wallets__fields admin-wallets__fields--2">
             <div className="admin-field">
               <label>Deposit mode</label>
-              <select
-                value={platform.depositMode}
-                onChange={(e) => setPlatform((f) => ({ ...f, depositMode: e.target.value }))}
-              >
-                <option value="manual">Manual — user submits TX, admin approves</option>
-                <option value="auto">Auto — chain watcher credits</option>
+              <select value="manual" disabled>
+                <option value="manual">Manual — admin credits wallet after payment</option>
               </select>
             </div>
             <div className="admin-field">

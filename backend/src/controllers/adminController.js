@@ -426,22 +426,31 @@ export async function pulsePrice(req, res, next) {
 
     const io = req.app.get('io');
     const intervals = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
-    const intervalCandles = intervals.map((interval) => {
-      const aligned =
-        history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
-      return {
-        interval,
-        candle: {
-          openTime: aligned,
-          open: fromPrice,
-          high: hi,
-          low: lo,
-          close: pulsePriceValue,
-          volume: 1,
-          isFinal: false,
-          pulse: true,
-        },
-      };
+    const intervalCandles =
+      Array.isArray(history?.candles) && history.candles.length
+        ? history.candles
+        : intervals.map((interval) => {
+            const aligned =
+              history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+            return {
+              interval,
+              candle: {
+                openTime: aligned,
+                open: fromPrice,
+                high: hi,
+                low: lo,
+                close: pulsePriceValue,
+                volume: 1,
+                isFinal: false,
+                pulse: true,
+              },
+            };
+          });
+
+    // Fill orders from DB-backed pulse price BEFORE sockets (instant execution)
+    const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
+      fromPrice,
+      rangeOnly: true,
     });
 
     broadcastPulseToSockets(io, {
@@ -464,9 +473,25 @@ export async function pulsePrice(req, res, next) {
       for (const interval of intervals) {
         ensureMarketStream(io, symbol, interval);
       }
+      if (trades.length) {
+        const { emitWalletUpdate } = await import('../services/socketService.js');
+        const userIds = new Set();
+        for (const t of trades) {
+          if (t.buyerUserId) userIds.add(String(t.buyerUserId));
+          if (t.sellerUserId) userIds.add(String(t.sellerUserId));
+        }
+        for (const uid of userIds) {
+          emitWalletUpdate(io, uid, { reason: 'pulse_fill' }).catch(() => {});
+        }
+        io.emit('market:orders:filled', {
+          symbol,
+          count: trades.length,
+          at: Date.now(),
+        });
+      }
     }
 
-    // After brief hold → clear pulse and push live market depth/price again
+    // After brief hold → clear ephemeral pulse mid, keep wick in DB, continue live chart
     schedulePulseRevert(symbol, pulse.holdMs, async () => {
       if (!io) return;
       let marketPrice = fromPrice;
@@ -477,8 +502,9 @@ export async function pulsePrice(req, res, next) {
         /* keep fromPrice */
       }
 
-      // Wipe extreme pulse wick → restore market OHLC so chart scale works again
-      await finalizePulseAfterRevert(symbol, marketPrice);
+      await finalizePulseAfterRevert(symbol, marketPrice, {
+        openTimes: history?.openTimes,
+      });
 
       let marketDepth = null;
       try {
@@ -500,7 +526,7 @@ export async function pulsePrice(req, res, next) {
         });
       }
 
-      // Emit clean market candles from DB (no pulse wick)
+      // Emit restored market candles (no extreme wick) so chart continues normally
       for (const interval of intervals) {
         const aligned =
           history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
@@ -509,7 +535,7 @@ export async function pulsePrice(req, res, next) {
         io.to(`m:${symbol}:${interval}`).emit('market:klines:merged', {
           symbol,
           interval,
-          candle: { ...candle, pulse: false },
+          candle: { ...candle, pulse: false, _chartReset: true },
         });
       }
 
@@ -531,11 +557,6 @@ export async function pulsePrice(req, res, next) {
       });
     });
 
-    const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
-      fromPrice,
-      rangeOnly: true,
-    });
-
     return success(
       res,
       {
@@ -554,8 +575,8 @@ export async function pulsePrice(req, res, next) {
         })),
       },
       trades.length
-        ? `Pulsed once — ${trades.length} order(s) filled · reverting to market`
-        : 'Pulsed once — chart spiked · reverting to market'
+        ? `Pulsed — ${trades.length} order(s) filled · chart returns to live market`
+        : 'Pulsed — chart spike · returns to live market'
     );
   } catch (e) {
     if (e.status) return error(res, e.message, e.status);

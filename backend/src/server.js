@@ -33,8 +33,6 @@ import { attachUserSockets } from './services/socketService.js';
 import { startMonitor } from './services/tpslMonitor.js';
 import { startFuturesMonitor, attachFuturesMonitorIo } from './services/futuresMonitor.js';
 import { startStakingCron } from './services/stakingRewardService.js';
-import { startChainDepositWatcher } from './services/chainWatcherService.js';
-import { evmScannerStatus } from './services/evmDepositScanService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
 import { repairMisCreditedNativeDeposits } from './services/depositService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
@@ -148,16 +146,13 @@ io.on('connection', (socket) => {
 });
 
 const PORT = Number(process.env.PORT) || 5001;
-let chainWatcherTimer = null;
 
 async function startBackgroundJobs() {
   attachFuturesMonitorIo(io);
   startMonitor();
   startFuturesMonitor();
   startStakingCron();
-  // Auto chain deposit watcher disabled — no Moralis/Tatum polling or automatic wallet credit.
-  // chainWatcherTimer = startChainDepositWatcher();
-  console.info('[chainWatcher] Auto deposit scan + wallet credit is DISABLED');
+  console.info('[deposits] Auto on-chain detect disabled — admin credits wallets manually');
   try {
     await seedTradingPairsIfEmpty();
     await ensureCommodityPairs();
@@ -173,16 +168,6 @@ async function startBackgroundJobs() {
     }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);
-  }
-  const scan = evmScannerStatus();
-  if (scan.moralis && scan.tatum) {
-    console.info('[deposits] BNB/ETH: Moralis primary, Tatum fallback');
-  } else if (scan.moralis) {
-    console.info('[deposits] BNB/ETH: Moralis enabled');
-  } else if (scan.tatum) {
-    console.info('[deposits] BNB/ETH: Tatum enabled');
-  } else {
-    console.warn('[deposits] Set MORALIS_API_KEY or TATUM_MAINNET_API_KEY for BNB/ETH auto-deposits');
   }
 }
 
@@ -242,10 +227,6 @@ async function main() {
       stopMonitor();
       stopFuturesMonitor();
       stopStakingCron();
-      if (chainWatcherTimer) {
-        clearInterval(chainWatcherTimer);
-        chainWatcherTimer = null;
-      }
       await mongoose.disconnect().catch(() => {});
     },
   });

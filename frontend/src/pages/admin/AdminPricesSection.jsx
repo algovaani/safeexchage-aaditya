@@ -492,8 +492,8 @@ export default function AdminPricesSection() {
       <div className="admin-card">
         <h2>Manual candle overrides</h2>
         <p className="admin-muted" style={{ marginTop: 0 }}>
-          Pulse now auto-saves wick candles here. These merge into the live chart so pulsed prices
-          stay in history.
+          Pulse briefly spikes the chart to fill orders, then restores live market candles so the
+          graph keeps updating normally (extreme wick is not kept forever).
         </p>
         <div className="admin-table-wrap">
           <table className="admin-table">

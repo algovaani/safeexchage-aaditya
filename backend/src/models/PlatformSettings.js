@@ -7,7 +7,7 @@ const platformSettingsSchema = new mongoose.Schema(
     ethWalletAddress: { type: String, default: '' },
     usdtWalletAddress: { type: String, default: '' },
     trcWalletAddress: { type: String, default: '' },
-    /** manual = user submits tx + admin approves; auto = chain watcher credits */
+    /** Always treated as manual in app code (auto Moralis/Tatum removed). Keep enum for legacy DB rows. */
     depositMode: { type: String, enum: ['manual', 'auto'], default: 'manual' },
     bankName: { type: String, default: '' },
     bankAccountNumber: { type: String, default: '' },

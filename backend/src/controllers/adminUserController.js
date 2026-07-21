@@ -18,6 +18,7 @@ import { roundMoney } from '../utils/money.js';
 import {
   paginatedPayload,
   parseDatatableQuery,
+  searchRegex,
 } from '../utils/datatable.js';
 
 const BCRYPT_ROUNDS = 12;
@@ -330,6 +331,58 @@ export async function listUserOrders(req, res, next) {
       res,
       paginatedPayload({ rows: data, total, page: dt.page, pageSize: dt.pageSize }),
       'User orders fetched'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function listUserReferrals(req, res, next) {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return error(res, 'Invalid user id', 400);
+    }
+
+    const dt = parseDatatableQuery(req.query);
+    const filter = { referredBy: userId };
+    const re = searchRegex(dt.search);
+    if (re) {
+      filter.$or = [{ email: re }, { mobile: re }, { name: re }, { referralCode: re }];
+    }
+    if (req.query.status) filter.status = req.query.status;
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('+passwordPlain -passwordHash')
+        .sort(dt.sort)
+        .skip(dt.skip)
+        .limit(dt.pageSize)
+        .lean(),
+      User.countDocuments(filter),
+    ]);
+
+    const wallets = await Wallet.find({ userId: { $in: users.map((u) => u._id) } }).lean();
+    const walletMap = new Map(wallets.map((w) => [String(w.userId), w]));
+
+    const rows = users.map((u) => {
+      const w = walletMap.get(String(u._id));
+      const { passwordPlain, ...rest } = u;
+      return {
+        ...rest,
+        id: u._id,
+        loginId: u.mobile || u.email || '',
+        password: passwordPlain || '',
+        balance: roundMoney(w?.balance || 0),
+        locked_balance: roundMoney(w?.lockedBalance || 0),
+        available_balance: roundMoney(Math.max(0, (w?.balance || 0) - (w?.lockedBalance || 0))),
+      };
+    });
+
+    return success(
+      res,
+      paginatedPayload({ rows, total, page: dt.page, pageSize: dt.pageSize }),
+      'Referred users fetched'
     );
   } catch (e) {
     return next(e);

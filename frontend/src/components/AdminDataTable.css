@@ -94,6 +94,14 @@
   background: rgba(59, 130, 246, 0.08);
 }
 
+.admin-dt__row--clickable {
+  cursor: pointer;
+}
+
+.admin-dt__row--clickable:hover td {
+  background: rgba(240, 185, 11, 0.07);
+}
+
 .admin-bulk-bar {
   position: sticky;
   bottom: 1rem;

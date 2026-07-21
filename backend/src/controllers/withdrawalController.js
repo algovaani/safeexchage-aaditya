@@ -6,13 +6,17 @@ import {
   reserveWithdrawalFunds,
 } from '../services/withdrawalService.js';
 import { createPendingWithdrawalTransaction } from '../services/transactionService.js';
+import { roundMoney } from '../utils/money.js';
 import { error, success } from '../utils/response.js';
 
 async function createWithdrawalRequest(req, res, next, payload) {
-  const amount = payload.amount;
+  const parsedAmount = roundMoney(payload.amount);
+  if (!(parsedAmount > 0)) {
+    return error(res, 'Invalid withdrawal amount', 400);
+  }
 
   try {
-    await reserveWithdrawalFunds(req.userId, amount);
+    await reserveWithdrawalFunds(req.userId, parsedAmount);
 
     let withdrawal;
     try {
@@ -20,10 +24,11 @@ async function createWithdrawalRequest(req, res, next, payload) {
         userId: req.userId,
         status: 'pending',
         ...payload,
+        amount: parsedAmount,
       });
       await createPendingWithdrawalTransaction(withdrawal);
     } catch (createError) {
-      await releaseWithdrawalFunds(req.userId, amount).catch(() => {});
+      await releaseWithdrawalFunds(req.userId, parsedAmount).catch(() => {});
       throw createError;
     }
 

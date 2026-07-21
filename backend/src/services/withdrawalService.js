@@ -42,6 +42,10 @@ export function formatWithdrawal(req, doc, { includeUser = false } = {}) {
 
 export async function reserveWithdrawalFunds(userId, amount) {
   const parsed = roundMoney(amount);
+  // Prevent rounding-to-zero bypass (e.g. amount < 0.005 → parsed=0).
+  if (!(parsed > 0)) {
+    throw Object.assign(new Error('Invalid withdrawal amount'), { status: 400 });
+  }
   const wallet = await Wallet.findOneAndUpdate(
     {
       userId,
@@ -84,6 +88,9 @@ export async function approveWithdrawal(withdrawal, reviewedBy) {
   }
 
   const parsed = roundMoney(withdrawal.amount);
+  if (!(parsed > 0)) {
+    throw Object.assign(new Error('Invalid withdrawal amount'), { status: 400 });
+  }
   const wallet = await Wallet.findOneAndUpdate(
     {
       userId: withdrawal.userId,

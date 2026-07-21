@@ -5,7 +5,7 @@ export const platformSettingsValidators = [
   body('ethWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
   body('usdtWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
   body('trcWalletAddress').optional({ values: 'falsy' }).trim().isLength({ max: 256 }),
-  body('depositMode').optional({ values: 'falsy' }).isIn(['manual', 'auto']),
+  body('depositMode').optional({ values: 'falsy' }).isIn(['manual']),
   body('bankName').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
   body('bankAccountNumber').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
   body('bankIfsc').optional({ values: 'falsy' }).trim().isLength({ max: 32 }),

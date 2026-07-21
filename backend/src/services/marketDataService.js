@@ -15,41 +15,71 @@ function toCandleDoc(c) {
 }
 
 /**
- * Upsert live market candle. Full OHLC replace (real market wins after pulse).
- * Skips overwrite while a temporary pulse row is active (source:'pulse').
+ * Upsert live market candle.
+ * Expands high/low within a sane band; self-heals bars polluted by extreme pulses.
  */
 export async function persistCandleExpand(symbol, interval, candle, source = 'binance') {
   const sym = String(symbol || '').toUpperCase();
   if (!sym || !interval || !candle?.openTime) return null;
 
-  const open = Number(candle.open);
-  const high = Number(candle.high);
-  const low = Number(candle.low);
-  const close = Number(candle.close);
-  if (![open, high, low, close].every(Number.isFinite)) return null;
+  const openIn = Number(candle.open);
+  const highIn = Number(candle.high);
+  const lowIn = Number(candle.low);
+  const closeIn = Number(candle.close);
+  if (![openIn, highIn, lowIn, closeIn].every(Number.isFinite)) return null;
 
-  const hi = Math.max(open, high, close);
-  const lo = Math.min(open, low, close);
-
-  // Don't clobber the brief pulse flash with live polls
   const existing = await MarketData.findOne({
     symbol: sym,
     interval,
     openTime: candle.openTime,
-  })
-    .select('source')
-    .lean();
-  if (existing?.source === 'pulse' && source === 'binance') return existing;
+  }).lean();
+
+  // While pulse flash is active, keep pulse close — live polls only touch volume
+  if (existing?.source === 'pulse' && source !== 'pulse') {
+    return MarketData.findOneAndUpdate(
+      { symbol: sym, interval, openTime: candle.openTime },
+      {
+        $set: {
+          volume: Math.max(Number(existing.volume) || 0, Number(candle.volume) || 0),
+          isFinal: false,
+          source: 'pulse',
+        },
+      },
+      { new: true }
+    ).lean();
+  }
+
+  const band = Math.max(closeIn * 0.08, closeIn * 0.01);
+  const existingHigh = Number(existing?.high);
+  const existingLow = Number(existing?.low);
+  const existingOpen = Number(existing?.open);
+  const existingPolluted =
+    (Number.isFinite(existingHigh) && existingHigh > closeIn + band) ||
+    (Number.isFinite(existingLow) && existingLow > 0 && existingLow < closeIn - band);
+
+  const open =
+    !existingPolluted && existingOpen > 0 ? existingOpen : openIn;
+  const high = existingPolluted
+    ? Math.max(openIn, highIn, closeIn)
+    : Math.max(existingHigh || 0, highIn, open, closeIn);
+  const low = existingPolluted
+    ? Math.min(openIn, lowIn, closeIn)
+    : Math.min(
+        existingLow > 0 ? existingLow : lowIn,
+        lowIn,
+        open,
+        closeIn
+      );
 
   return MarketData.findOneAndUpdate(
     { symbol: sym, interval, openTime: candle.openTime },
     {
       $set: {
         open,
-        high: hi,
-        low: lo,
-        close,
-        volume: Number(candle.volume) || 0,
+        high,
+        low,
+        close: closeIn,
+        volume: Math.max(Number(existing?.volume) || 0, Number(candle.volume) || 0),
         isFinal: candle.isFinal !== false,
         source,
       },

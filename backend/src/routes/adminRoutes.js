@@ -43,6 +43,11 @@ import {
   treasurySweepValidators,
   treasuryDepositIdValidators,
 } from '../validators/treasuryValidators.js';
+import * as systemLogAdmin from '../controllers/systemLogAdminController.js';
+import {
+  adminSystemLogListValidators,
+  clearSystemLogsValidators,
+} from '../validators/systemLogValidators.js';
 import { platformSettingsValidators } from '../validators/settingsValidators.js';
 import {
   adjustUserFundsValidators,
@@ -55,6 +60,7 @@ import {
   adminUserTradesValidators,
   adminUserOrdersValidators,
   adminSetUserPasswordValidators,
+  adminUserReferralsValidators,
 } from '../validators/adminUserValidators.js';
 import reportsRoutes from './admin/reportsRoutes.js';
 
@@ -92,6 +98,12 @@ r.get(
 );
 r.get('/users/:userId/trades', adminUserTradesValidators, validateRequest, adminUser.listUserTrades);
 r.get('/users/:userId/orders', adminUserOrdersValidators, validateRequest, adminUser.listUserOrders);
+r.get(
+  '/users/:userId/referrals',
+  adminUserReferralsValidators,
+  validateRequest,
+  adminUser.listUserReferrals
+);
 r.get('/kyc', adminKycListValidators, validateRequest, kycAdmin.listSubmissions);
 r.get('/kyc/:id', kycAdmin.getSubmission);
 r.patch('/kyc/:id/review', reviewKycValidators, validateRequest, kycAdmin.reviewSubmission);
@@ -146,6 +158,19 @@ r.get(
   adminWithdrawalListValidators,
   validateRequest,
   withdrawalAdmin.listWithdrawals
+);
+r.get(
+  '/logs',
+  adminSystemLogListValidators,
+  validateRequest,
+  systemLogAdmin.listSystemLogs
+);
+r.get('/logs/:id', systemLogAdmin.getSystemLog);
+r.delete(
+  '/logs',
+  clearSystemLogsValidators,
+  validateRequest,
+  systemLogAdmin.clearSystemLogs
 );
 r.get('/withdrawals/:id', withdrawalAdmin.getWithdrawal);
 r.patch(
