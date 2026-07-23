@@ -24,7 +24,7 @@ const depositSchema = new mongoose.Schema(
       default: 'pending',
       index: true,
     },
-    txnHash: { type: String, default: '', index: true, sparse: true },
+    txnHash: { type: String, default: '' },
     network: { type: String, default: '' },
     utrNumber: { type: String, default: '' },
     bankName: { type: String, default: '' },
@@ -61,5 +61,28 @@ const depositSchema = new mongoose.Schema(
 );
 
 depositSchema.index({ createdAt: -1 });
+/** Block duplicate active deposits; rejected rows can be resubmitted. */
+depositSchema.index(
+  { txnHash: 1 },
+  {
+    unique: true,
+    name: 'uniq_deposit_txnHash_active',
+    partialFilterExpression: {
+      txnHash: { $type: 'string', $gt: '' },
+      status: { $in: ['pending', 'approved'] },
+    },
+  }
+);
+depositSchema.index(
+  { utrNumber: 1 },
+  {
+    unique: true,
+    name: 'uniq_deposit_utrNumber_active',
+    partialFilterExpression: {
+      utrNumber: { $type: 'string', $gt: '' },
+      status: { $in: ['pending', 'approved'] },
+    },
+  }
+);
 
 export const Deposit = mongoose.model('Deposit', depositSchema);

@@ -11,6 +11,7 @@ import {
 import { emitWalletUpdate } from '../services/socketService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
+import { withdrawableGteExpr } from '../services/walletAdjustmentService.js';
 import {
   buildDateRangeFilter,
   getExportLimit,
@@ -139,16 +140,16 @@ export async function editWithdrawal(req, res, next) {
       const wallet = await Wallet.findOneAndUpdate(
         {
           userId: withdrawal.userId,
-          $expr: {
-            $gte: [{ $subtract: ['$balance', '$lockedBalance'] }, lockDelta],
-          },
+          $expr: withdrawableGteExpr(lockDelta),
         },
         { $inc: { lockedBalance: lockDelta } },
         { new: true, session }
       );
       if (!wallet) {
         throw Object.assign(
-          new Error('Insufficient available balance for the increased withdrawal amount'),
+          new Error(
+            'Insufficient withdrawable balance for the increased withdrawal amount (referral bonus cannot be withdrawn)'
+          ),
           { status: 400 }
         );
       }

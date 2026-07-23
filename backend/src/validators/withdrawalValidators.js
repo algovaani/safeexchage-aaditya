@@ -2,24 +2,73 @@ import { body, param, query } from 'express-validator';
 import mongoose from 'mongoose';
 import { datatableQueryValidators } from './adminListValidators.js';
 
-export function isValidWalletAddress(address, network) {
-  const addr = String(address).trim();
-  const n = String(network || '').toUpperCase();
+/** Normalize pasted addresses (spaces, 0X prefix, lowercase T for TRON). */
+export function normalizeWalletAddress(address) {
+  return String(address || '')
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '');
+}
 
-  if (n === 'ERC20' || n === 'BEP20' || n === 'BSC' || n === 'ETH' || n === 'POLYGON') {
+export function normalizeWithdrawNetwork(network) {
+  const n = String(network || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+
+  if (['BEP20', 'BSC', 'BNB', 'BINANCE', 'BINANCESMARTCHAIN'].includes(n)) return 'BEP20';
+  if (['ERC20', 'ETH', 'ETHEREUM', 'ETHER'].includes(n)) return 'ERC20';
+  if (['TRC20', 'TRX', 'TRON'].includes(n)) return 'TRC20';
+  if (['POLYGON', 'MATIC', 'POL'].includes(n)) return 'POLYGON';
+  if (['SOL', 'SOLANA'].includes(n)) return 'SOL';
+  if (['DOGE', 'DOGECOIN'].includes(n)) return 'DOGE';
+  return n || '';
+}
+
+export function isValidWalletAddress(address, network) {
+  let addr = normalizeWalletAddress(address);
+  const n = normalizeWithdrawNetwork(network);
+
+  if (!addr) return false;
+
+  // EVM chains accept 0x / 0X
+  if (n === 'ERC20' || n === 'BEP20' || n === 'POLYGON' || n === 'ETH' || n === 'BSC') {
+    if (/^0X/i.test(addr)) addr = `0x${addr.slice(2)}`;
     return /^0x[a-fA-F0-9]{40}$/.test(addr);
   }
+
   if (n === 'TRC20' || n === 'TRX') {
+    // TRON addresses are Base58 and start with T (allow lowercase paste)
+    if (addr.startsWith('t')) addr = `T${addr.slice(1)}`;
     return /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(addr);
   }
+
   if (n === 'SOL') {
     return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr);
   }
+
   if (n === 'DOGE') {
     return /^[DA][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(addr);
   }
 
-  return addr.length >= 10;
+  return addr.length >= 10 && addr.length <= 128;
+}
+
+function walletAddressError(network) {
+  const n = normalizeWithdrawNetwork(network);
+  if (n === 'TRC20' || n === 'TRX') {
+    return 'Enter a valid TRON address (starts with T, 34 characters)';
+  }
+  if (n === 'SOL') {
+    return 'Enter a valid Solana address';
+  }
+  if (n === 'DOGE') {
+    return 'Enter a valid Dogecoin address';
+  }
+  if (n === 'ERC20' || n === 'BEP20' || n === 'POLYGON' || n === 'ETH' || n === 'BSC') {
+    return 'Enter a valid EVM address (0x + 40 hex characters)';
+  }
+  return 'Invalid wallet address for the selected network';
 }
 
 export const cryptoWithdrawValidators = [
@@ -33,18 +82,19 @@ export const cryptoWithdrawValidators = [
     .isLength({ min: 2, max: 16 })
     .withMessage('currency must be 2–16 characters'),
   body('wallet_address')
-    .trim()
+    .customSanitizer((v) => normalizeWalletAddress(v))
     .notEmpty()
     .withMessage('wallet_address is required')
-    .isLength({ max: 128 }),
+    .isLength({ max: 128 })
+    .withMessage('wallet_address is too long'),
   body('network')
-    .trim()
+    .customSanitizer((v) => normalizeWithdrawNetwork(v) || String(v || '').trim())
     .notEmpty()
     .withMessage('network is required')
     .isLength({ max: 32 }),
-  body().custom((_, { req }) => {
-    if (!isValidWalletAddress(req.body.wallet_address, req.body.network)) {
-      throw new Error('Invalid wallet address for the selected network');
+  body('wallet_address').custom((value, { req }) => {
+    if (!isValidWalletAddress(value, req.body.network)) {
+      throw new Error(walletAddressError(req.body.network));
     }
     return true;
   }),

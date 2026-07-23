@@ -36,6 +36,16 @@ const tradingPairSchema = new mongoose.Schema(
     /** BNB | ETH | TRC | BEP20 | ERC20 | TRC20 — maps to platform chain */
     depositNetwork: { type: String, default: '', trim: true },
     depositEnabled: { type: Boolean, default: true },
+    /**
+     * true = live market price (Binance/Dex/…).
+     * false = use manualPrice (+ optional 24h stats) on ticker / live prices.
+     */
+    priceAuto: { type: Boolean, default: true },
+    manualPrice: { type: Number, default: null },
+    manualChange24h: { type: Number, default: null },
+    manualHigh24h: { type: Number, default: null },
+    manualLow24h: { type: Number, default: null },
+    manualVolume: { type: Number, default: null },
   },
   { timestamps: true, collection: 'trading_pairs' }
 );

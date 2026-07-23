@@ -299,7 +299,7 @@ export default function Futures() {
   const loadCandles = useCallback(async () => {
     try {
       const { data } = await api.get('/market/klines', {
-        params: { symbol, interval: chartInterval, limit: 500 },
+        params: { symbol, interval: chartInterval, limit: 200 },
       });
       const klines = parseApiResponse(data);
       const next = klines?.candles || [];

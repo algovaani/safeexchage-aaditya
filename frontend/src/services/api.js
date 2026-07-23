@@ -18,9 +18,9 @@ function resolveBaseUrl() {
   return url;
 }
 
-const DEFAULT_TIMEOUT_MS = 25_000;
-const AUTH_TIMEOUT_MS = 35_000;
-const MAX_NETWORK_RETRIES = 2;
+const DEFAULT_TIMEOUT_MS = 10_000;
+const AUTH_TIMEOUT_MS = 12_000;
+const MAX_NETWORK_RETRIES = 1;
 
 export const api = axios.create({
   baseURL: resolveBaseUrl(),
@@ -183,7 +183,7 @@ api.interceptors.response.use(
     const retryCount = config.__retryCount || 0;
     if (isRetryableNetworkError(error) && retryCount < MAX_NETWORK_RETRIES && !config.__noRetry) {
       config.__retryCount = retryCount + 1;
-      await sleep(400 * config.__retryCount);
+      await sleep(250 * config.__retryCount);
       return api.request(config);
     }
 

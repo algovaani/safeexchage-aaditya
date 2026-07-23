@@ -129,7 +129,18 @@ export default function AdminPricesSection() {
       bySym.set(sym, p);
     }
 
-    const list = (pairs || []).map((pair) => {
+    const list = (pairs || [])
+      .filter((pair) => {
+        const sym = String(pair.symbol || '').toUpperCase();
+        return (
+          pair.isActive !== false &&
+          pair.category !== 'commodity' &&
+          !sym.endsWith('INR') &&
+          sym !== 'GOLDINR' &&
+          sym !== 'SILVERINR'
+        );
+      })
+      .map((pair) => {
       const sym = String(pair.symbol).toUpperCase();
       const live = bySym.get(sym) || {};
       const price = Number(live.price ?? live.lastPrice ?? live.price_inr ?? 0);
@@ -152,6 +163,7 @@ export default function AdminPricesSection() {
     });
 
     for (const [sym, live] of bySym) {
+      if (sym.endsWith('INR') || sym === 'GOLDINR' || sym === 'SILVERINR') continue;
       if (list.some((r) => r.symbol === sym)) continue;
       list.push({
         symbol: sym,

@@ -46,13 +46,22 @@ async function createWithdrawalRequest(req, res, next, payload) {
 
 export async function submitCrypto(req, res, next) {
   const { amount, wallet_address, network, currency } = req.body;
+  const walletAddress = String(wallet_address || '').trim();
+  const networkStr = String(network || '').trim();
+
+  if (!walletAddress) {
+    return error(res, 'wallet_address is required', 400);
+  }
+  if (!networkStr) {
+    return error(res, 'network is required', 400);
+  }
 
   return createWithdrawalRequest(req, res, next, {
     type: 'crypto',
     amount,
     currency: String(currency || 'USDT').toUpperCase(),
-    walletAddress: wallet_address.trim(),
-    network: String(network).trim(),
+    walletAddress,
+    network: networkStr,
   });
 }
 

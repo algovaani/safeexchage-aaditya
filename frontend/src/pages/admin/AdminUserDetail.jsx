@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, parseApiResponse } from '../../api/client.js';
 import AdminDataTable from '../../components/AdminDataTable.jsx';
 import { formatMarketTime } from '../../utils/timeFormat.js';
+import { formatLoginId } from '../../utils/format.js';
 import '../Admin.css';
 
 function StatusBadge({ status }) {
@@ -211,7 +212,7 @@ export default function AdminUserDetail() {
       {
         key: 'loginId',
         label: 'Login ID',
-        render: (r) => r.loginId || r.mobile || r.email || '—',
+        render: (r) => formatLoginId(r.loginId || r.mobile || r.email) || '—',
       },
       {
         key: 'password',
@@ -280,7 +281,7 @@ export default function AdminUserDetail() {
             <dt>Mobile</dt>
             <dd>{user.mobile || '—'}</dd>
             <dt>Login ID</dt>
-            <dd><CopyCell value={user.loginId || user.mobile || user.email} /></dd>
+            <dd><CopyCell value={formatLoginId(user.loginId || user.mobile || user.email)} /></dd>
             <dt>Password</dt>
             <dd>
               {user.password ? (
@@ -316,6 +317,10 @@ export default function AdminUserDetail() {
             <dd>{Number(wallet.balance ?? wallet.balance_usdt ?? 0).toFixed(2)}</dd>
             <dt>Available</dt>
             <dd>{Number(wallet.available_balance ?? 0).toFixed(2)}</dd>
+            <dt>Withdrawable</dt>
+            <dd>{Number(wallet.withdrawable_balance ?? wallet.available_balance ?? 0).toFixed(2)}</dd>
+            <dt>Referral bonus</dt>
+            <dd>{Number(wallet.bonus_balance ?? 0).toFixed(2)} (trading only)</dd>
             <dt>Locked</dt>
             <dd>{Number(wallet.locked_balance ?? 0).toFixed(2)}</dd>
           </dl>

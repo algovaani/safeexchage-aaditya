@@ -6,6 +6,7 @@ import {
   createPendingWithdrawalTransaction,
   rejectLinkedTransaction,
 } from './transactionService.js';
+import { clampBonusBalanceForUser, withdrawableGteExpr } from './walletAdjustmentService.js';
 
 export function formatWithdrawal(req, doc, { includeUser = false } = {}) {
   const payload = {
@@ -49,16 +50,17 @@ export async function reserveWithdrawalFunds(userId, amount) {
   const wallet = await Wallet.findOneAndUpdate(
     {
       userId,
-      $expr: {
-        $gte: [{ $subtract: ['$balance', '$lockedBalance'] }, parsed],
-      },
+      $expr: withdrawableGteExpr(parsed),
     },
     { $inc: { lockedBalance: parsed } },
     { new: true }
   );
 
   if (!wallet) {
-    throw Object.assign(new Error('Insufficient available balance'), { status: 400 });
+    throw Object.assign(
+      new Error('Insufficient withdrawable balance (referral bonus cannot be withdrawn)'),
+      { status: 400 }
+    );
   }
 
   return wallet;
@@ -109,6 +111,8 @@ export async function approveWithdrawal(withdrawal, reviewedBy) {
   if (!wallet) {
     throw Object.assign(new Error('Insufficient balance'), { status: 400 });
   }
+
+  await clampBonusBalanceForUser(withdrawal.userId);
 
   let transaction;
   if (withdrawal.transactionId) {

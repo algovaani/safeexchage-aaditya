@@ -112,14 +112,14 @@ export async function submitCrypto(req, res, next) {
       return error(res, 'Transaction hash is required', 400);
     }
 
-    if (txnHash) {
-      const duplicate = await Deposit.findOne({
-        txnHash,
-        status: { $in: ['pending', 'approved'] },
-      });
-      if (duplicate) {
-        return error(res, 'This transaction hash was already submitted', 409);
-      }
+    const duplicate = await Deposit.findOne({
+      txnHash,
+      status: { $in: ['pending', 'approved'] },
+    })
+      .select('_id')
+      .lean();
+    if (duplicate) {
+      return error(res, 'This transaction hash was already submitted', 409);
     }
 
     const networkStr = String(network).trim();
@@ -170,6 +170,9 @@ export async function submitCrypto(req, res, next) {
 
     return success(res, formatDeposit(req, deposit), 'Crypto deposit submitted — waiting for admin approval', 201);
   } catch (e) {
+    if (e?.code === 11000) {
+      return error(res, 'This transaction hash was already submitted', 409);
+    }
     return next(e);
   }
 }
@@ -177,9 +180,25 @@ export async function submitCrypto(req, res, next) {
 export async function submitFiat(req, res, next) {
   try {
     const { amount, utr_number, bank_name, account_number, branch } = req.body;
+    const utrNumber = String(utr_number || '').trim();
 
     if (!req.file) {
       return error(res, 'payment_proof file is required', 400);
+    }
+    if (!utrNumber) {
+      removeFiatProof(req.file);
+      return error(res, 'UTR / reference number is required', 400);
+    }
+
+    const duplicate = await Deposit.findOne({
+      utrNumber,
+      status: { $in: ['pending', 'approved'] },
+    })
+      .select('_id')
+      .lean();
+    if (duplicate) {
+      removeFiatProof(req.file);
+      return error(res, 'This UTR / reference was already submitted', 409);
     }
 
     const paymentProof = mapFiatProof(req.file);
@@ -191,7 +210,7 @@ export async function submitFiat(req, res, next) {
       currency: 'USDT',
       usdtAmount: amount,
       conversionRate: 1,
-      utrNumber: utr_number?.trim() || '',
+      utrNumber,
       bankName: bank_name?.trim() || '',
       accountNumber: account_number?.trim() || '',
       network: branch?.trim() ? `Branch: ${branch.trim()}` : '',
@@ -205,6 +224,9 @@ export async function submitFiat(req, res, next) {
     return success(res, formatDeposit(req, deposit), 'Fiat deposit submitted for verification', 201);
   } catch (e) {
     removeFiatProof(req.file);
+    if (e?.code === 11000) {
+      return error(res, 'This UTR / reference was already submitted', 409);
+    }
     return next(e);
   }
 }

@@ -16,7 +16,7 @@ export async function creditReferrerForSignup({ referrerId, referredUserId, refe
 
   const wallet = await Wallet.findOneAndUpdate(
     { userId: referrerId },
-    { $inc: { balance: amount }, $setOnInsert: { currency: 'USDT' } },
+    { $inc: { balance: amount, bonusBalance: amount }, $setOnInsert: { currency: 'USDT' } },
     { upsert: true, new: true }
   );
 
@@ -35,4 +35,26 @@ export async function creditReferrerForSignup({ referrerId, referredUserId, refe
   });
 
   return { amount, balanceAfter: roundMoney(wallet.balance) };
+}
+
+/** One-shot: mark historical referral rewards as non-withdrawable bonus. */
+export async function backfillReferralBonusBalances() {
+  const rows = await Transaction.aggregate([
+    { $match: { type: 'referral_reward', status: 'completed' } },
+    { $group: { _id: '$userId', total: { $sum: '$amount' } } },
+  ]);
+
+  let updated = 0;
+  for (const row of rows) {
+    if (!row._id || !(row.total > 0)) continue;
+    const wallet = await Wallet.findOne({ userId: row._id });
+    if (!wallet) continue;
+    const target = roundMoney(Math.min(Number(row.total) || 0, Number(wallet.balance) || 0));
+    if (target <= 0) continue;
+    if (roundMoney(wallet.bonusBalance || 0) >= target) continue;
+    wallet.bonusBalance = target;
+    await wallet.save();
+    updated += 1;
+  }
+  return { scanned: rows.length, updated };
 }

@@ -35,6 +35,7 @@ import { startFuturesMonitor, attachFuturesMonitorIo } from './services/futuresM
 import { startStakingCron } from './services/stakingRewardService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
 import { repairMisCreditedNativeDeposits } from './services/depositService.js';
+import { backfillReferralBonusBalances } from './services/referralRewardService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
 import { installGracefulShutdown, installProcessHandlers } from './config/processStability.js';
 import { isDbConnected } from './config/db.js';
@@ -165,6 +166,14 @@ async function startBackgroundJobs() {
       }
     } catch (err) {
       console.warn('[deposits] Native deposit repair skipped:', err.message);
+    }
+    try {
+      const { updated, scanned } = await backfillReferralBonusBalances();
+      if (updated > 0) {
+        console.info(`[referral] Backfilled bonusBalance for ${updated} wallet(s) (scanned ${scanned})`);
+      }
+    } catch (err) {
+      console.warn('[referral] Bonus backfill skipped:', err.message);
     }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);

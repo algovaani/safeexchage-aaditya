@@ -21,8 +21,8 @@ export const TRADING_PAIRS = [
   { symbol: 'ADAUSDT', displayPair: 'ADA/USDT', baseAsset: 'ADA', coingeckoId: CG.ADAUSDT },
   { symbol: 'TRXUSDT', displayPair: 'TRX/USDT', baseAsset: 'TRX', coingeckoId: CG.TRXUSDT },
   { symbol: 'POLUSDT', displayPair: 'POL/USDT', baseAsset: 'POL', category: 'crypto', quoteAsset: 'USDT', coingeckoId: CG.POLUSDT },
-  { symbol: 'GOLDINR', displayPair: 'GOLD/INR', baseAsset: 'GOLD', category: 'commodity', quoteAsset: 'INR', name: 'Gold', unit: 'g' },
-  { symbol: 'SILVERINR', displayPair: 'SILVER/INR', baseAsset: 'SILVER', category: 'commodity', quoteAsset: 'INR', name: 'Silver', unit: 'g' },
+  // { symbol: 'GOLDINR', displayPair: 'GOLD/INR', baseAsset: 'GOLD', category: 'commodity', quoteAsset: 'INR', name: 'Gold', unit: 'g' },
+  // { symbol: 'SILVERINR', displayPair: 'SILVER/INR', baseAsset: 'SILVER', category: 'commodity', quoteAsset: 'INR', name: 'Silver', unit: 'g' },
 ];
 
 export const TRADING_PAIR_SYMBOLS = TRADING_PAIRS.map((p) => p.symbol);

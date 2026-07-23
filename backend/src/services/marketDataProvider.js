@@ -64,7 +64,22 @@ const BINANCE_INTERVALS = new Set([
   '1d', '3d', '1w', '1M',
 ]);
 
-let priceCache = { pairs: null, fetchedAt: 0, stale: false };
+let priceCache = { pairs: null, fetchedAt: 0, stale: false, refreshing: false };
+
+export function invalidatePriceCache() {
+  priceCache = { pairs: null, fetchedAt: 0, stale: false, refreshing: false };
+}
+
+function isManualPricePair(symbol) {
+  const pair = getPairSync(symbol);
+  return Boolean(pair && pair.priceAuto === false && Number(pair.manualPrice) > 0);
+}
+
+async function pairsWithManualAndStats(rawPairs) {
+  await ensureTradingPairCache();
+  const withStats = await applyTickerStatsOverridesToPairs(rawPairs);
+  return applyManualPairPrices(withStats);
+}
 
 // Re-export provider-agnostic helpers so the public API surface is unchanged.
 export {
@@ -141,13 +156,101 @@ function mapTickerRow(sym, t) {
   };
 }
 
+/** Admin coin edit: Auto off → show only manual last price (+ optional 24h fields). */
+export function applyManualPairPrice(row) {
+  if (!row?.symbol) return row;
+  const pair = getPairSync(row.symbol);
+  if (!pair || pair.priceAuto !== false) {
+    return { ...row, price_auto: true, price_manual: false };
+  }
+  const px = Number(pair.manualPrice);
+  if (!(px > 0)) return { ...row, price_auto: false, price_manual: false };
+
+  const next = {
+    ...row,
+    price: px,
+    lastPrice: px,
+    price_auto: false,
+    price_manual: true,
+    stats_override: true,
+    provider: 'manual',
+    open_24h: px,
+    change_24h: 0,
+    change_24h_abs: 0,
+    high_24h: px,
+    low_24h: px,
+    volume: 0,
+    quoteVolume: 0,
+  };
+
+  if (pair.manualChange24h != null && Number.isFinite(Number(pair.manualChange24h))) {
+    const pct = Number(pair.manualChange24h);
+    next.change_24h = pct;
+    if (px > 0) {
+      const open = px / (1 + pct / 100);
+      next.open_24h = open;
+      next.change_24h_abs = px - open;
+    }
+  }
+
+  const high =
+    pair.manualHigh24h != null && Number.isFinite(Number(pair.manualHigh24h))
+      ? Number(pair.manualHigh24h)
+      : null;
+  const low =
+    pair.manualLow24h != null && Number.isFinite(Number(pair.manualLow24h))
+      ? Number(pair.manualLow24h)
+      : null;
+  if (high != null) next.high_24h = high;
+  if (low != null) next.low_24h = low;
+
+  // Volume = |high − low| when both set; else use explicit manual volume
+  let vol = null;
+  if (high != null && low != null) {
+    vol = Math.abs(high - low);
+  } else if (pair.manualVolume != null && Number.isFinite(Number(pair.manualVolume))) {
+    vol = Number(pair.manualVolume);
+  }
+  if (vol != null && vol >= 0) {
+    next.volume = vol;
+    // Frontend ticker / markets show quoteVolume as "24h Volume"
+    next.quoteVolume = vol;
+  }
+
+  return next;
+}
+
+function applyManualPairPrices(pairs) {
+  return (Array.isArray(pairs) ? pairs : []).map(applyManualPairPrice);
+}
+
 export async function fetchAllPairPrices({ force = false } = {}) {
   const now = Date.now();
   if (!force && priceCache.pairs && now - priceCache.fetchedAt < CACHE_TTL_MS) {
-    const pairs = await applyTickerStatsOverridesToPairs(priceCache.pairs);
+    const pairs = await pairsWithManualAndStats(priceCache.pairs);
     return {
       pairs,
       stale: priceCache.stale,
+      updatedAt: new Date(priceCache.fetchedAt).toISOString(),
+      provider: 'binance',
+    };
+  }
+
+  // Stale-while-revalidate: return last good prices immediately, refresh in background
+  if (!force && priceCache.pairs?.length) {
+    if (!priceCache.refreshing) {
+      priceCache.refreshing = true;
+      Promise.resolve()
+        .then(() => fetchAllPairPrices({ force: true }))
+        .catch((err) => console.warn('[prices] bg refresh:', err.message))
+        .finally(() => {
+          priceCache.refreshing = false;
+        });
+    }
+    const pairs = await pairsWithManualAndStats(priceCache.pairs);
+    return {
+      pairs,
+      stale: true,
       updatedAt: new Date(priceCache.fetchedAt).toISOString(),
       provider: 'binance',
     };
@@ -194,7 +297,7 @@ export async function fetchAllPairPrices({ force = false } = {}) {
       try {
         const cgResult = await Promise.race([
           coingeckoMarket.fetchAllPairPrices({ force: false }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('coingecko timeout')), 4_000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('coingecko timeout')), 2_500)),
         ]);
         for (const row of cgResult.pairs || []) {
           if (needCg.includes(row.symbol)) {
@@ -241,15 +344,36 @@ export async function fetchAllPairPrices({ force = false } = {}) {
     }
 
     const pairs = activePairs
-      .map((p) => bySymbol.get(p.symbol))
+      .map((p) => {
+        const live = bySymbol.get(p.symbol);
+        if (live) return live;
+        // Manual-only coins (no live feed) still need a ticker row
+        if (p.priceAuto === false && Number(p.manualPrice) > 0) {
+          const px = Number(p.manualPrice);
+          return {
+            symbol: p.symbol,
+            pair: p.displayPair || toDisplayPair(p.symbol),
+            price: px,
+            open_24h: px,
+            change_24h: 0,
+            change_24h_abs: 0,
+            high_24h: px,
+            low_24h: px,
+            volume: 0,
+            quoteVolume: 0,
+            provider: 'manual',
+          };
+        }
+        return null;
+      })
       .filter(Boolean);
 
     if (!pairs.length) {
       throw new Error('No market prices available');
     }
 
-    priceCache = { pairs, fetchedAt: now, stale: false };
-    const pairsWithOverrides = await applyTickerStatsOverridesToPairs(pairs);
+    priceCache = { pairs, fetchedAt: now, stale: false, refreshing: false };
+    const pairsWithOverrides = await pairsWithManualAndStats(pairs);
     return {
       pairs: pairsWithOverrides,
       stale: false,
@@ -258,7 +382,7 @@ export async function fetchAllPairPrices({ force = false } = {}) {
     };
   } catch (err) {
     if (priceCache.pairs) {
-      const pairsWithOverrides = await applyTickerStatsOverridesToPairs(priceCache.pairs);
+      const pairsWithOverrides = await pairsWithManualAndStats(priceCache.pairs);
       return {
         pairs: pairsWithOverrides,
         stale: true,
@@ -286,11 +410,14 @@ export async function fetchTicker(symbol, opts = {}) {
     const age = Date.now() - (priceCache.fetchedAt || 0);
     if (cached && age < Math.max(CACHE_TTL_MS * 3, 12_000)) {
       const pulsed = getActivePulsePrice(sym);
-      const price = pulsed != null ? pulsed : cached.price;
-      const override = await getTickerStatsOverride(sym);
+      let row = applyManualPairPrice(cached);
+      // Never let a pulse overwrite admin manual last price
+      const price =
+        !isManualPricePair(sym) && pulsed != null ? pulsed : row.price;
+      const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
       const withStats = applyTickerStatsOverride(
         {
-          ...cached,
+          ...row,
           price,
           lastPrice: price,
           pulsed: pulsed != null,
@@ -299,7 +426,8 @@ export async function fetchTicker(symbol, opts = {}) {
         },
         override
       );
-      return withStats;
+      // Manual coin price wins over ticker-stats-only overrides when auto is off
+      return applyManualPairPrice(withStats);
     }
   }
 
@@ -317,20 +445,23 @@ export async function fetchTicker(symbol, opts = {}) {
   }
 
   const pulsed = getActivePulsePrice(sym);
-  const price = pulsed != null ? pulsed : row.price;
+  let base = applyManualPairPrice(row);
+  const price =
+    !isManualPricePair(sym) && pulsed != null ? pulsed : base.price;
   recordPriceTick(sym, price);
-  // fetchAllPairPrices already applied overrides; re-apply after pulse price swap
-  const override = await getTickerStatsOverride(sym);
-  return applyTickerStatsOverride(
-    {
-      ...row,
-      price,
-      lastPrice: price,
-      pulsed: pulsed != null,
-      stale: result.stale,
-      updatedAt: result.updatedAt,
-    },
-    override
+  const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
+  return applyManualPairPrice(
+    applyTickerStatsOverride(
+      {
+        ...base,
+        price,
+        lastPrice: price,
+        pulsed: pulsed != null,
+        stale: result.stale,
+        updatedAt: result.updatedAt,
+      },
+      override
+    )
   );
 }
 
@@ -355,6 +486,8 @@ export async function fetchTicker24h(symbol) {
     volume: row.volume,
     quoteVolume: row.quoteVolume,
     stats_override: Boolean(row.stats_override),
+    price_auto: row.price_auto !== false,
+    price_manual: Boolean(row.price_manual),
   };
 }
 

@@ -1,7 +1,7 @@
 import { verifyToken } from '../utils/token.js';
 import { Wallet } from '../models/Wallet.js';
-import { roundMoney } from '../utils/money.js';
 import { listUserAssets } from './assetBalanceService.js';
+import { formatWalletSnapshot } from './walletAdjustmentService.js';
 
 function userRoom(userId) {
   return `user:${String(userId)}`;
@@ -40,19 +40,6 @@ export function attachUserSockets(io) {
   });
 }
 
-function walletSnapshot(wallet, assets = []) {
-  const balance = roundMoney(wallet?.balance || 0);
-  const locked = roundMoney(wallet?.lockedBalance || 0);
-  return {
-    balance_usdt: balance,
-    balance,
-    locked_balance: locked,
-    available_balance: roundMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0))),
-    currency: wallet?.currency || 'USDT',
-    assets,
-  };
-}
-
 /**
  * Pushes the user's latest wallet balance to all of their connected sockets.
  * Always reads a fresh snapshot from DB so clients never get stale data.
@@ -65,7 +52,7 @@ export async function emitWalletUpdate(io, userId, { reason = null } = {}) {
       listUserAssets(userId),
     ]);
     io.to(userRoom(userId)).emit('wallet:update', {
-      wallet: walletSnapshot(wallet, assets),
+      wallet: formatWalletSnapshot(wallet, assets),
       reason,
       at: Date.now(),
     });

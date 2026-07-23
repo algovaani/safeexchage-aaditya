@@ -344,36 +344,44 @@
   .signup-check input {
     appearance: none;
     -webkit-appearance: none;
-    width: 17px;
-    height: 17px;
+    width: 18px;
+    height: 18px;
     flex-shrink: 0;
-    margin-top: 0.1rem;
+    margin-top: 0.05rem;
     border-radius: 5px;
-    border: 1px solid var(--sx-border-strong);
+    border: 1.5px solid var(--sx-border-strong);
     background: rgba(255, 255, 255, 0.04);
     cursor: pointer;
     display: grid;
     place-content: center;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   }
   
-  .signup-check input::before {
+  .signup-check input::after {
     content: '';
-    width: 9px;
+    width: 5px;
     height: 9px;
-    border-radius: 2px;
-    transform: scale(0);
-    transition: transform 0.12s ease;
-    background: var(--sx-bg);
+    margin-top: -1px;
+    border: solid transparent;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    transition: transform 0.12s ease, border-color 0.12s ease;
   }
   
   .signup-check input:checked {
     background: var(--sx-gold);
     border-color: var(--sx-gold);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sx-gold) 22%, transparent);
   }
   
-  .signup-check input:checked::before {
-    transform: scale(1);
+  .signup-check input:checked::after {
+    border-color: var(--sx-bg);
+    transform: rotate(45deg) scale(1);
+  }
+  
+  .signup-check input:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sx-gold) 35%, transparent);
   }
   
   .signup-check a {

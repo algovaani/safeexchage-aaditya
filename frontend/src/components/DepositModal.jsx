@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { depositAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -21,9 +21,11 @@ function FiatDepositForm({ coin, platformInfo, onClose, onSuccess }) {
   const [proof, setProof] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const submitLockRef = useRef(false);
 
   async function submitFiat(e) {
     e.preventDefault();
+    if (submitLockRef.current || busy) return;
     setErr('');
     if (!proof) {
       const message = 'Payment proof (screenshot or PDF) is required.';
@@ -31,6 +33,7 @@ function FiatDepositForm({ coin, platformInfo, onClose, onSuccess }) {
       toast.warning(message);
       return;
     }
+    submitLockRef.current = true;
     setBusy(true);
     try {
       const fd = new FormData();
@@ -45,7 +48,7 @@ function FiatDepositForm({ coin, platformInfo, onClose, onSuccess }) {
       setTimeout(onClose, 1500);
     } catch (ex) {
       setErr(ex.message || 'Failed to submit deposit');
-    } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   }

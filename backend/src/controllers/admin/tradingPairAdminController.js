@@ -174,6 +174,23 @@ export const updatePairValidators = [
   body('deposit_wallet_address').optional({ nullable: true }).isString(),
   body('deposit_network').optional({ nullable: true }).isString(),
   body('deposit_enabled').optional().isBoolean(),
+  body('price_auto').optional({ values: 'null' }).isBoolean(),
+  body('manual_price')
+    .optional({ nullable: true })
+    .custom((v) => v == null || v === '' || Number(v) > 0)
+    .withMessage('manual_price must be a positive number'),
+  body('manual_change_24h')
+    .optional({ nullable: true })
+    .custom((v) => v == null || v === '' || Number.isFinite(Number(v))),
+  body('manual_high_24h')
+    .optional({ nullable: true })
+    .custom((v) => v == null || v === '' || Number(v) > 0),
+  body('manual_low_24h')
+    .optional({ nullable: true })
+    .custom((v) => v == null || v === '' || Number(v) > 0),
+  body('manual_volume')
+    .optional({ nullable: true })
+    .custom((v) => v == null || v === '' || Number(v) >= 0),
   body('dex_pair_address').optional({ nullable: true }).isString(),
   body('dex_chain_id').optional({ nullable: true }).isString(),
 ];

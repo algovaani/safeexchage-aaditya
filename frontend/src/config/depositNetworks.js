@@ -1,7 +1,7 @@
 /** Per-coin deposit chains shown in the wallet deposit modal. */
 
-const EVM_ADDRESS = '0xF0B52FC9449854527C72f9F13f4156789012345678';
-const TRC_ADDRESS = 'TXdemoPlatformUsdtAddress123456789';
+const EVM_ADDRESS = '0xF0B52FC9449854527C72f9F13f41567890123456';
+const TRC_ADDRESS = 'TLsV52sRDL79HXGGm9yzwKqbU7V3qJnq5x';
 
 function chain(id, label, address, apiNetwork) {
   return { id, label, address, apiNetwork };

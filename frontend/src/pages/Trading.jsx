@@ -216,6 +216,8 @@ export default function Trading() {
         quoteVolume: row.quoteVolume,
         quoteAsset: row.quote_asset || (row.symbol.endsWith('INR') ? 'INR' : 'USDT'),
         stats_override: Boolean(row.stats_override),
+        price_auto: row.price_auto !== false,
+        price_manual: Boolean(row.price_manual),
       };
     }
 
@@ -224,6 +226,9 @@ export default function Trading() {
     const sym = symbol.toUpperCase();
     const active = bySym[sym];
     if (active) {
+      const isManual = Boolean(active.price_manual || active.price_auto === false);
+      priceManualRef.current = isManual;
+      manualLastPriceRef.current = isManual ? active.lastPrice : null;
       setTicker((prev) => ({ ...prev, ...active }));
       setBuyPrice((p) => p || String(active.lastPrice ?? ''));
       setSellPrice((p) => p || String(active.lastPrice ?? ''));
@@ -233,7 +238,18 @@ export default function Trading() {
   useEffect(() => {
     setBuyPrice('');
     setSellPrice('');
+    priceManualRef.current = false;
+    manualLastPriceRef.current = null;
   }, [symbol]);
+
+  // Market orders always show the live price (clears any Limit-entered value on switch)
+  useEffect(() => {
+    const p = ticker?.lastPrice;
+    if (p == null || p === '') return;
+    const str = String(p);
+    if (buyType === 'market') setBuyPrice(str);
+    if (sellType === 'market') setSellPrice(str);
+  }, [ticker?.lastPrice, buyType, sellType]);
 
   useEffect(() => {
     let active = true;
@@ -248,6 +264,9 @@ export default function Trading() {
           if (!active) return;
           const t = parseApiResponse(data);
           if (t?.lastPrice || t?.price) {
+            const isManual = Boolean(t.price_manual || t.price_auto === false);
+            priceManualRef.current = isManual;
+            manualLastPriceRef.current = isManual ? (t.lastPrice ?? t.price) : null;
             setTicker((prev) => ({
               ...prev,
               symbol: String(symbol).toUpperCase(),
@@ -258,6 +277,8 @@ export default function Trading() {
               quoteVolume: t.quoteVolume,
               volume: t.volume,
               stats_override: Boolean(t.stats_override),
+              price_auto: t.price_auto !== false,
+              price_manual: Boolean(t.price_manual),
             }));
           }
         } catch {
@@ -289,7 +310,7 @@ export default function Trading() {
     (async () => {
       try {
         const { data } = await api.get('/market/klines', {
-          params: { symbol, interval: chartInterval, limit: 500 },
+          params: { symbol, interval: chartInterval, limit: 200 },
         });
         if (!active) return;
         const klines = parseApiResponse(data);
@@ -315,6 +336,9 @@ export default function Trading() {
   const socketRef = useRef(null);
   /** Brief lock so live ticks keep the pulse wick while mid is pulsed */
   const pulseLockRef = useRef(null);
+  /** When admin turned Auto off — block live socket ticks from overwriting manual price */
+  const priceManualRef = useRef(false);
+  const manualLastPriceRef = useRef(null);
 
   useEffect(() => {
     const socket = acquireMarketSocket();
@@ -330,6 +354,13 @@ export default function Trading() {
     if (!socket) return undefined;
 
     const sym = symbol.toUpperCase();
+
+    const pulseActive = () => {
+      const lock = pulseLockRef.current;
+      return Boolean(lock?.active && Date.now() <= lock.until);
+    };
+
+    const canApplyLiveTick = () => !priceManualRef.current || pulseActive();
 
     const subscribe = () => {
       socket.emit('market:subscribe', { symbol: sym, interval: chartInterval });
@@ -401,7 +432,7 @@ export default function Trading() {
       });
 
       const displayPrice = lock?.active && Date.now() <= lock.until ? lock.price : Number(c.close);
-      if (displayPrice > 0) {
+      if (displayPrice > 0 && canApplyLiveTick()) {
         setTicker((prev) => ({ ...prev, lastPrice: displayPrice, symbol: sym }));
         setWatchPrices((prev) => ({
           ...prev,
@@ -427,6 +458,8 @@ export default function Trading() {
 
     const onPulse = (payload) => {
       if (!payload || payload.symbol !== sym) return;
+      // Auto off: keep admin manual last price / stats — ignore market pulses
+      if (priceManualRef.current) return;
       const price = Number(payload.price);
       if (!(price > 0)) return;
       const from = Number(payload.fromPrice) || price;
@@ -492,10 +525,14 @@ export default function Trading() {
       pulseLockRef.current = null;
 
       if (marketPrice > 0) {
-        setTicker((prev) => ({ ...prev, lastPrice: marketPrice, symbol: sym }));
+        const restorePrice =
+          priceManualRef.current && manualLastPriceRef.current != null
+            ? manualLastPriceRef.current
+            : marketPrice;
+        setTicker((prev) => ({ ...prev, lastPrice: restorePrice, symbol: sym }));
         setWatchPrices((prev) => ({
           ...prev,
-          [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: marketPrice },
+          [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: restorePrice },
         }));
       }
       setDepth((prev) => ({ ...prev, pulse: false }));
@@ -504,7 +541,7 @@ export default function Trading() {
       (async () => {
         try {
           const { data } = await api.get('/market/klines', {
-            params: { symbol: sym, interval: chartInterval, limit: 500 },
+            params: { symbol: sym, interval: chartInterval, limit: 200 },
           });
           const klines = parseApiResponse(data);
           const rows = Array.isArray(klines?.candles) ? klines.candles : [];
@@ -545,6 +582,7 @@ export default function Trading() {
       const lock = pulseLockRef.current;
       const price =
         lock?.active && Date.now() < lock.until ? lock.price : Number(payload.price);
+      if (!canApplyLiveTick()) return;
       setTicker((prev) => ({ ...prev, lastPrice: price, symbol: sym }));
       setWatchPrices((prev) => ({
         ...prev,
@@ -827,7 +865,7 @@ export default function Trading() {
 
   const lastNum = Number(ticker?.lastPrice);
   const openNum = Number(ticker?.openPrice);
-  const statsOverride = Boolean(ticker?.stats_override);
+  const statsOverride = Boolean(ticker?.stats_override || ticker?.price_manual);
   const hasLiveChange =
     !statsOverride && Number.isFinite(openNum) && openNum > 0 && Number.isFinite(lastNum);
   const changePct = hasLiveChange
@@ -1117,7 +1155,7 @@ export default function Trading() {
 
       <div className="ex-grid">
         <aside className={`ex-panel ex-markets ex-zone ex-zone--markets${mobileView === 'markets' ? ' is-active' : ''}`}>
-          <div className="ex-markets__tabs">
+          {/* <div className="ex-markets__tabs">
             <button type="button" className={marketTab === 'USDT' ? 'is-active' : ''} onClick={() => setMarketTab('USDT')}>
               USDT
             </button>
@@ -1127,7 +1165,7 @@ export default function Trading() {
             <button type="button" className={marketTab === 'BNB' ? 'is-active' : ''} onClick={() => setMarketTab('BNB')} disabled>
               BNB
             </button>
-          </div>
+          </div> */}
           <div className="ex-markets__search">
             <input
               className="ex-input"
@@ -1286,7 +1324,16 @@ export default function Trading() {
                 <button type="button" className={buyType === 'limit' ? 'is-active' : ''} onClick={() => setBuyType('limit')}>
                   Limit
                 </button>
-                <button type="button" className={buyType === 'market' ? 'is-active' : ''} onClick={() => setBuyType('market')}>
+                <button
+                  type="button"
+                  className={buyType === 'market' ? 'is-active' : ''}
+                  onClick={() => {
+                    setBuyType('market');
+                    if (ticker?.lastPrice != null && ticker.lastPrice !== '') {
+                      setBuyPrice(String(ticker.lastPrice));
+                    }
+                  }}
+                >
                   Market
                 </button>
               </div>
@@ -1343,7 +1390,16 @@ export default function Trading() {
                 <button type="button" className={sellType === 'limit' ? 'is-active' : ''} onClick={() => setSellType('limit')}>
                   Limit
                 </button>
-                <button type="button" className={sellType === 'market' ? 'is-active' : ''} onClick={() => setSellType('market')}>
+                <button
+                  type="button"
+                  className={sellType === 'market' ? 'is-active' : ''}
+                  onClick={() => {
+                    setSellType('market');
+                    if (ticker?.lastPrice != null && ticker.lastPrice !== '') {
+                      setSellPrice(String(ticker.lastPrice));
+                    }
+                  }}
+                >
                   Market
                 </button>
               </div>

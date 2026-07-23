@@ -6,6 +6,8 @@ const walletSchema = new mongoose.Schema(
     currency: { type: String, default: 'USDT' },
     balance: { type: Number, default: 0 },
     lockedBalance: { type: Number, default: 0 },
+    /** Referral bonus included in balance — tradeable, not withdrawable. */
+    bonusBalance: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

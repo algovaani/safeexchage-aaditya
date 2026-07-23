@@ -2183,6 +2183,25 @@ html.dark .admin-badge--cancelled {
   font-size: 0.875rem;
 }
 
+.admin-datetime {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.admin-datetime__date {
+  font-weight: 500;
+  color: var(--adm-text, inherit);
+}
+
+.admin-datetime__time {
+  font-size: 0.8125rem;
+  color: var(--adm-muted, #8b95a8);
+  font-variant-numeric: tabular-nums;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

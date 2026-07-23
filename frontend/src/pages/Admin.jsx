@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, parseApiResponse } from '../api/client.js';
@@ -10,6 +10,7 @@ import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import AdminPricesSection from './admin/AdminPricesSection.jsx';
 import AdminLogsSection from './admin/AdminLogsSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
+import { formatLoginId } from '../utils/format.js';
 import { useDialog } from '../context/DialogContext.jsx';
 import './Admin.css';
 
@@ -21,6 +22,27 @@ function formatAdminDate(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatAdminTime(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function AdminDateTimeCell({ value }) {
+  if (!value) return '—';
+  return (
+    <div className="admin-datetime" title={new Date(value).toLocaleString()}>
+      <span className="admin-datetime__date">{formatAdminDate(value)}</span>
+      <span className="admin-datetime__time">{formatAdminTime(value)}</span>
+    </div>
+  );
 }
 
 function UserProfileLink({ user, userId }) {
@@ -696,6 +718,9 @@ export default function Admin() {
   const [defaultAdminWallet, setDefaultAdminWallet] = useState('');
   const [selectedDepositIds, setSelectedDepositIds] = useState([]);
   const [depositRows, setDepositRows] = useState([]);
+  const [depositActionId, setDepositActionId] = useState(null);
+  const [depositBulkBusy, setDepositBulkBusy] = useState(false);
+  const depositActionLockRef = useRef(false);
   const [settingsForm, setSettingsForm] = useState({
     bnbWalletAddress: '',
     ethWalletAddress: '',
@@ -779,13 +804,22 @@ export default function Admin() {
   }
 
   async function verifyDeposit(id, action, note = '') {
-    await api.patch(`/admin/deposits/${id}/verify`, { action, note });
-    bumpTables();
-    setSelectedDepositIds([]);
-    await refresh();
+    if (depositActionLockRef.current || depositBulkBusy) return;
+    depositActionLockRef.current = true;
+    setDepositActionId(String(id));
+    try {
+      await api.patch(`/admin/deposits/${id}/verify`, { action, note });
+      bumpTables();
+      setSelectedDepositIds([]);
+      await refresh();
+    } finally {
+      depositActionLockRef.current = false;
+      setDepositActionId(null);
+    }
   }
 
   async function rejectDeposit(id) {
+    if (depositActionLockRef.current || depositBulkBusy) return;
     const note = await dialog.prompt({
       title: 'Reject deposit',
       message: 'Provide a rejection reason for the user.',
@@ -839,11 +873,18 @@ export default function Admin() {
   }
 
   async function bulkDepositSelected() {
-    if (!selectedDepositIds.length) return;
-    await api.post('/admin/deposits/bulk/approve', { ids: selectedDepositIds });
-    bumpTables();
-    setSelectedDepositIds([]);
-    await refresh();
+    if (!selectedDepositIds.length || depositActionLockRef.current || depositBulkBusy) return;
+    depositActionLockRef.current = true;
+    setDepositBulkBusy(true);
+    try {
+      await api.post('/admin/deposits/bulk/approve', { ids: selectedDepositIds });
+      bumpTables();
+      setSelectedDepositIds([]);
+      await refresh();
+    } finally {
+      depositActionLockRef.current = false;
+      setDepositBulkBusy(false);
+    }
   }
 
   async function bulkWithdrawSelected() {
@@ -1178,7 +1219,7 @@ export default function Admin() {
         label: 'Login ID',
         stopPropagation: true,
         render: (u) => {
-          const id = u.loginId || u.mobile || u.email || '';
+          const id = formatLoginId(u.loginId || u.mobile || u.email || '');
           return id ? <CopyAddressCell value={id} /> : '—';
         },
       },
@@ -1409,23 +1450,40 @@ export default function Admin() {
         label: 'Action',
         render: (row) => {
           const id = row.id || row._id;
+          const rowBusy = depositActionId === String(id) || depositBulkBusy;
           if (row.status === 'pending') {
             return (
               <div className="admin-actions">
                 <button
                   type="button"
                   className="admin-btn admin-btn--ghost admin-btn--sm"
+                  disabled={rowBusy}
                   onClick={() => editDeposit(row)}
                 >
                   Edit
                 </button>
-                <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => verifyDeposit(id, 'approve')}>
-                  Approve
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary admin-btn--sm"
+                  disabled={rowBusy}
+                  onClick={() => verifyDeposit(id, 'approve')}
+                >
+                  {depositActionId === String(id) ? 'Approving…' : 'Approve'}
                 </button>
-                <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => rejectDeposit(id)}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--danger admin-btn--sm"
+                  disabled={rowBusy}
+                  onClick={() => rejectDeposit(id)}
+                >
                   Reject
                 </button>
-                <button type="button" className="admin-btn admin-btn--ghost admin-btn--sm" onClick={() => verifyDeposit(id, 'cancel', 'Cancelled')}>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--ghost admin-btn--sm"
+                  disabled={rowBusy}
+                  onClick={() => verifyDeposit(id, 'cancel', 'Cancelled')}
+                >
                   Cancel
                 </button>
               </div>
@@ -1433,7 +1491,12 @@ export default function Admin() {
           }
           if (row.status === 'approved') {
             return (
-              <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => rejectDeposit(id)}>
+              <button
+                type="button"
+                className="admin-btn admin-btn--danger admin-btn--sm"
+                disabled={rowBusy}
+                onClick={() => rejectDeposit(id)}
+              >
                 Reverse
               </button>
             );
@@ -1442,7 +1505,7 @@ export default function Admin() {
         },
       },
     ],
-    []
+    [depositActionId, depositBulkBusy]
   );
 
   const treasuryColumns = useMemo(
@@ -1517,11 +1580,31 @@ export default function Admin() {
 
   const withdrawalColumns = useMemo(
     () => [
-      { key: 'userLabel', label: 'User', render: (row) => row.userLabel || '—' },
+      {
+        key: 'user',
+        label: 'User',
+        render: (row) => {
+          const u = row.user || {};
+          const id = row.userId || u.id;
+          const label = u.mobile || u.email || row.userLabel || 'User';
+          if (!id) return label;
+          return (
+            <Link to={`/admin/users/${id}`} className="admin-link admin-user-link">
+              {label}
+            </Link>
+          );
+        },
+      },
       { key: 'type', label: 'Type', sortable: true, render: (row) => <span className="capitalize">{row.type}</span> },
       { key: 'amount', label: 'Amount', sortable: true, render: (row) => `${row.amount} ${row.currency || 'USDT'}` },
       { key: 'destination', label: 'Destination', render: (row) => row.destination || '—' },
       { key: 'status', label: 'Status', sortable: true, render: (row) => <StatusBadge status={row.status} /> },
+      {
+        key: 'createdAt',
+        label: 'Date & Time',
+        sortable: true,
+        render: (row) => <AdminDateTimeCell value={row.createdAt || row.submittedAt} />,
+      },
       {
         key: 'actions',
         label: 'Action',
@@ -1820,8 +1903,13 @@ export default function Admin() {
               <span>{selectedDepositIds.length} selected</span>
               <div className="admin-bulk-bar__actions">
                 {showBulkDeposit && (
-                  <button type="button" className="admin-btn admin-btn--primary" onClick={bulkDepositSelected}>
-                    Approve selected
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--primary"
+                    disabled={depositBulkBusy || Boolean(depositActionId)}
+                    onClick={bulkDepositSelected}
+                  >
+                    {depositBulkBusy ? 'Approving…' : 'Approve selected'}
                   </button>
                 )}
                 {showBulkWithdraw && (

@@ -74,43 +74,76 @@ export function formatDeposit(req, doc, { includeUser = false } = {}) {
 }
 
 export async function creditWalletForDeposit(deposit, reviewedBy) {
-  if (deposit.status !== 'pending') {
+  const depositId = deposit?._id || deposit;
+  if (!depositId) {
+    throw Object.assign(new Error('Deposit not found'), { status: 404 });
+  }
+
+  // Atomic claim — only one concurrent approve can win (prevents double credit).
+  const claimed = await Deposit.findOneAndUpdate(
+    { _id: depositId, status: 'pending' },
+    {
+      $set: {
+        status: 'approved',
+        reviewedBy: reviewedBy || null,
+        reviewedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+
+  if (!claimed) {
     throw Object.assign(new Error('Deposit is not pending'), { status: 400 });
   }
 
-  const conversion = await computeDepositUsdtCredit(deposit);
-  deposit.usdtAmount = conversion.usdtAmount;
-  deposit.conversionRate = conversion.conversionRate;
+  const conversion = await computeDepositUsdtCredit(claimed).catch(async (convErr) => {
+    await Deposit.updateOne(
+      { _id: claimed._id, status: 'approved' },
+      { $set: { status: 'pending', reviewedBy: null, reviewedAt: null } }
+    );
+    throw convErr;
+  });
+  claimed.usdtAmount = conversion.usdtAmount;
+  claimed.conversionRate = conversion.conversionRate;
 
-  const creditNativeAsset = isNativeCryptoDeposit(deposit);
-  const currency = String(deposit.currency || 'USDT').toUpperCase();
+  const creditNativeAsset = isNativeCryptoDeposit(claimed);
+  const currency = String(claimed.currency || 'USDT').toUpperCase();
   let wallet;
   let balanceAfter = null;
   let creditAmount;
   let creditCurrency;
 
-  if (creditNativeAsset) {
-    const assetRow = await creditAsset(deposit.userId, currency, deposit.amount);
-    balanceAfter = assetRow?.balance != null ? roundMoney(assetRow.balance) : null;
-    creditAmount = roundMoney(deposit.amount);
-    creditCurrency = currency;
-    wallet = await Wallet.findOne({ userId: deposit.userId }).lean();
-  } else {
-    wallet = await Wallet.findOneAndUpdate(
-      { userId: deposit.userId },
-      { $inc: { balance: conversion.usdtAmount }, $setOnInsert: { currency: 'USDT' } },
-      { upsert: true, new: true }
+  try {
+    if (creditNativeAsset) {
+      const assetRow = await creditAsset(claimed.userId, currency, claimed.amount);
+      balanceAfter = assetRow?.balance != null ? roundMoney(assetRow.balance) : null;
+      creditAmount = roundMoney(claimed.amount);
+      creditCurrency = currency;
+      wallet = await Wallet.findOne({ userId: claimed.userId }).lean();
+    } else {
+      wallet = await Wallet.findOneAndUpdate(
+        { userId: claimed.userId },
+        { $inc: { balance: conversion.usdtAmount }, $setOnInsert: { currency: 'USDT' } },
+        { upsert: true, new: true }
+      );
+      balanceAfter = roundMoney(wallet.balance);
+      creditAmount = conversion.usdtAmount;
+      creditCurrency = 'USDT';
+    }
+  } catch (creditErr) {
+    // Only roll back claim if wallet was not credited.
+    await Deposit.updateOne(
+      { _id: claimed._id, status: 'approved' },
+      { $set: { status: 'pending', reviewedBy: null, reviewedAt: null } }
     );
-    balanceAfter = roundMoney(wallet.balance);
-    creditAmount = conversion.usdtAmount;
-    creditCurrency = 'USDT';
+    throw creditErr;
   }
 
-  const creditReference = depositCreditReference(deposit);
+  const creditReference = depositCreditReference(claimed);
 
   let transaction;
-  if (deposit.transactionId) {
-    transaction = await completeLinkedTransaction(deposit, {
+  if (claimed.transactionId) {
+    transaction = await completeLinkedTransaction(claimed, {
       balanceAfter,
       status: 'completed',
       amount: creditAmount,
@@ -121,36 +154,33 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
 
   if (!transaction) {
     transaction = await Transaction.create({
-      userId: deposit.userId,
+      userId: claimed.userId,
       type: 'deposit',
       amount: creditAmount,
       balanceAfter,
       currency: creditCurrency,
       status: 'completed',
-      method: deposit.type === 'crypto' ? 'crypto' : 'fiat',
+      method: claimed.type === 'crypto' ? 'crypto' : 'fiat',
       reference: creditReference,
-      depositId: deposit._id,
+      depositId: claimed._id,
       adminNote: '',
     });
-    deposit.transactionId = transaction._id;
+    claimed.transactionId = transaction._id;
   }
 
-  deposit.status = 'approved';
-  deposit.reviewedBy = reviewedBy;
-  deposit.reviewedAt = new Date();
-  if (deposit.type === 'crypto') {
+  if (claimed.type === 'crypto') {
     const settings = await getPlatformSettings();
-    deposit.treasuryStatus = isManualDepositMode(settings) ? 'not_applicable' : 'pending_sweep';
-    if (!deposit.chain) {
-      deposit.chain = normalizeChainFromNetwork(deposit.network) || '';
+    claimed.treasuryStatus = isManualDepositMode(settings) ? 'not_applicable' : 'pending_sweep';
+    if (!claimed.chain) {
+      claimed.chain = normalizeChainFromNetwork(claimed.network) || '';
     }
   }
-  if (!deposit.transactionId) {
-    deposit.transactionId = transaction._id;
+  if (!claimed.transactionId) {
+    claimed.transactionId = transaction._id;
   }
-  await deposit.save();
+  await claimed.save();
 
-  return { wallet, transaction, deposit };
+  return { wallet, transaction, deposit: claimed };
 }
 
 /** Reject deposit and reverse wallet credit if it was approved/auto-credited. */

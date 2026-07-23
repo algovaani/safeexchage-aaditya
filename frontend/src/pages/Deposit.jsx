@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { depositAPI } from '../services/api.js';
@@ -26,6 +26,7 @@ export default function Deposit() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const submitLockRef = useRef(false);
 
   const coinColor = COIN_COLORS[selectedCoin] || '#f0b90b';
   const cryptoSupported = isCryptoDepositSupported(selectedCoin);
@@ -80,6 +81,7 @@ export default function Deposit() {
 
   async function submitFiat(e) {
     e.preventDefault();
+    if (submitLockRef.current || busy) return;
     setErr('');
     if (!proof) {
       const message = 'Payment proof (screenshot or PDF) is required.';
@@ -87,6 +89,7 @@ export default function Deposit() {
       toast.warning(message);
       return;
     }
+    submitLockRef.current = true;
     setBusy(true);
     try {
       const fd = new FormData();
@@ -103,6 +106,7 @@ export default function Deposit() {
     } catch (ex) {
       setErr(ex.message || 'Failed to submit deposit');
     } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   }

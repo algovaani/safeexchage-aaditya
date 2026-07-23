@@ -46,6 +46,8 @@ export default function Account() {
   const { pairs } = useTradingPairs();
   const [spotUsdt, setSpotUsdt] = useState(null);
   const [lockedUsdt, setLockedUsdt] = useState(0);
+  const [bonusUsdt, setBonusUsdt] = useState(0);
+  const [withdrawableUsdt, setWithdrawableUsdt] = useState(0);
   const [assetBalances, setAssetBalances] = useState([]);
   const [priceMap, setPriceMap] = useState({});
   const [hideZero, setHideZero] = useState(false);
@@ -70,8 +72,17 @@ export default function Account() {
 
   const applyWallet = useCallback((wallet) => {
     if (!wallet) return;
-    setSpotUsdt(wallet?.balance_usdt ?? wallet?.balance ?? 0);
-    setLockedUsdt(wallet?.locked_balance ?? 0);
+    const balance = Number(wallet?.balance_usdt ?? wallet?.balance ?? 0);
+    const locked = Number(wallet?.locked_balance ?? 0);
+    const bonus = Number(wallet?.bonus_balance ?? 0);
+    const withdrawable =
+      wallet?.withdrawable_balance != null
+        ? Number(wallet.withdrawable_balance)
+        : Math.max(0, balance - locked - bonus);
+    setSpotUsdt(balance);
+    setLockedUsdt(locked);
+    setBonusUsdt(bonus);
+    setWithdrawableUsdt(withdrawable);
     if (Array.isArray(wallet?.assets)) {
       setAssetBalances(wallet.assets);
     }
@@ -302,6 +313,7 @@ export default function Account() {
   }
 
   const availableUsdt = Math.max(0, Number(spotUsdt ?? 0) - Number(lockedUsdt || 0));
+  const withdrawableBalance = Math.max(0, Number(withdrawableUsdt ?? availableUsdt - bonusUsdt));
 
   return (
     <div className="space-y-8">
@@ -319,9 +331,19 @@ export default function Account() {
           <p className="text-sm text-text-muted mt-1">
             ≈ {fmtUSD(portfolioUsdt)} USDT
           </p>
-          {!loading && lockedUsdt > 0 && (
+          {!loading && (lockedUsdt > 0 || bonusUsdt > 0) && (
             <p className="text-xs text-text-secondary mt-1">
-              Available USDT: {fmtINR(toInr(availableUsdt))} · Locked: {fmtINR(toInr(lockedUsdt))}
+              {lockedUsdt > 0 && (
+                <>
+                  Available USDT: {fmtINR(toInr(availableUsdt))} · Locked: {fmtINR(toInr(lockedUsdt))}
+                </>
+              )}
+              {bonusUsdt > 0 && (
+                <>
+                  {lockedUsdt > 0 ? ' · ' : ''}
+                  Referral bonus: {fmtINR(toInr(bonusUsdt))} (trading only)
+                </>
+              )}
             </p>
           )}
         </div>
@@ -573,7 +595,7 @@ export default function Account() {
         <WithdrawModal
           coin={withdrawCoin}
           platformInfo={platformInfo}
-          availableBalance={availableUsdt}
+          availableBalance={withdrawableBalance}
           onClose={() => setWithdrawCoin(null)}
           onSuccess={refresh}
         />

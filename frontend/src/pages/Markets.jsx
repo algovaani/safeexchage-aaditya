@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import { api, parseApiResponse } from '../api/client.js';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
-import { TRADING_PAIRS } from '../config/tradingPairs.js';
 import { LIST_MARKET_POLL_MS } from '../config/marketPoll.js';
 import DataTable from '../components/DataTable.jsx';
 import CoinIcon from '../components/CoinIcon.jsx';
@@ -11,24 +10,9 @@ import { fmtINR, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import './Markets.css';
 
-const CATEGORIES = ['All', 'Crypto', 'Commodities'];
+const CATEGORIES = ['All', 'Crypto'];
 
-const COMMODITY_DEFAULTS = TRADING_PAIRS.filter(
-  (p) => p.category === 'commodity' || p.symbol.endsWith('INR')
-).map((p) => ({
-  symbol: p.baseAsset || p.displayPair.split('/')[0],
-  tradeSymbol: p.symbol,
-  name: p.name || p.displayPair.split('/')[0],
-  price: 0,
-  change: 0,
-  volume: '—',
-  volumeRaw: 0,
-  cap: '—',
-  capRaw: 0,
-  sortOrder: p.sortOrder ?? 9999,
-  type: 'commodity',
-  unit: p.unit || 'g',
-}));
+const COMMODITY_DEFAULTS = [];
 
 function isCommodityPair(meta, liveRow) {
   return (

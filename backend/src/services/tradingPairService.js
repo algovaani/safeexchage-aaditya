@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { COINGECKO_IDS as DEFAULT_CG_IDS } from '../config/coingeckoIds.js';
 import { TRADING_PAIRS as DEFAULT_PAIRS } from '../config/tradingPairs.js';
-import { COMMODITY_PAIRS } from '../config/commodityPairs.js';
+import { COMMODITY_PAIRS, DISABLED_COMMODITY_SYMBOLS } from '../config/commodityPairs.js';
 import { TradingPair } from '../models/TradingPair.js';
 import {
   lookupDexByContract,
@@ -36,11 +36,7 @@ function defaultPairRows() {
     isActive: true,
     sortOrder: i + 1,
   }));
-  const commodities = COMMODITY_PAIRS.map((p) => ({
-    ...p,
-    isActive: true,
-  }));
-  return [...crypto, ...commodities];
+  return crypto;
 }
 
 function applyCache(rows) {
@@ -122,6 +118,18 @@ export function formatPairRow(doc) {
     depositWalletAddress: doc.depositWalletAddress || '',
     depositNetwork: doc.depositNetwork || '',
     depositEnabled: doc.depositEnabled !== false,
+    priceAuto: doc.priceAuto !== false,
+    manualPrice: doc.manualPrice != null && Number.isFinite(Number(doc.manualPrice)) ? Number(doc.manualPrice) : null,
+    manualChange24h:
+      doc.manualChange24h != null && Number.isFinite(Number(doc.manualChange24h))
+        ? Number(doc.manualChange24h)
+        : null,
+    manualHigh24h:
+      doc.manualHigh24h != null && Number.isFinite(Number(doc.manualHigh24h)) ? Number(doc.manualHigh24h) : null,
+    manualLow24h:
+      doc.manualLow24h != null && Number.isFinite(Number(doc.manualLow24h)) ? Number(doc.manualLow24h) : null,
+    manualVolume:
+      doc.manualVolume != null && Number.isFinite(Number(doc.manualVolume)) ? Number(doc.manualVolume) : null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -146,28 +154,20 @@ export async function seedTradingPairsIfEmpty() {
   return rows.length;
 }
 
-/** Upsert Gold/Silver INR pairs (safe to run on every server start). */
+/** Deactivate Gold/Silver (and any other disabled commodity symbols). */
 export async function ensureCommodityPairs() {
-  for (const p of COMMODITY_PAIRS) {
-    await TradingPair.findOneAndUpdate(
-      { symbol: p.symbol },
-      {
-        $set: {
-          baseAsset: p.baseAsset,
-          quoteAsset: p.quoteAsset,
-          displayPair: p.displayPair,
-          name: p.name,
-          coingeckoId: p.coingeckoId,
-          priceSource: p.priceSource,
-          category: p.category,
-          unit: p.unit,
-          sortOrder: p.sortOrder,
-          isActive: true,
-        },
-      },
-      { upsert: true }
+  const symbols = [
+    ...DISABLED_COMMODITY_SYMBOLS,
+    ...COMMODITY_PAIRS.map((p) => p.symbol),
+  ].filter(Boolean);
+
+  if (symbols.length) {
+    await TradingPair.updateMany(
+      { symbol: { $in: symbols.map((s) => String(s).toUpperCase()) } },
+      { $set: { isActive: false } }
     );
   }
+
   invalidateTradingPairCache();
 }
 
@@ -333,8 +333,59 @@ export async function updateTradingPair(id, body) {
   if (body.deposit_network != null) pair.depositNetwork = String(body.deposit_network).trim().toUpperCase();
   if (body.deposit_enabled != null) pair.depositEnabled = Boolean(body.deposit_enabled);
 
+  if (body.price_auto != null) pair.priceAuto = Boolean(body.price_auto);
+
+  const toNumOrNull = (v) => {
+    if (v === '' || v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  if (body.manual_price !== undefined) {
+    const n = toNumOrNull(body.manual_price);
+    if (n != null && n <= 0) {
+      throw Object.assign(new Error('manual_price must be a positive number'), { status: 400 });
+    }
+    pair.manualPrice = n;
+  }
+  if (body.manual_change_24h !== undefined) pair.manualChange24h = toNumOrNull(body.manual_change_24h);
+  if (body.manual_high_24h !== undefined) pair.manualHigh24h = toNumOrNull(body.manual_high_24h);
+  if (body.manual_low_24h !== undefined) pair.manualLow24h = toNumOrNull(body.manual_low_24h);
+  if (body.manual_volume !== undefined) {
+    const n = toNumOrNull(body.manual_volume);
+    if (n != null && n < 0) {
+      throw Object.assign(new Error('manual_volume cannot be negative'), { status: 400 });
+    }
+    pair.manualVolume = n;
+  }
+
+  if (pair.priceAuto === false && !(Number(pair.manualPrice) > 0)) {
+    throw Object.assign(new Error('Enter a manual price when Auto update is off'), { status: 400 });
+  }
+  if (
+    pair.manualHigh24h != null &&
+    pair.manualLow24h != null &&
+    Number(pair.manualLow24h) > Number(pair.manualHigh24h)
+  ) {
+    throw Object.assign(new Error('manual_low_24h cannot be greater than manual_high_24h'), { status: 400 });
+  }
+
+  // Volume always = |high − low| when both manual high/low are set
+  if (
+    pair.priceAuto === false &&
+    pair.manualHigh24h != null &&
+    pair.manualLow24h != null
+  ) {
+    pair.manualVolume = Math.abs(Number(pair.manualHigh24h) - Number(pair.manualLow24h));
+  }
+
   await pair.save();
   invalidateTradingPairCache();
+  try {
+    const { invalidatePriceCache } = await import('./marketDataProvider.js');
+    invalidatePriceCache();
+  } catch {
+    /* price cache module optional during tests */
+  }
   await refreshTradingPairCache();
   return formatPairRow(pair.toObject());
 }

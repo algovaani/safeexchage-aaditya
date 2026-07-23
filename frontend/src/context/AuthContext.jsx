@@ -31,7 +31,8 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await api.get('/auth/me', { __noRetry: false });
+        // Short timeout + no retry so live site never hangs on /auth/me
+        const { data } = await api.get('/auth/me', { timeout: 8_000, __noRetry: true });
         if (cancelled) return;
         setUser(parseApiResponse(data));
       } catch (err) {

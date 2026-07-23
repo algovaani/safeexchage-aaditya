@@ -150,19 +150,52 @@ export async function loadDbCandles(symbol, interval, { startTime, endTime, limi
 }
 
 /**
- * Chart source of truth:
- * 1) Pull live market → write DB (expand-merge)
- * 2) Read OHLC from DB
- * 3) Merge admin ManualPriceData / pulse ticks
+ * Chart source of truth (fast path):
+ * 1) Serve from DB immediately when we have history
+ * 2) Refresh latest bars from exchange in the background
+ * Cold start still sync-ingests so first visit works.
  */
+const klineRefreshInflight = new Map();
+
+async function refreshLatestKlinesInBackground(sym, interval, lim) {
+  const key = `${sym}|${interval}`;
+  if (klineRefreshInflight.has(key)) return;
+  klineRefreshInflight.set(key, true);
+  try {
+    if (interval === '1s') {
+      const trades = await fetchAggTrades(sym, { limit: 200 });
+      const external = bucketTradesToSecondCandles(trades, Math.min(lim, 200));
+      await persistMarketKlines(sym, interval, external, 'binance');
+    } else {
+      const external = await fetchKlines(sym, interval, { limit: Math.min(lim, 50) });
+      await persistMarketKlines(sym, interval, external, 'binance');
+    }
+  } catch (err) {
+    console.warn(`[klines] bg refresh ${sym} ${interval}:`, err.message);
+  } finally {
+    klineRefreshInflight.delete(key);
+  }
+}
+
 export async function getMergedKlines(symbol, interval, { startTime, endTime, limit = 500 } = {}) {
   const sym = String(symbol || '').toUpperCase();
   const lim = Math.min(Math.max(Number(limit) || 500, 1), 1000);
 
-  // Always ingest latest market into DB first
+  let candles = await loadDbCandles(sym, interval, { startTime, endTime, limit: lim });
+
+  // Warm DB → instant response; keep chart fresh via background pull
+  if (candles.length >= Math.min(40, lim)) {
+    void refreshLatestKlinesInBackground(sym, interval, lim);
+    const start = candles[0].openTime;
+    const end = candles[candles.length - 1].openTime;
+    const manual = await loadManualForRange(sym, interval, start, end);
+    return mergeCandles(candles, manual);
+  }
+
+  // Cold start — must ingest once
   try {
     if (interval === '1s') {
-      const trades = await fetchAggTrades(sym, { limit: 1000 });
+      const trades = await fetchAggTrades(sym, { limit: Math.min(lim, 600) });
       const external = bucketTradesToSecondCandles(trades, Math.min(lim, 600));
       await persistMarketKlines(sym, interval, external, 'binance');
     } else {
@@ -173,12 +206,11 @@ export async function getMergedKlines(symbol, interval, { startTime, endTime, li
     console.warn(`[klines] market ingest ${sym} ${interval}:`, err.message);
   }
 
-  let candles = await loadDbCandles(sym, interval, { startTime, endTime, limit: lim });
+  candles = await loadDbCandles(sym, interval, { startTime, endTime, limit: lim });
 
-  // Cold start / empty DB fallback
   if (!candles.length) {
     if (interval === '1s') {
-      const trades = await fetchAggTrades(sym, { limit: 1000 });
+      const trades = await fetchAggTrades(sym, { limit: Math.min(lim, 600) });
       candles = bucketTradesToSecondCandles(trades, Math.min(lim, 600));
     } else {
       candles = await fetchKlines(sym, interval, { startTime, endTime, limit: lim });

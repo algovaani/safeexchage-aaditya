@@ -8,15 +8,71 @@ function walletAvailable(wallet) {
   return storeMoney((wallet?.balance || 0) - (wallet?.lockedBalance || 0));
 }
 
+/** Tradeable available (includes referral bonus). */
+export function tradeableBalance(wallet) {
+  return storeMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0)));
+}
+
+/** Withdrawable available (excludes referral bonus). */
+export function withdrawableBalance(wallet) {
+  return storeMoney(
+    Math.max(
+      0,
+      (wallet?.balance || 0) - (wallet?.lockedBalance || 0) - (wallet?.bonusBalance || 0)
+    )
+  );
+}
+
+/** Keep bonusBalance from exceeding total balance after losses/debits. */
+export function applyBonusClamp(wallet) {
+  if (!wallet) return wallet;
+  const bal = storeMoney(wallet.balance || 0);
+  const bonus = storeMoney(wallet.bonusBalance || 0);
+  wallet.bonusBalance = storeMoney(Math.max(0, Math.min(bonus, bal)));
+  return wallet;
+}
+
+export async function clampBonusBalanceForUser(userId) {
+  if (!userId) return;
+  await Wallet.updateOne(
+    {
+      userId,
+      $expr: { $gt: [{ $ifNull: ['$bonusBalance', 0] }, '$balance'] },
+    },
+    [{ $set: { bonusBalance: { $max: [0, '$balance'] } } }]
+  );
+}
+
+/** Mongo $expr: withdrawable >= amount */
+export function withdrawableGteExpr(amount) {
+  return {
+    $gte: [
+      {
+        $subtract: [
+          { $subtract: ['$balance', { $ifNull: ['$lockedBalance', 0] }] },
+          { $ifNull: ['$bonusBalance', 0] },
+        ],
+      },
+      amount,
+    ],
+  };
+}
+
 export function formatWalletSnapshot(wallet, assets = []) {
   const balance = roundMoney(wallet?.balance || 0);
   const locked = roundMoney(wallet?.lockedBalance || 0);
+  const bonus = roundMoney(wallet?.bonusBalance || 0);
   const available = roundMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0)));
+  const withdrawable = roundMoney(
+    Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0) - (wallet?.bonusBalance || 0))
+  );
   return {
     balance_usdt: balance,
     balance,
     locked_balance: locked,
+    bonus_balance: bonus,
     available_balance: available,
+    withdrawable_balance: withdrawable,
     currency: wallet?.currency || 'USDT',
     assets,
   };
@@ -51,9 +107,10 @@ export async function adjustUserWalletBalance({
   try {
     let wallet = await Wallet.findOne({ userId }).session(session);
     if (!wallet) {
-      [wallet] = await Wallet.create([{ userId, balance: 0, lockedBalance: 0, currency: 'USDT' }], {
-        session,
-      });
+      [wallet] = await Wallet.create(
+        [{ userId, balance: 0, lockedBalance: 0, bonusBalance: 0, currency: 'USDT' }],
+        { session }
+      );
     }
 
     if (normalizedAction === 'deduct') {
@@ -72,6 +129,7 @@ export async function adjustUserWalletBalance({
       wallet.balance = storeMoney(wallet.balance + value);
     } else {
       wallet.balance = storeMoney(wallet.balance - value);
+      applyBonusClamp(wallet);
     }
 
     const txType = normalizedAction === 'add' ? 'admin_credit' : 'admin_debit';

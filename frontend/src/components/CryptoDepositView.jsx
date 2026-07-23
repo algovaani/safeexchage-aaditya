@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AlertCircle, Copy, ExternalLink, Loader2 } from 'lucide-react';
 import { api, depositAPI, getApiErrorMessage, parseApiResponse } from '../services/api.js';
@@ -32,6 +32,7 @@ export default function CryptoDepositView({ coin, pairMeta, className = '', onSu
   const [submitErr, setSubmitErr] = useState('');
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitOk, setSubmitOk] = useState(false);
+  const submitLockRef = useRef(false);
   const [form, setForm] = useState({
     amount: '',
     txn_hash: '',
@@ -101,6 +102,8 @@ export default function CryptoDepositView({ coin, pairMeta, className = '', onSu
 
   async function submitDeposit(e) {
     e.preventDefault();
+    if (submitLockRef.current || submitBusy) return;
+    submitLockRef.current = true;
     setSubmitErr('');
     setSubmitBusy(true);
     setSubmitOk(false);
@@ -118,6 +121,7 @@ export default function CryptoDepositView({ coin, pairMeta, className = '', onSu
     } catch (ex) {
       setSubmitErr(getApiErrorMessage(ex));
     } finally {
+      submitLockRef.current = false;
       setSubmitBusy(false);
     }
   }

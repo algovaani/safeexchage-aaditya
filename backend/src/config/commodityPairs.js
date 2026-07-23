@@ -1,30 +1,8 @@
-/** Gold & Silver quoted in INR per gram (Indian market style). */
+/** Legacy Gold/Silver INR pairs — disabled (kept empty so they are not seeded). */
 export const TROY_OZ_GRAMS = 31.1034768;
 
-export const COMMODITY_PAIRS = [
-  {
-    symbol: 'GOLDINR',
-    baseAsset: 'GOLD',
-    quoteAsset: 'INR',
-    displayPair: 'GOLD/INR',
-    name: 'Gold',
-    coingeckoId: 'tether-gold',
-    priceSource: 'commodity_inr',
-    category: 'commodity',
-    unit: 'g',
-    sortOrder: 100,
-  },
-  {
-    symbol: 'SILVERINR',
-    baseAsset: 'SILVER',
-    quoteAsset: 'INR',
-    displayPair: 'SILVER/INR',
-    name: 'Silver',
-    coingeckoId: 'kinesis-silver',
-    fallbackCoingeckoIds: ['silver'],
-    priceSource: 'commodity_inr',
-    category: 'commodity',
-    unit: 'g',
-    sortOrder: 101,
-  },
-];
+/** @deprecated Commodities removed from the exchange. */
+export const COMMODITY_PAIRS = [];
+
+/** Symbols to force-deactivate on boot (remove from live markets / admin prices). */
+export const DISABLED_COMMODITY_SYMBOLS = ['GOLDINR', 'SILVERINR'];

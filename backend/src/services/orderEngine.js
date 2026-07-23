@@ -10,6 +10,7 @@ import {
 } from './assetBalanceService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 import { unitPriceToUsdt } from '../utils/inrTrading.js';
+import { applyBonusClamp } from './walletAdjustmentService.js';
 
 const FEE_RATE = 0.001;
 
@@ -223,6 +224,7 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
         return null;
       }
       wallet.balance = storeMoney(wallet.balance - cost);
+      applyBonusClamp(wallet);
       await wallet.save();
       await creditAsset(userId, baseAsset, qty);
     } else {

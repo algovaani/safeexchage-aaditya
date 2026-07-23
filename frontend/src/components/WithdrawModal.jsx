@@ -10,6 +10,43 @@ import {
 import { WALLET_ASSETS } from '../theme/assets.js';
 import './DepositModal.css';
 
+function normalizeWalletAddress(address) {
+  return String(address || '')
+    .trim()
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, '');
+}
+
+function validateWithdrawAddress(address, apiNetwork) {
+  let addr = normalizeWalletAddress(address);
+  const n = String(apiNetwork || '').toUpperCase();
+  if (!addr) return 'Wallet address is required.';
+
+  if (n === 'TRC20' || n === 'TRX') {
+    if (addr.startsWith('t')) addr = `T${addr.slice(1)}`;
+    if (!/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(addr)) {
+      return 'Enter a valid TRON address (starts with T, 34 characters).';
+    }
+    return '';
+  }
+
+  if (n === 'SOL') {
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return 'Enter a valid Solana address.';
+    return '';
+  }
+
+  if (n === 'DOGE') {
+    if (!/^[DA][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(addr)) return 'Enter a valid Dogecoin address.';
+    return '';
+  }
+
+  if (/^0X/i.test(addr)) addr = `0x${addr.slice(2)}`;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+    return 'Enter a valid EVM address (0x + 40 hex characters).';
+  }
+  return '';
+}
+
 function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
   const toast = useToast();
   const [form, setForm] = useState({
@@ -63,8 +100,11 @@ function FiatWithdrawForm({ coin, available, onClose, onSuccess }) {
       </p>
 
       <div className="deposit-modal__field">
-        <label>Available balance</label>
+        <label>Available to withdraw</label>
         <input className="deposit-modal__input" readOnly value={`${available.toFixed(2)} USDT`} />
+        <p className="deposit-modal__scan-hint">
+          Referral bonus is for trading only and cannot be withdrawn.
+        </p>
       </div>
 
       <div className="deposit-modal__field">
@@ -199,11 +239,18 @@ export default function WithdrawModal({
       toast.warning(message);
       return;
     }
+    const addressError = validateWithdrawAddress(walletAddress, apiNetwork);
+    if (addressError) {
+      setErr(addressError);
+      toast.warning(addressError);
+      return;
+    }
+    const normalizedAddress = normalizeWalletAddress(walletAddress);
     setBusy(true);
     try {
       await withdrawalAPI.submitCrypto({
         amount: parsed,
-        wallet_address: walletAddress.trim(),
+        wallet_address: normalizedAddress,
         network: apiNetwork,
         currency: selectedCoin,
       });
@@ -287,12 +334,15 @@ export default function WithdrawModal({
 
                 <form className="deposit-modal__form" onSubmit={submitCrypto}>
                   <div className="deposit-modal__field">
-                    <label>Available balance</label>
+                    <label>Available to withdraw</label>
                     <input
                       className="deposit-modal__input"
                       readOnly
                       value={`${available.toFixed(2)} USDT`}
                     />
+                    <p className="deposit-modal__scan-hint">
+                      Referral bonus is for trading only and cannot be withdrawn.
+                    </p>
                   </div>
 
                   <div className="deposit-modal__field">

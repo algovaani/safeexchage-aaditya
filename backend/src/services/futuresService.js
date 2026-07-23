@@ -7,6 +7,7 @@ import { fetchTicker } from './marketDataProvider.js';
 import { getFuturesSettings } from './futuresSettingsService.js';
 import { emitWalletUpdate, emitFuturesUpdate } from './socketService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { applyBonusClamp } from './walletAdjustmentService.js';
 import {
   initialMargin,
   tradingFee,
@@ -253,6 +254,7 @@ export async function openPosition(userId, body, { io } = {}) {
 
     wallet.balance = storeMoney(wallet.balance - openFee);
     wallet.lockedBalance = storeMoney(wallet.lockedBalance + marginNeeded);
+    applyBonusClamp(wallet);
     await wallet.save({ session });
 
     let position = await FuturesPosition.findOne({ userId, symbol, side, marginMode, status: 'open' }).session(session);

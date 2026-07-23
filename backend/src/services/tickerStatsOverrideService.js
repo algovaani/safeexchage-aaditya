@@ -1,4 +1,5 @@
 import { TickerStatsOverride } from '../models/TickerStatsOverride.js';
+import { getPairSync } from './tradingPairService.js';
 
 /** @type {Map<string, object>|null} */
 let overrideCache = null;
@@ -104,7 +105,12 @@ export async function applyTickerStatsOverridesToPairs(pairs) {
   if (!Array.isArray(pairs) || !pairs.length) return pairs || [];
   const map = await loadOverrideMap();
   if (!map.size) return pairs;
-  return pairs.map((row) => applyTickerStatsOverride(row, map.get(normalizeSymbol(row.symbol))));
+  return pairs.map((row) => {
+    const sym = normalizeSymbol(row.symbol);
+    const pair = getPairSync(sym);
+    if (pair?.priceAuto === false && Number(pair.manualPrice) > 0) return row;
+    return applyTickerStatsOverride(row, map.get(sym));
+  });
 }
 
 export async function upsertTickerStatsOverride(symbol, body, updatedBy = null) {

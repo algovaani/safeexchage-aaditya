@@ -2,6 +2,7 @@ import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { roundMoney } from '../utils/money.js';
 import { emitWalletUpdate } from './socketService.js';
+import { clampBonusBalanceForUser, withdrawableGteExpr } from './walletAdjustmentService.js';
 
 export function formatCashInPersonRequest(doc, { includeUser = false } = {}) {
   const payload = {
@@ -48,13 +49,20 @@ export async function approveCashInPersonRequest(request, reviewedBy, amount, io
 
   if (isWithdraw) {
     wallet = await Wallet.findOneAndUpdate(
-      { userId: request.userId, balance: { $gte: settleAmount } },
+      {
+        userId: request.userId,
+        $expr: withdrawableGteExpr(settleAmount),
+      },
       { $inc: { balance: -settleAmount } },
       { new: true }
     );
     if (!wallet) {
-      throw Object.assign(new Error('Insufficient wallet balance for withdraw'), { status: 400 });
+      throw Object.assign(
+        new Error('Insufficient withdrawable balance (referral bonus cannot be withdrawn)'),
+        { status: 400 }
+      );
     }
+    await clampBonusBalanceForUser(request.userId);
   } else {
     wallet = await Wallet.findOneAndUpdate(
       { userId: request.userId },

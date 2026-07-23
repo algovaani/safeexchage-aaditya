@@ -54,6 +54,11 @@ function mapCommodityRow(meta, cg) {
 }
 
 export async function fetchCommodityPrices({ force = false } = {}) {
+  if (!COMMODITY_PAIRS.length) {
+    cache = { rows: [], fetchedAt: Date.now() };
+    return { pairs: [], stale: false, updatedAt: new Date().toISOString() };
+  }
+
   const now = Date.now();
   if (!force && cache.rows.length && now - cache.fetchedAt < CACHE_MS) {
     return { pairs: cache.rows, stale: false, updatedAt: new Date(cache.fetchedAt).toISOString() };

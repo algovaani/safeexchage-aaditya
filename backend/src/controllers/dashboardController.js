@@ -5,8 +5,11 @@ import { UserOrder } from '../models/UserOrder.js';
 import { AdminTrade } from '../models/AdminTrade.js';
 import { UserStake } from '../models/UserStake.js';
 import { StakingPlan } from '../models/StakingPlan.js';
+import { FuturesPosition } from '../models/FuturesPosition.js';
 import { listUserAssets } from '../services/assetBalanceService.js';
-import { fetchPriceMap } from '../services/marketDataProvider.js';
+import { fetchAllPairPrices, fetchPriceMap } from '../services/marketDataProvider.js';
+import { listOpenPositions } from '../services/futuresService.js';
+import { getPlatformSettings } from '../services/platformSettingsService.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
@@ -43,64 +46,164 @@ async function sumTransactions(userId, type, statuses = ['completed']) {
   return rows[0]?.total || 0;
 }
 
+/** Holding P&L vs 24h open using live last price (USDT). */
+function spotHoldingPnlUsdt(asset, qty, liveBySymbol, usdtInrRate) {
+  const sym = String(asset || '').toUpperCase();
+  if (!sym || sym === 'USDT' || !(qty > 0)) return 0;
+
+  const usdtRow = liveBySymbol.get(`${sym}USDT`);
+  const inrRow = liveBySymbol.get(`${sym}INR`);
+  const row = usdtRow || inrRow;
+  if (!row) return 0;
+
+  let px = Number(row.price ?? row.lastPrice);
+  let open = Number(row.open_24h);
+  const changePct = Number(row.change_24h);
+
+  // INR-quoted commodities → convert to USDT
+  if (!usdtRow && inrRow && usdtInrRate > 0) {
+    if (Number.isFinite(px) && px > 0) px /= usdtInrRate;
+    if (Number.isFinite(open) && open > 0) open /= usdtInrRate;
+  }
+
+  if (!(px > 0)) return 0;
+
+  if (Number.isFinite(open) && open > 0) {
+    return qty * (px - open);
+  }
+  if (Number.isFinite(changePct)) {
+    const factor = 1 + changePct / 100;
+    if (factor > 0) return qty * px * (1 - 1 / factor);
+  }
+  return 0;
+}
+
 export async function getSummary(req, res, next) {
   try {
     const userId = req.userId;
+    const dayStart = startOfDay();
 
-    const [wallet, assets, priceData, totalDeposited, totalWithdrawnRaw, openPositionsCount, pnlRows, stakeRows] =
-      await Promise.all([
-        Wallet.findOne({ userId }).lean(),
-        listUserAssets(userId).catch(() => []),
-        fetchPriceMap().catch(() => ({ prices: {} })),
-        sumTransactions(userId, 'deposit'),
-        sumTransactions(userId, 'withdrawal', ['completed', 'approved']),
-        UserOrder.countDocuments({ userId, status: 'open' }),
-        UserOrder.aggregate([
-          {
-            $match: {
-              userId: new mongoose.Types.ObjectId(userId),
-              status: 'closed',
-            },
+    const [
+      wallet,
+      assets,
+      livePrices,
+      settings,
+      totalDeposited,
+      totalWithdrawnRaw,
+      binaryOpenCount,
+      futuresOpenCount,
+      realizedTodayRows,
+      futuresRealizedTodayRows,
+      stakeRows,
+    ] = await Promise.all([
+      Wallet.findOne({ userId }).lean(),
+      listUserAssets(userId).catch(() => []),
+      fetchAllPairPrices().catch(() => ({ pairs: [] })),
+      getPlatformSettings().catch(() => ({ usdtInrRate: 83.5 })),
+      sumTransactions(userId, 'deposit'),
+      sumTransactions(userId, 'withdrawal', ['completed', 'approved']),
+      UserOrder.countDocuments({ userId, status: 'open' }),
+      FuturesPosition.countDocuments({ userId, status: 'open' }),
+      UserOrder.aggregate([
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            status: 'closed',
+            closedAt: { $gte: dayStart },
           },
-          { $group: { _id: null, total: { $sum: '$pnl' } } },
-        ]),
-        UserStake.aggregate([
-          {
-            $match: {
-              userId: new mongoose.Types.ObjectId(userId),
-              status: { $in: ['active', 'matured'] },
-            },
+        },
+        { $group: { _id: null, total: { $sum: '$pnl' } } },
+      ]),
+      FuturesPosition.aggregate([
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            status: { $in: ['closed', 'liquidated'] },
+            closedAt: { $gte: dayStart },
           },
-          {
-            $group: {
-              _id: null,
-              count: { $sum: 1 },
-              total: { $sum: '$amount' },
-            },
+        },
+        { $group: { _id: null, total: { $sum: '$realizedPnl' } } },
+      ]),
+      UserStake.aggregate([
+        {
+          $match: {
+            userId: new mongoose.Types.ObjectId(userId),
+            status: { $in: ['active', 'matured'] },
           },
-        ]),
-      ]);
+        },
+        {
+          $group: {
+            _id: null,
+            count: { $sum: 1 },
+            total: { $sum: '$amount' },
+          },
+        },
+      ]),
+    ]);
 
-    const prices = priceData?.prices || {};
+    const liveBySymbol = new Map();
+    const prices = {};
+    for (const row of livePrices?.pairs || []) {
+      if (!row?.symbol) continue;
+      liveBySymbol.set(row.symbol, row);
+      prices[row.symbol] = row.price;
+    }
+
+    const usdtInrRate = Number(settings?.usdtInrRate) || 83.5;
     const usdtBalance = Number(wallet?.balance) || 0;
     let assetsUsdt = 0;
+    let spotTodayPnl = 0;
+
     for (const row of assets || []) {
       const asset = String(row.asset || '').toUpperCase();
       if (!asset || asset === 'USDT') continue;
       const qty = Number(row.balance) || 0;
       if (!(qty > 0)) continue;
-      const px = Number(prices[`${asset}USDT`] ?? prices[`${asset}INR`] ?? 0);
+
+      const usdtPx = Number(prices[`${asset}USDT`]);
+      const inrPx = Number(prices[`${asset}INR`]);
+      let px = usdtPx;
+      if (!(px > 0) && inrPx > 0 && usdtInrRate > 0) px = inrPx / usdtInrRate;
       if (px > 0) assetsUsdt += qty * px;
+
+      spotTodayPnl += spotHoldingPnlUsdt(asset, qty, liveBySymbol, usdtInrRate);
     }
 
-    const totalPnl = pnlRows[0]?.total || 0;
+    // Live futures unrealized PnL (mark vs entry)
+    let futuresUnrealized = 0;
+    if (futuresOpenCount > 0) {
+      try {
+        const futuresPositions = await listOpenPositions(userId, { markPrices: prices });
+        for (const p of futuresPositions || []) {
+          futuresUnrealized += Number(p.unrealizedPnl) || 0;
+        }
+      } catch {
+        /* futures optional if mark fetch fails */
+      }
+    }
+
+    const realizedToday =
+      (realizedTodayRows[0]?.total || 0) + (futuresRealizedTodayRows[0]?.total || 0);
+    const todayPnl = spotTodayPnl + futuresUnrealized + realizedToday;
+
     const stakeStats = stakeRows[0] || { count: 0, total: 0 };
     const totalBalanceUsdt = usdtBalance + assetsUsdt;
+    const openPositionsCount = binaryOpenCount + futuresOpenCount;
 
     return success(res, {
       wallet: {
         balance_usdt: roundMoney(usdtBalance),
         locked_balance: roundMoney(wallet?.lockedBalance || 0),
+        bonus_balance: roundMoney(wallet?.bonusBalance || 0),
+        available_balance: roundMoney(
+          Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0))
+        ),
+        withdrawable_balance: roundMoney(
+          Math.max(
+            0,
+            (wallet?.balance || 0) - (wallet?.lockedBalance || 0) - (wallet?.bonusBalance || 0)
+          )
+        ),
         assets_usdt: roundMoney(assetsUsdt),
         total_balance_usdt: roundMoney(totalBalanceUsdt),
         assets,
@@ -109,7 +212,11 @@ export async function getSummary(req, res, next) {
         total_deposited: roundMoney(totalDeposited),
         total_withdrawn: roundMoney(Math.abs(totalWithdrawnRaw)),
         open_positions_count: openPositionsCount,
-        total_pnl: roundMoney(totalPnl),
+        total_pnl: roundMoney(todayPnl),
+        today_pnl: roundMoney(todayPnl),
+        spot_today_pnl: roundMoney(spotTodayPnl),
+        futures_unrealized_pnl: roundMoney(futuresUnrealized),
+        realized_today_pnl: roundMoney(realizedToday),
         active_stakes_count: stakeStats.count,
         total_staked: roundMoney(stakeStats.total),
       },

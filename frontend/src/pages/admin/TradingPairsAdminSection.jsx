@@ -281,6 +281,12 @@ export default function TradingPairsAdminSection() {
     depositWalletAddress: '',
     depositNetwork: '',
     depositEnabled: true,
+    priceAuto: true,
+    manualPrice: '',
+    manualChange24h: '',
+    manualHigh24h: '',
+    manualLow24h: '',
+    manualVolume: '',
   });
 
   const loadPairs = useCallback(async () => {
@@ -336,6 +342,15 @@ export default function TradingPairsAdminSection() {
     setPreviewBusy(false);
   }
 
+  function volumeFromHighLow(highStr, lowStr) {
+    const high = Number(highStr);
+    const low = Number(lowStr);
+    if (!(Number.isFinite(high) && Number.isFinite(low) && highStr !== '' && lowStr !== '')) {
+      return '';
+    }
+    return String(Math.abs(high - low));
+  }
+
   function openEditModal(pair) {
     if (String(pair.id).startsWith('default-')) {
       toast.error('Seed pairs cannot be edited — add the coin from DexScreener first');
@@ -343,6 +358,9 @@ export default function TradingPairsAdminSection() {
     }
     setLogoFile(null);
     setLogoPreview(resolveAssetUrl(pair.imageUrl || ''));
+    const high = pair.manualHigh24h != null ? String(pair.manualHigh24h) : '';
+    const low = pair.manualLow24h != null ? String(pair.manualLow24h) : '';
+    const autoVol = volumeFromHighLow(high, low);
     setEditForm({
       id: pair.id,
       displayPair: pair.displayPair || pair.symbol,
@@ -352,6 +370,13 @@ export default function TradingPairsAdminSection() {
       depositWalletAddress: pair.depositWalletAddress || '',
       depositNetwork: pair.depositNetwork || '',
       depositEnabled: pair.depositEnabled !== false,
+      priceAuto: pair.priceAuto !== false,
+      manualPrice: pair.manualPrice != null ? String(pair.manualPrice) : '',
+      manualChange24h: pair.manualChange24h != null ? String(pair.manualChange24h) : '',
+      manualHigh24h: high,
+      manualLow24h: low,
+      manualVolume:
+        autoVol || (pair.manualVolume != null ? String(pair.manualVolume) : ''),
     });
     setEditOpen(true);
   }
@@ -362,6 +387,35 @@ export default function TradingPairsAdminSection() {
     setLogoFile(null);
     setLogoPreview('');
     setEditOpen(false);
+  }
+
+  /** Volume = |high − low| when both values are valid numbers. */
+  function setManualHighLow(patch) {
+    setEditForm((f) => {
+      const next = { ...f, ...patch };
+      const autoVol = volumeFromHighLow(next.manualHigh24h, next.manualLow24h);
+      if (autoVol !== '') next.manualVolume = autoVol;
+      return next;
+    });
+  }
+
+  /** Volume = |high − low| when both values are valid numbers. */
+  function calcManualVolume(highStr, lowStr) {
+    const high = Number(highStr);
+    const low = Number(lowStr);
+    if (!(Number.isFinite(high) && Number.isFinite(low) && highStr !== '' && lowStr !== '')) {
+      return '';
+    }
+    return String(Math.abs(high - low));
+  }
+
+  function setManualHighLow(patch) {
+    setEditForm((f) => {
+      const next = { ...f, ...patch };
+      const vol = calcManualVolume(next.manualHigh24h, next.manualLow24h);
+      if (vol !== '') next.manualVolume = vol;
+      return next;
+    });
   }
 
   function onLogoFilePick(file) {
@@ -400,12 +454,45 @@ export default function TradingPairsAdminSection() {
         });
       }
 
-      await api.patch(`/admin/trading-pairs/${editForm.id}`, {
+      if (!editForm.priceAuto) {
+        const px = Number(editForm.manualPrice);
+        if (!(px > 0)) {
+          toast.error('Enter a manual last price when Auto update is off');
+          setEditBusy(false);
+          return;
+        }
+      }
+
+      const patch = {
         name: editForm.name.trim(),
         deposit_wallet_address: editForm.depositWalletAddress.trim(),
         deposit_network: editForm.depositNetwork.trim(),
         deposit_enabled: editForm.depositEnabled,
-      });
+        price_auto: editForm.priceAuto,
+      };
+
+      if (!editForm.priceAuto) {
+        const high = editForm.manualHigh24h === '' ? null : Number(editForm.manualHigh24h);
+        const low = editForm.manualLow24h === '' ? null : Number(editForm.manualLow24h);
+        let volume =
+          editForm.manualVolume === '' ? null : Number(editForm.manualVolume);
+        if (high != null && low != null && Number.isFinite(high) && Number.isFinite(low)) {
+          if (low > high) {
+            toast.error('24h low cannot be greater than 24h high');
+            setEditBusy(false);
+            return;
+          }
+          volume = Math.abs(high - low);
+        }
+        patch.manual_price = Number(editForm.manualPrice);
+        patch.manual_change_24h =
+          editForm.manualChange24h === '' ? null : Number(editForm.manualChange24h);
+        patch.manual_high_24h = high;
+        patch.manual_low_24h = low;
+        patch.manual_volume = volume;
+      }
+
+      await api.patch(`/admin/trading-pairs/${editForm.id}`, patch);
       toast.success(`${editForm.displayPair} updated`);
       closeEditModal();
       await loadPairs();
@@ -1079,6 +1166,110 @@ export default function TradingPairsAdminSection() {
                     Allow users to deposit this coin
                   </label>
                 </div>
+
+                <div className="admin-field admin-field--wide">
+                  <label className="admin-label">Price update</label>
+                  <label className="admin-coins-edit__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={editForm.priceAuto}
+                      onChange={(e) => setEditForm((f) => ({ ...f, priceAuto: e.target.checked }))}
+                    />
+                    Auto — use live market price
+                  </label>
+                  <p className="admin-coins__hint">
+                    Checked: Last Price / 24h stats update from market. Unchecked: only admin values below are shown.
+                  </p>
+                </div>
+
+                {!editForm.priceAuto && (
+                  <>
+                    <div className="admin-field">
+                      <label className="admin-label" htmlFor="edit-manual-price">
+                        Manual last price (USDT)
+                      </label>
+                      <input
+                        id="edit-manual-price"
+                        className="admin-input"
+                        type="number"
+                        step="any"
+                        min="0"
+                        required
+                        value={editForm.manualPrice}
+                        onChange={(e) => setEditForm((f) => ({ ...f, manualPrice: e.target.value }))}
+                        placeholder="e.g. 0.002793"
+                      />
+                    </div>
+                    <div className="admin-field">
+                      <label className="admin-label" htmlFor="edit-manual-change">
+                        Manual 24h change %
+                      </label>
+                      <input
+                        id="edit-manual-change"
+                        className="admin-input"
+                        type="number"
+                        step="any"
+                        value={editForm.manualChange24h}
+                        onChange={(e) => setEditForm((f) => ({ ...f, manualChange24h: e.target.value }))}
+                        placeholder="e.g. -0.08"
+                      />
+                    </div>
+                    <div className="admin-field">
+                      <label className="admin-label" htmlFor="edit-manual-high">
+                        Manual 24h high
+                      </label>
+                      <input
+                        id="edit-manual-high"
+                        className="admin-input"
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editForm.manualHigh24h}
+                        onChange={(e) => setManualHighLow({ manualHigh24h: e.target.value })}
+                        placeholder="Optional"
+                      />
+                    </div>
+                    <div className="admin-field">
+                      <label className="admin-label" htmlFor="edit-manual-low">
+                        Manual 24h low
+                      </label>
+                      <input
+                        id="edit-manual-low"
+                        className="admin-input"
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editForm.manualLow24h}
+                        onChange={(e) => setManualHighLow({ manualLow24h: e.target.value })}
+                        placeholder="Optional"
+                      />
+                    </div>
+                    <div className="admin-field admin-field--wide">
+                      <label className="admin-label" htmlFor="edit-manual-volume">
+                        Manual 24h volume
+                      </label>
+                      <input
+                        id="edit-manual-volume"
+                        className="admin-input"
+                        type="number"
+                        step="any"
+                        min="0"
+                        value={editForm.manualVolume}
+                        readOnly={
+                          editForm.manualHigh24h !== '' &&
+                          editForm.manualLow24h !== '' &&
+                          Number.isFinite(Number(editForm.manualHigh24h)) &&
+                          Number.isFinite(Number(editForm.manualLow24h))
+                        }
+                        onChange={(e) => setEditForm((f) => ({ ...f, manualVolume: e.target.value }))}
+                        placeholder="Auto from |high − low|"
+                      />
+                      <p className="admin-coins__hint">
+                        Auto-calculated as |High − Low| when both high and low are set. Shown on Trading / Markets as 24h volume.
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             </form>
 

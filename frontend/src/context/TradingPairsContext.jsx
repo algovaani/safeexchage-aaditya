@@ -39,11 +39,12 @@ function initialPairs() {
 
 export function TradingPairsProvider({ children }) {
   const [pairs, setPairs] = useState(initialPairs);
-  const [loading, setLoading] = useState(true);
+  // Cache/fallback already paints UI — don't block first render
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const { data } = await api.get('/market/pairs');
+      const { data } = await api.get('/market/pairs', { timeout: 8_000 });
       const payload = parseApiResponse(data);
       const rows = normalizePairs(
         Array.isArray(payload?.pairs) ? payload.pairs : Array.isArray(payload) ? payload : []

@@ -7,6 +7,7 @@ import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
+import { LIST_MARKET_POLL_MS } from '../config/marketPoll.js';
 import CoinIcon from '../components/CoinIcon.jsx';
 
 const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
@@ -48,7 +49,7 @@ export default function Dashboard() {
     const active = (tradingPairs || [])
       .filter((p) => p.isActive !== false && (p.quoteAsset === 'USDT' || String(p.symbol).endsWith('USDT')))
       .sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999));
-    const top = active.slice(0, 4).map((p) => p.symbol);
+    const top = active.slice(0, 3).map((p) => p.symbol);
     return top.length ? top : ['BTCUSDT', 'ETHUSDT'];
   }, [tradingPairs]);
 
@@ -79,6 +80,8 @@ export default function Dashboard() {
     }
 
     load();
+    // Refresh P&L with live market prices
+    const poll = setInterval(load, LIST_MARKET_POLL_MS);
 
     const onOrders = () => load();
     const onWallet = () => load();
@@ -86,6 +89,7 @@ export default function Dashboard() {
     window.addEventListener('wallet:updated', onWallet);
     return () => {
       active = false;
+      clearInterval(poll);
       window.removeEventListener('orders:updated', onOrders);
       window.removeEventListener('wallet:updated', onWallet);
     };
@@ -145,7 +149,12 @@ export default function Dashboard() {
     return 0;
   }, [summary, liveWallet]);
 
-  const pnl = summary?.stats?.total_pnl ?? summary?.total_pnl ?? summary?.pnl ?? 0;
+  const pnl =
+    summary?.stats?.today_pnl ??
+    summary?.stats?.total_pnl ??
+    summary?.total_pnl ??
+    summary?.pnl ??
+    0;
   const openPos =
     summary?.stats?.open_positions_count ??
     summary?.open_positions ??
@@ -160,6 +169,7 @@ export default function Dashboard() {
       {
         label: "Today's P&L",
         value: fmtINR(toInr(pnl)),
+        sub: `≈ ${fmtUSD(pnl)}`,
         colored: true,
         up: pnlUp,
       },
