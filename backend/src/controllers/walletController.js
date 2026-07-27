@@ -1,9 +1,8 @@
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { success } from '../utils/response.js';
-import { roundMoney } from '../utils/money.js';
 import { listUserAssets } from '../services/assetBalanceService.js';
-import { formatWalletSnapshot } from '../services/walletAdjustmentService.js';
+import { formatWalletSnapshot, enrichWalletSnapshotWithPrices } from '../services/walletAdjustmentService.js';
 import { fetchPriceMap } from '../services/marketDataProvider.js';
 
 export async function balance(req, res, next) {
@@ -14,18 +13,7 @@ export async function balance(req, res, next) {
       fetchPriceMap().catch(() => ({ prices: {} })),
     ]);
     const snapshot = formatWalletSnapshot(w, assets);
-    const prices = priceData?.prices || {};
-    let assetsUsdt = 0;
-    for (const row of assets || []) {
-      const asset = String(row.asset || '').toUpperCase();
-      if (!asset || asset === 'USDT') continue;
-      const qty = Number(row.balance) || 0;
-      if (!(qty > 0)) continue;
-      const px = Number(prices[`${asset}USDT`] ?? prices[`${asset}INR`] ?? 0);
-      if (px > 0) assetsUsdt += qty * px;
-    }
-    snapshot.assets_usdt = roundMoney(assetsUsdt);
-    snapshot.total_balance_usdt = roundMoney((Number(snapshot.balance_usdt) || 0) + assetsUsdt);
+    enrichWalletSnapshotWithPrices(snapshot, priceData?.prices || {});
     return success(res, snapshot, 'Wallet balance fetched');
   } catch (e) {
     return next(e);

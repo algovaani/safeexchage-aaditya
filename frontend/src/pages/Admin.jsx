@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { api, parseApiResponse } from '../api/client.js';
 import AdminDataTable from '../components/AdminDataTable.jsx';
@@ -12,6 +12,7 @@ import AdminLogsSection from './admin/AdminLogsSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
 import { formatLoginId } from '../utils/format.js';
 import { useDialog } from '../context/DialogContext.jsx';
+import { useAdminNotifications } from '../context/AdminNotificationsContext.jsx';
 import './Admin.css';
 
 function asArray(value) {
@@ -694,6 +695,8 @@ export default function Admin() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('section') || 'overview';
+  const outletCtx = useOutletContext() || {};
+  const liveNotify = useAdminNotifications();
 
   const [stats, setStats] = useState({
     users: 0,
@@ -751,6 +754,39 @@ export default function Admin() {
   const [tableRefreshKey, setTableRefreshKey] = useState(0);
 
   const bumpTables = () => setTableRefreshKey((k) => k + 1);
+
+  const displayStats = useMemo(
+    () => ({
+      ...stats,
+      pendingDeposits:
+        liveNotify?.pendingDeposits ??
+        outletCtx.adminPending?.pendingDeposits ??
+        stats.pendingDeposits,
+      pendingWithdrawals:
+        liveNotify?.pendingWithdrawals ??
+        outletCtx.adminPending?.pendingWithdrawals ??
+        stats.pendingWithdrawals,
+    }),
+    [stats, liveNotify, outletCtx]
+  );
+
+  // Keep deposit/withdrawal tables fresh when a live alert arrives
+  const lastNotifySig = useRef('');
+  useEffect(() => {
+    if (!liveNotify) return;
+    const sig = `${liveNotify.pendingDeposits}|${liveNotify.pendingWithdrawals}|${liveNotify.unread}`;
+    if (sig === lastNotifySig.current) return;
+    const isFirst = lastNotifySig.current === '';
+    lastNotifySig.current = sig;
+    setStats((prev) => ({
+      ...prev,
+      pendingDeposits: liveNotify.pendingDeposits ?? prev.pendingDeposits,
+      pendingWithdrawals: liveNotify.pendingWithdrawals ?? prev.pendingWithdrawals,
+    }));
+    if (!isFirst && (activeTab === 'deposits' || activeTab === 'withdrawals')) {
+      bumpTables();
+    }
+  }, [liveNotify?.pendingDeposits, liveNotify?.pendingWithdrawals, liveNotify?.unread, activeTab]);
 
   async function refresh() {
     setLoading(true);
@@ -1725,35 +1761,45 @@ export default function Admin() {
           <div className="admin-stats">
             <div className="admin-stat">
               <p className="admin-stat__label">Users</p>
-              <p className="admin-stat__value">{stats.users}</p>
+              <p className="admin-stat__value">{displayStats.users}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Pending KYC</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingKyc}</p>
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingKyc}</p>
             </div>
-            <div className="admin-stat">
+            <button
+              type="button"
+              className={`admin-stat admin-stat--action${displayStats.pendingDeposits > 0 ? ' is-hot' : ''}`}
+              onClick={() => navigate('/admin/panel?section=deposits')}
+            >
               <p className="admin-stat__label">Pending Deposits</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingDeposits}</p>
-            </div>
-            <div className="admin-stat">
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingDeposits}</p>
+              {displayStats.pendingDeposits > 0 && <span className="admin-stat__hint">Review now →</span>}
+            </button>
+            <button
+              type="button"
+              className={`admin-stat admin-stat--action${displayStats.pendingWithdrawals > 0 ? ' is-hot' : ''}`}
+              onClick={() => navigate('/admin/panel?section=withdrawals')}
+            >
               <p className="admin-stat__label">Pending Withdrawals</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingWithdrawals}</p>
-            </div>
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingWithdrawals}</p>
+              {displayStats.pendingWithdrawals > 0 && <span className="admin-stat__hint">Review now →</span>}
+            </button>
             <div className="admin-stat">
               <p className="admin-stat__label">Cash in Person</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingCashInPerson}</p>
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingCashInPerson}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Pending Tx</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingTx}</p>
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingTx}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Treasury to sweep</p>
-              <p className="admin-stat__value admin-stat__value--warn">{stats.pendingTreasurySweeps}</p>
+              <p className="admin-stat__value admin-stat__value--warn">{displayStats.pendingTreasurySweeps}</p>
             </div>
             <div className="admin-stat">
               <p className="admin-stat__label">Open Orders</p>
-              <p className="admin-stat__value admin-stat__value--ok">{stats.openOrders}</p>
+              <p className="admin-stat__value admin-stat__value--ok">{displayStats.openOrders}</p>
             </div>
           </div>
 

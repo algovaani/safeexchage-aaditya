@@ -27,6 +27,7 @@ import {
   toDisplayPair,
   intervalToMs,
   recordPriceTick,
+  clearRecentTicks,
   bucketRecentPricesToSecondCandles,
   bucketTicksToIntervalCandles,
   bucketTradesToSecondCandles,
@@ -78,7 +79,24 @@ function isManualPricePair(symbol) {
 async function pairsWithManualAndStats(rawPairs) {
   await ensureTradingPairCache();
   const withStats = await applyTickerStatsOverridesToPairs(rawPairs);
-  return applyManualPairPrices(withStats);
+  return applyActivePulses(applyManualPairPrices(withStats));
+}
+
+/** Active admin pulse always wins last price (memory-only, site-wide). */
+function applyActivePulseToRow(row) {
+  if (!row?.symbol) return row;
+  const pulsed = getActivePulsePrice(row.symbol);
+  if (pulsed == null) return row;
+  return {
+    ...row,
+    price: pulsed,
+    lastPrice: pulsed,
+    pulsed: true,
+  };
+}
+
+function applyActivePulses(pairs) {
+  return (Array.isArray(pairs) ? pairs : []).map(applyActivePulseToRow);
 }
 
 // Re-export provider-agnostic helpers so the public API surface is unchanged.
@@ -87,6 +105,7 @@ export {
   toDisplayPair,
   intervalToMs,
   recordPriceTick,
+  clearRecentTicks,
   bucketRecentPricesToSecondCandles,
   bucketTicksToIntervalCandles,
   bucketTradesToSecondCandles,
@@ -409,25 +428,18 @@ export async function fetchTicker(symbol, opts = {}) {
     const cached = priceCache.pairs.find((p) => p.symbol === sym);
     const age = Date.now() - (priceCache.fetchedAt || 0);
     if (cached && age < Math.max(CACHE_TTL_MS * 3, 12_000)) {
-      const pulsed = getActivePulsePrice(sym);
       let row = applyManualPairPrice(cached);
-      // Never let a pulse overwrite admin manual last price
-      const price =
-        !isManualPricePair(sym) && pulsed != null ? pulsed : row.price;
       const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
       const withStats = applyTickerStatsOverride(
         {
           ...row,
-          price,
-          lastPrice: price,
-          pulsed: pulsed != null,
           stale: age > CACHE_TTL_MS,
           updatedAt: new Date(priceCache.fetchedAt).toISOString(),
         },
         override
       );
-      // Manual coin price wins over ticker-stats-only overrides when auto is off
-      return applyManualPairPrice(withStats);
+      // Pulse always wins last price while active (even if Auto is off)
+      return applyActivePulseToRow(applyManualPairPrice(withStats));
     }
   }
 
@@ -444,23 +456,19 @@ export async function fetchTicker(symbol, opts = {}) {
     throw err;
   }
 
-  const pulsed = getActivePulsePrice(sym);
   let base = applyManualPairPrice(row);
-  const price =
-    !isManualPricePair(sym) && pulsed != null ? pulsed : base.price;
-  recordPriceTick(sym, price);
   const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
-  return applyManualPairPrice(
-    applyTickerStatsOverride(
-      {
-        ...base,
-        price,
-        lastPrice: price,
-        pulsed: pulsed != null,
-        stale: result.stale,
-        updatedAt: result.updatedAt,
-      },
-      override
+  recordPriceTick(sym, Number(base.price) || 0);
+  return applyActivePulseToRow(
+    applyManualPairPrice(
+      applyTickerStatsOverride(
+        {
+          ...base,
+          stale: result.stale,
+          updatedAt: result.updatedAt,
+        },
+        override
+      )
     )
   );
 }

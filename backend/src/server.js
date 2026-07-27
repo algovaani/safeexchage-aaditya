@@ -30,17 +30,21 @@ import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
 import futuresRoutes from './routes/futuresRoutes.js';
 import { handleMarketSubscribe, handleMarketUnsubscribe } from './services/marketStreamService.js';
 import { attachUserSockets } from './services/socketService.js';
-import { startMonitor } from './services/tpslMonitor.js';
-import { startFuturesMonitor, attachFuturesMonitorIo } from './services/futuresMonitor.js';
-import { startStakingCron } from './services/stakingRewardService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
-import { repairMisCreditedNativeDeposits } from './services/depositService.js';
-import { backfillReferralBonusBalances } from './services/referralRewardService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
 import { installGracefulShutdown, installProcessHandlers } from './config/processStability.js';
 import { isDbConnected } from './config/db.js';
+import { getProcessRole, shouldRunHttp, shouldRunBackgroundJobs } from './config/processRole.js';
+import { startBackgroundJobs, stopBackgroundJobs } from './jobs/backgroundJobs.js';
 
 installProcessHandlers();
+
+const ROLE = getProcessRole();
+
+if (!shouldRunHttp()) {
+  console.error(`[api] PROCESS_ROLE=${ROLE} — this entry is HTTP-only. Use src/worker.js for worker/scanner.`);
+  process.exit(1);
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -85,6 +89,7 @@ app.use(morgan('dev'));
 app.get('/', (_req, res) => {
   res.json({
     service: 'safex-backend',
+    role: ROLE,
     health: '/api/health',
     market: '/api/market/prices/live',
     hint: 'All API routes are under /api — e.g. /api/auth/login, /api/market/ticker',
@@ -104,7 +109,10 @@ app.get('/api/health', (_req, res) => {
     {
       ok: dbOk,
       service: 'safex-backend',
+      role: ROLE,
+      backgroundJobs: shouldRunBackgroundJobs(),
       database: dbOk ? 'connected' : 'disconnected',
+      pid: process.pid,
     },
     dbOk ? 'Service healthy' : 'Database disconnected',
     dbOk ? 200 : 503
@@ -148,33 +156,13 @@ io.on('connection', (socket) => {
 
 const PORT = Number(process.env.PORT) || 5001;
 
-async function startBackgroundJobs() {
-  attachFuturesMonitorIo(io);
-  startMonitor();
-  startFuturesMonitor();
-  startStakingCron();
-  console.info('[deposits] Auto on-chain detect disabled — admin credits wallets manually');
+/** Pair cache needed for market routes even when crons run in a separate worker. */
+async function warmApiCaches() {
   try {
     await seedTradingPairsIfEmpty();
     await ensureCommodityPairs();
     await refreshTradingPairCache();
-    console.info('[pairs] Trading pair cache loaded');
-    try {
-      const { repaired, scanned } = await repairMisCreditedNativeDeposits();
-      if (repaired > 0) {
-        console.info(`[deposits] Repaired ${repaired} native crypto deposit(s) (scanned ${scanned})`);
-      }
-    } catch (err) {
-      console.warn('[deposits] Native deposit repair skipped:', err.message);
-    }
-    try {
-      const { updated, scanned } = await backfillReferralBonusBalances();
-      if (updated > 0) {
-        console.info(`[referral] Backfilled bonusBalance for ${updated} wallet(s) (scanned ${scanned})`);
-      }
-    } catch (err) {
-      console.warn('[referral] Bonus backfill skipped:', err.message);
-    }
+    console.info('[pairs] Trading pair cache loaded (api)');
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);
   }
@@ -189,15 +177,24 @@ async function main() {
   const connectAttempts = process.env.NODE_ENV === 'production' ? 8 : 3;
   try {
     await connectDb(uri, { attempts: connectAttempts });
-    console.log('MongoDB connected');
-    await startBackgroundJobs();
+    console.log(`MongoDB connected (role=${ROLE})`);
+    if (shouldRunBackgroundJobs()) {
+      await startBackgroundJobs({ io });
+    } else {
+      console.info('[api] Background jobs disabled here — run safex-worker / PROCESS_ROLE=worker');
+      await warmApiCaches();
+    }
   } catch (err) {
     console.error('MongoDB connection failed:', err.message);
     if (process.env.NODE_ENV === 'production') {
       console.warn(
         '[mongodb] API will listen — DB routes return 503 until connection succeeds (auto-retry in background)'
       );
-      await startBackgroundJobs();
+      if (shouldRunBackgroundJobs()) {
+        await startBackgroundJobs({ io });
+      } else {
+        await warmApiCaches();
+      }
     } else {
       console.warn(
         'Dev mode: API will listen, but auth/wallet routes return 503 until MongoDB is reachable.'
@@ -220,7 +217,7 @@ async function main() {
   server.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS) || 60_000;
 
   server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
-    console.log(`API + WebSocket listening on :${PORT}`);
+    console.log(`API + WebSocket listening on :${PORT} (role=${ROLE}, pid=${process.pid})`);
     if (!isDbConnected()) {
       console.warn(
         'MongoDB still unreachable. Run: npm run db:check — then fix cluster/credentials or use local MONGODB_URI.'
@@ -230,12 +227,9 @@ async function main() {
 
   installGracefulShutdown(server, {
     onShutdown: async () => {
-      const { stopMonitor } = await import('./services/tpslMonitor.js');
-      const { stopFuturesMonitor } = await import('./services/futuresMonitor.js');
-      const { stopStakingCron } = await import('./services/stakingRewardService.js');
-      stopMonitor();
-      stopFuturesMonitor();
-      stopStakingCron();
+      if (shouldRunBackgroundJobs()) {
+        await stopBackgroundJobs();
+      }
       await mongoose.disconnect().catch(() => {});
     },
   });

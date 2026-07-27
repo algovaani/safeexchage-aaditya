@@ -11,8 +11,9 @@ import { UserDepositAddress } from '../models/UserDepositAddress.js';
 import { enrichDepositRow } from '../services/depositEnrichmentService.js';
 import { formatWithdrawal } from '../services/withdrawalService.js';
 import { getPlatformSettings } from '../services/platformSettingsService.js';
-import { formatWalletSnapshot } from '../services/walletAdjustmentService.js';
+import { formatWalletSnapshot, enrichWalletSnapshotWithPrices } from '../services/walletAdjustmentService.js';
 import { listUserAssets } from '../services/assetBalanceService.js';
+import { fetchPriceMap } from '../services/marketDataProvider.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import {
@@ -81,6 +82,7 @@ export async function getUserDetail(req, res, next) {
     const [
       wallet,
       assets,
+      priceData,
       depositAddresses,
       kyc,
       depositCount,
@@ -91,6 +93,7 @@ export async function getUserDetail(req, res, next) {
     ] = await Promise.all([
       Wallet.findOne({ userId }).lean(),
       listUserAssets(userId),
+      fetchPriceMap().catch(() => ({ prices: {} })),
       UserDepositAddress.find({ userId }).lean(),
       KycSubmission.findOne({ userId }).sort({ createdAt: -1 }).lean(),
       Deposit.countDocuments({ userId }),
@@ -129,7 +132,10 @@ export async function getUserDetail(req, res, next) {
         invitedCount,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
-        wallet: formatWalletSnapshot(wallet, assets),
+        wallet: enrichWalletSnapshotWithPrices(
+          formatWalletSnapshot(wallet, assets),
+          priceData?.prices || {}
+        ),
         depositAddresses: depositAddresses.map((a) => ({
           chain: a.chain,
           address: a.address,

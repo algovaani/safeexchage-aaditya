@@ -9,6 +9,7 @@ import {
   rejectWithdrawal,
 } from '../services/withdrawalService.js';
 import { emitWalletUpdate } from '../services/socketService.js';
+import { resolveNotificationsForRef } from '../services/adminNotificationService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import { withdrawableGteExpr } from '../services/walletAdjustmentService.js';
@@ -245,6 +246,7 @@ export async function verifyWithdrawal(req, res, next) {
 
     if (action === 'approve') {
       const { withdrawal: updated } = await approveWithdrawal(withdrawal, req.userId);
+      void resolveNotificationsForRef(req.app.get('io'), 'withdrawal', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -254,6 +256,7 @@ export async function verifyWithdrawal(req, res, next) {
     }
 
     const updated = await rejectWithdrawal(withdrawal, req.userId, note);
+    void resolveNotificationsForRef(req.app.get('io'), 'withdrawal', updated._id);
     await updated.populate('userId', 'email mobile name');
 
     return success(

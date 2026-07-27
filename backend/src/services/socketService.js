@@ -3,6 +3,8 @@ import { Wallet } from '../models/Wallet.js';
 import { listUserAssets } from './assetBalanceService.js';
 import { formatWalletSnapshot } from './walletAdjustmentService.js';
 
+export const ADMINS_ROOM = 'admins';
+
 function userRoom(userId) {
   return `user:${String(userId)}`;
 }
@@ -14,7 +16,13 @@ function joinUserRoom(socket, token) {
     const userId = String(payload.sub || payload.id || payload._id || '');
     if (!userId) return false;
     socket.userId = userId;
+    socket.role = payload.role || 'user';
     socket.join(userRoom(userId));
+    // Admins also join a shared room for deposit/withdrawal alerts.
+    if (payload.role === 'admin') {
+      socket.join(ADMINS_ROOM);
+      socket.isAdmin = true;
+    }
     return true;
   } catch {
     return false;
@@ -68,4 +76,20 @@ export function emitFuturesUpdate(io, userId, payload = {}) {
     ...payload,
     at: Date.now(),
   });
+}
+
+/**
+ * Push admin-only alerts (new deposit / withdrawal requests, count updates).
+ * Best-effort — never throws.
+ */
+export function emitAdminNotification(io, payload = {}) {
+  if (!io) return;
+  try {
+    io.to(ADMINS_ROOM).emit('admin:notification', {
+      ...payload,
+      at: payload.at || Date.now(),
+    });
+  } catch {
+    /* realtime is best-effort */
+  }
 }

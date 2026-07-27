@@ -192,6 +192,15 @@ export function recordPriceTick(symbol, price) {
   while (arr.length > 3600) arr.shift();
 }
 
+/** Drop in-memory ticks so a pulse wick cannot poison live candle buckets. */
+export function clearRecentTicks(symbol) {
+  if (symbol == null || symbol === '') {
+    recentTicks.clear();
+    return;
+  }
+  recentTicks.delete(normalizeSymbol(symbol));
+}
+
 export function bucketRecentPricesToSecondCandles(symbol, maxBars = 600) {
   return bucketTicksToIntervalCandles(symbol, 1000, maxBars);
 }

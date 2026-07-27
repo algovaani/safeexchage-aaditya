@@ -14,6 +14,7 @@ import {
 } from '../services/platformSettingsService.js';
 import { getAllUserDepositAddresses, getOrCreateUserDepositAddress, normalizeChainFromNetwork } from '../services/userDepositAddressService.js';
 import { createPendingDepositTransaction } from '../services/transactionService.js';
+import { notifyDepositRequest } from '../services/adminNotificationService.js';
 import { error, success } from '../utils/response.js';
 
 export async function platformInfo(_req, res, next) {
@@ -168,6 +169,8 @@ export async function submitCrypto(req, res, next) {
 
     await createPendingDepositTransaction(deposit);
 
+    void notifyDepositRequest(req.app.get('io'), deposit);
+
     return success(res, formatDeposit(req, deposit), 'Crypto deposit submitted — waiting for admin approval', 201);
   } catch (e) {
     if (e?.code === 11000) {
@@ -220,6 +223,8 @@ export async function submitFiat(req, res, next) {
     });
 
     await createPendingDepositTransaction(deposit);
+
+    void notifyDepositRequest(req.app.get('io'), deposit);
 
     return success(res, formatDeposit(req, deposit), 'Fiat deposit submitted for verification', 201);
   } catch (e) {

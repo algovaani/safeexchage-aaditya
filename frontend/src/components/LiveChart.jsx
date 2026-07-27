@@ -214,29 +214,39 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
     try {
       const prevCount = barCountRef.current;
       const prevTime = lastBarTimeRef.current;
+      const pulseActive = Boolean(lastRaw?.pulse) || pulseZoom;
 
-      if (forceFull || prevCount === 0 || Math.abs(bars.length - prevCount) > 2) {
+      // Pulse / forced rebuild: full setData so spike paints instantly
+      if (forceFull || pulseActive || prevCount === 0 || Math.abs(bars.length - prevCount) > 2) {
         series.setData(bars);
         volumeSeries.setData(volumes);
-        if (chartReset) {
-          try {
-            series.priceScale().applyOptions({ autoScale: true });
-            chart?.priceScale('right')?.applyOptions({ autoScale: true });
-            series.priceScale().setAutoScale?.(true);
-          } catch {
-            /* older lightweight-charts */
-          }
-          chart?.timeScale().fitContent();
+        try {
+          // Always autoscale so pulse wick (e.g. 568→600) is visible
+          series.priceScale().applyOptions({ autoScale: true });
+          chart?.priceScale('right')?.applyOptions({ autoScale: true });
+          series.priceScale().setAutoScale?.(true);
+        } catch {
+          /* older lightweight-charts */
+        }
+        if (pulseActive) {
+          const from = Math.max(0, bars.length - 48);
+          chart?.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: bars.length + 8 });
           chart?.timeScale().scrollToRealTime();
-        } else if (pulseZoom) {
-          const from = Math.max(0, bars.length - 80);
-          chart?.timeScale().setVisibleLogicalRange({ from: from - 0.5, to: bars.length + 4 });
+        } else if (chartReset || forceFull) {
+          chart?.timeScale().scrollToRealTime();
         } else if (prevCount === 0) {
           chart?.timeScale().fitContent();
+          chart?.timeScale().scrollToRealTime();
         }
       } else if (last.time === prevTime) {
         series.update(last);
         if (lastVol) volumeSeries.update(lastVol);
+        try {
+          series.priceScale().applyOptions({ autoScale: true });
+        } catch {
+          /* ignore */
+        }
+        chart?.timeScale().scrollToRealTime();
       } else if (last.time > (prevTime || 0)) {
         series.update(last);
         if (lastVol) volumeSeries.update(lastVol);
@@ -254,6 +264,12 @@ export default function LiveChart({ candles, variant = 'exchange', className = '
       try {
         series.setData(bars);
         volumeSeries.setData(volumes);
+        try {
+          series.priceScale().applyOptions({ autoScale: true });
+          chart?.priceScale('right')?.applyOptions({ autoScale: true });
+        } catch {
+          /* ignore */
+        }
         chart?.timeScale().scrollToRealTime();
         barCountRef.current = bars.length;
         lastBarTimeRef.current = last.time;

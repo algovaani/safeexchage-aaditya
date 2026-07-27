@@ -63,12 +63,17 @@ import {
   adminUserReferralsValidators,
 } from '../validators/adminUserValidators.js';
 import reportsRoutes from './admin/reportsRoutes.js';
+import * as adminNotify from '../controllers/adminNotificationController.js';
 
 const r = Router();
 
 r.use(requireAuth, requireAdmin);
 
 r.get('/overview', a.overviewStats);
+r.get('/notifications/summary', adminNotify.notificationSummary);
+r.get('/notifications', adminNotify.listNotifications);
+r.patch('/notifications/read-all', adminNotify.markAllRead);
+r.patch('/notifications/:id/read', adminNotify.markRead);
 r.get('/users', adminUsersListValidators, validateRequest, a.listUsers);
 r.post(
   '/users/:userId/fund-adjustment',

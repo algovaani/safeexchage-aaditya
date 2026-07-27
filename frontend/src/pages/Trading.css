@@ -616,6 +616,45 @@
   background: var(--ex-strip-bg, #14161a);
 }
 
+.ex-wallet-card__title {
+  margin: 0 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ex-accent, #f0b90b);
+}
+
+.ex-wallet-card__kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.65rem;
+  margin: 0;
+}
+
+.ex-wallet-card__kv dt {
+  margin: 0;
+  color: var(--ex-muted, #848e9c);
+  font-size: 0.68rem;
+}
+
+.ex-wallet-card__kv dd {
+  margin: 0;
+  text-align: right;
+  color: var(--ex-text, #eaecef);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-wallet-card__note {
+  color: var(--ex-muted, #848e9c);
+  font-size: 0.62rem;
+}
+
+.ex-wallet-card__loading {
+  margin: 0;
+  color: var(--ex-muted, #848e9c);
+  font-size: 0.68rem;
+}
+
 .ex-markets__balance small {
   color: var(--ex-muted, #848e9c);
   font-size: 0.65rem;

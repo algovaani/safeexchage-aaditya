@@ -8,6 +8,7 @@ import DataTable from '../components/DataTable.jsx';
 import CoinIcon from '../components/CoinIcon.jsx';
 import { fmtINR, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
+import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
 import './Markets.css';
 
 const CATEGORIES = ['All', 'Crypto'];
@@ -204,6 +205,39 @@ export default function Markets() {
       clearInterval(id);
     };
   }, [tradingPairs]);
+
+  // Live pulse spikes on Markets list (same global socket as Trading)
+  useEffect(() => {
+    const socket = acquireMarketSocket();
+    const onPulse = (payload) => {
+      const sym = String(payload?.symbol || '').toUpperCase();
+      const price = Number(payload?.price);
+      if (!sym || !(price > 0)) return;
+      setRows((prev) =>
+        prev.map((r) =>
+          String(r.tradeSymbol || '').toUpperCase() === sym ? { ...r, price } : r
+        )
+      );
+    };
+    const onPulseEnd = (payload) => {
+      const sym = String(payload?.symbol || '').toUpperCase();
+      const price = Number(payload?.price);
+      if (!sym || !(price > 0)) return;
+      setRows((prev) =>
+        prev.map((r) =>
+          String(r.tradeSymbol || '').toUpperCase() === sym ? { ...r, price } : r
+        )
+      );
+    };
+    socket.on('market:price:pulse', onPulse);
+    socket.on('market:price:pulse:end', onPulseEnd);
+    if (!socket.connected) socket.connect();
+    return () => {
+      socket.off('market:price:pulse', onPulse);
+      socket.off('market:price:pulse:end', onPulseEnd);
+      releaseMarketSocket();
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     let list = rows;

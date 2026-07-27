@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, parseApiResponse } from '../api/client.js';
+import { api, parseApiResponse, dashboardAPI } from '../api/client.js';
 import LiveChart from '../components/LiveChart.jsx';
 import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -22,6 +22,91 @@ const CHART_INTERVALS = [
   { id: '4h', label: '4H' },
   { id: '1d', label: '1D' },
 ];
+
+/**
+ * Instant pulse paint: close jumps to pulse price, high/low expand to show the spike.
+ */
+function applyPulseToLastCandle(prev, { price, from }) {
+  const hi = Math.max(from, price);
+  const lo = Math.min(from, price);
+  if (!prev.length) {
+    return [
+      {
+        openTime: Date.now(),
+        open: from,
+        high: hi,
+        low: lo,
+        close: price,
+        volume: 1,
+        pulse: true,
+        _pulseZoom: true,
+        _forceChart: true,
+      },
+    ];
+  }
+  const last = prev[prev.length - 1];
+  const open = Number(last.open) > 0 ? Number(last.open) : from;
+  return [
+    ...prev.slice(0, -1),
+    {
+      ...last,
+      open,
+      high: Math.max(Number(last.high) || 0, hi, open, price),
+      low: Math.min(Number(last.low) > 0 ? Number(last.low) : lo, lo, open, price),
+      close: price,
+      pulse: true,
+      _pulseZoom: true,
+      _forceChart: true,
+    },
+  ];
+}
+
+/**
+ * Pulse ended: close returns to market, but KEEP pulse high/low wick so spike stays visible.
+ * Live market graph continues from this close.
+ */
+function sealPulseKeepWick(candle, marketClose, wick) {
+  const close = Number(marketClose);
+  if (!(close > 0) || !candle) return candle;
+  const open = Number(candle.open) > 0 ? Number(candle.open) : close;
+  const high = Math.max(
+    Number(candle.high) || 0,
+    Number(wick?.high) || 0,
+    open,
+    close
+  );
+  const low = Math.min(
+    Number(candle.low) > 0 ? Number(candle.low) : close,
+    Number(wick?.low) > 0 ? Number(wick.low) : close,
+    open,
+    close
+  );
+  return {
+    ...candle,
+    open,
+    high,
+    low,
+    close,
+    pulse: false,
+    _pulseZoom: false,
+    _forceChart: true,
+  };
+}
+
+/** Live tick after pulse: move close with market, never shrink pulse wick. */
+function applyLiveCloseKeepWick(candle, livePrice) {
+  const close = Number(livePrice);
+  if (!(close > 0) || !candle) return candle;
+  const open = Number(candle.open) > 0 ? Number(candle.open) : close;
+  return {
+    ...candle,
+    open,
+    high: Math.max(Number(candle.high) || 0, open, close),
+    low: Math.min(Number(candle.low) > 0 ? Number(candle.low) : close, open, close),
+    close,
+    pulse: false,
+  };
+}
 
 function fmtNum(value, digits = 2) {
   const n = Number(value);
@@ -89,6 +174,8 @@ export default function Trading() {
   const [search, setSearch] = useState('');
   const [chartInterval, setChartInterval] = useState('4h');
   const [candles, setCandles] = useState([]);
+  /** Bump to remount LiveChart after pulse so lightweight-charts is not stuck on old scale */
+  const [chartEpoch, setChartEpoch] = useState(0);
   const [tableSearch, setTableSearch] = useState('');
   const [tablePageSize, setTablePageSize] = useState(10);
   const [orderStatusTab, setOrderStatusTab] = useState('pending');
@@ -99,6 +186,7 @@ export default function Trading() {
   const [priceDir, setPriceDir] = useState('up');
   const prevPriceRef = useRef(null);
   const [balances, setBalances] = useState(null);
+  const [investedBalance, setInvestedBalance] = useState(0);
   const [depth, setDepth] = useState({ bids: [], asks: [], mid: null });
   const [tape, setTape] = useState([]);
 
@@ -122,6 +210,15 @@ export default function Trading() {
     balances?.available_balance ??
       Math.max(0, Number(balances?.balance_usdt ?? balances?.balance ?? 0) - Number(balances?.locked_balance ?? 0))
   );
+
+  const walletTotal = Number(balances?.balance_usdt ?? balances?.balance ?? 0);
+  const walletWithdrawable = Number(
+    balances?.withdrawable_balance ??
+      Math.max(0, walletTotal - Number(balances?.locked_balance ?? 0) - Number(balances?.bonus_balance ?? 0))
+  );
+  const walletBonus = Number(balances?.bonus_balance ?? 0);
+  const walletLocked = Number(balances?.locked_balance ?? 0);
+  const tradeAmount = Number(investedBalance) || 0;
 
   const base = pairBase(symbol, tradingPairs);
   const quoteAsset = pairQuote(symbol, tradingPairs);
@@ -301,27 +398,51 @@ export default function Trading() {
     return () => clearInterval(id);
   }, []);
 
+  const socketRef = useRef(null);
+  /** Brief lock so live ticks keep the pulse wick while mid is pulsed */
+  const pulseLockRef = useRef(null);
+  /** Remember pulse high/low so wick stays after pulse ends */
+  const pulseWickRef = useRef(null);
+  /** When admin turned Auto off — block live socket ticks from overwriting manual price */
+  const priceManualRef = useRef(false);
+  const manualLastPriceRef = useRef(null);
+
   useEffect(() => {
+    // Instant clear so previous coin never flashes on switch
+    setCandles([]);
+    setDepth({ bids: [], asks: [], mid: null });
+    setTape([]);
+    setTicker(null);
+    pulseLockRef.current = null;
+    pulseWickRef.current = null;
+    setChartEpoch((n) => n + 1);
     setChartInterval('4h');
   }, [symbol]);
 
   useEffect(() => {
     let active = true;
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const requestSymbol = String(symbol).toUpperCase();
+    pulseWickRef.current = null;
+    pulseLockRef.current = null;
     (async () => {
       try {
         const { data } = await api.get('/market/klines', {
-          params: { symbol, interval: chartInterval, limit: 200 },
+          params: { symbol: requestSymbol, interval: chartInterval, limit: 200 },
+          signal: ctrl?.signal,
         });
         if (!active) return;
         const klines = parseApiResponse(data);
         const rows = klines?.candles || [];
         if (rows.length) setCandles(rows);
-      } catch {
-        /* keep previous candles on refresh failures */
+      } catch (err) {
+        if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
+        /* keep empty until live socket paints */
       }
     })();
     return () => {
       active = false;
+      ctrl?.abort();
     };
   }, [symbol, chartInterval]);
 
@@ -333,12 +454,14 @@ export default function Trading() {
     return wallet;
   }, []);
 
-  const socketRef = useRef(null);
-  /** Brief lock so live ticks keep the pulse wick while mid is pulsed */
-  const pulseLockRef = useRef(null);
-  /** When admin turned Auto off — block live socket ticks from overwriting manual price */
-  const priceManualRef = useRef(false);
-  const manualLastPriceRef = useRef(null);
+  const refreshInvestedBalance = useCallback(async () => {
+    try {
+      const summary = await dashboardAPI.getSummary();
+      setInvestedBalance(Number(summary?.stats?.total_staked ?? 0));
+    } catch {
+      setInvestedBalance(0);
+    }
+  }, []);
 
   useEffect(() => {
     const socket = acquireMarketSocket();
@@ -387,45 +510,62 @@ export default function Trading() {
 
     const onMerged = (payload) => {
       if (!payload?.candle || payload.symbol !== sym || payload.interval !== chartInterval) return;
-      const lock = pulseLockRef.current;
+      let lock = pulseLockRef.current;
       let c = { ...payload.candle, pulse: Boolean(payload.candle.pulse) };
 
+      // Pulse candle may arrive before market:price:pulse — arm lock from candle itself
+      if (c.pulse && Number(c.close) > 0 && !(lock?.active && Date.now() <= lock.until)) {
+        const from = Number(c.open) > 0 ? Number(c.open) : Number(c.close);
+        const price = Number(c.close);
+        lock = {
+          price,
+          from,
+          high: Math.max(from, price, Number(c.high) || price),
+          low: Math.min(from, price, Number(c.low) > 0 ? Number(c.low) : price),
+          until: Date.now() + 4500,
+          active: true,
+        };
+        pulseLockRef.current = lock;
+        pulseWickRef.current = { high: lock.high, low: lock.low };
+      }
+
       if (lock?.active && Date.now() <= lock.until) {
-        c = withPulseWick(c, lock);
-      } else if (lock?.active && Date.now() > lock.until) {
+        c = withPulseWick(c, lock, { zoomOnce: true });
+      } else if (lock) {
         pulseLockRef.current = null;
       }
 
       setCandles((prev) => {
-        if (!prev.length) return [c];
-        const last = prev[prev.length - 1];
-        if (c.openTime === last.openTime) {
-          // Server candle is source of truth after pulse — never glue old extreme wick forever
-          if (lock?.active && Date.now() <= lock.until) {
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                ...c,
-                open: Number(last.open) > 0 ? Number(last.open) : Number(c.open),
-                high: Math.max(Number(last.high) || 0, Number(c.high) || 0, lock.high),
-                low: Math.min(
-                  Number(last.low) > 0 ? Number(last.low) : lock.low,
-                  Number(c.low) > 0 ? Number(c.low) : lock.low,
-                  lock.low
-                ),
-                close: lock.price,
-                pulse: true,
-              },
-            ];
-          }
-          return [...prev.slice(0, -1), { ...c, pulse: false }];
+        if (!prev.length) {
+          return [{ ...c, _forceChart: true, _pulseZoom: Boolean(c.pulse) }];
         }
-        if (c.openTime > last.openTime) return [...prev.slice(-499), c];
-        const idx = prev.findIndex((x) => x.openTime === c.openTime);
+
+        // 1) Active pulse → instant spike on last candle
+        if (lock?.active && Date.now() <= lock.until) {
+          return applyPulseToLastCandle(prev, { price: lock.price, from: lock.from });
+        }
+
+        const last = prev[prev.length - 1];
+        const sameBucket = Number(c.openTime) === Number(last.openTime);
+        const liveClose = Number(c.close);
+
+        if (sameBucket && liveClose > 0) {
+          // 2) After pulse: market close continues, pulse wick stays
+          const sealed = sealPulseKeepWick(last, liveClose, pulseWickRef.current);
+          return [...prev.slice(0, -1), sealed];
+        }
+        if (Number(c.openTime) > Number(last.openTime)) {
+          // New bucket — clear wick memory for next bar
+          pulseWickRef.current = null;
+          return [...prev.slice(-499), applyLiveCloseKeepWick(c, liveClose)];
+        }
+        const idx = prev.findIndex((x) => Number(x.openTime) === Number(c.openTime));
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = c;
+          next[idx] =
+            idx === prev.length - 1
+              ? sealPulseKeepWick(prev[idx], liveClose, pulseWickRef.current)
+              : { ...c, pulse: false };
           return next;
         }
         return prev;
@@ -458,14 +598,12 @@ export default function Trading() {
 
     const onPulse = (payload) => {
       if (!payload || payload.symbol !== sym) return;
-      // Auto off: keep admin manual last price / stats — ignore market pulses
-      if (priceManualRef.current) return;
       const price = Number(payload.price);
       if (!(price > 0)) return;
       const from = Number(payload.fromPrice) || price;
       const hi = Math.max(from, price);
       const lo = Math.min(from, price);
-      const until = Number(payload.until) || Date.now() + 1500;
+      const until = Number(payload.until) || Date.now() + 4500;
 
       pulseLockRef.current = {
         price,
@@ -475,106 +613,65 @@ export default function Trading() {
         until,
         active: true,
       };
+      // Keep wick forever on this candle after pulse ends
+      pulseWickRef.current = {
+        high: hi,
+        low: lo,
+        pulsedPrice: price,
+        fromPrice: from,
+      };
 
+      // Instant UI: last price + chart line jump to pulse NOW
       setTicker((prev) => ({ ...prev, lastPrice: price, symbol: sym }));
       setWatchPrices((prev) => ({
         ...prev,
         [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: price },
       }));
-
-      setCandles((prev) => {
-        if (!prev.length) {
-          return [
-            {
-              openTime: Date.now(),
-              open: from,
-              high: hi,
-              low: lo,
-              close: price,
-              volume: 1,
-              pulse: true,
-              _pulseZoom: true,
-            },
-          ];
-        }
-        const last = prev[prev.length - 1];
-        const open = Number(last.open) || from;
-        return [
-          ...prev.slice(0, -1),
-          {
-            ...last,
-            open,
-            high: Math.max(Number(last.high) || 0, hi, open, price),
-            low: Math.min(
-              Number(last.low) > 0 ? Number(last.low) : lo,
-              lo,
-              open,
-              price
-            ),
-            close: price,
-            pulse: true,
-            _pulseZoom: true,
-          },
-        ];
-      });
+      setCandles((prev) => applyPulseToLastCandle(prev, { price, from }));
     };
 
     const onPulseEnd = (payload) => {
       if (!payload || payload.symbol !== sym) return;
       const marketPrice = Number(payload.price);
+      const pulsedPrice = Number(payload.pulsedPrice);
+      const wickFromPayload = {
+        high: Number(payload.high) || Math.max(marketPrice || 0, pulsedPrice || 0),
+        low: Number(payload.low) || Math.min(marketPrice || Infinity, pulsedPrice || Infinity),
+      };
+      const wick = pulseWickRef.current || wickFromPayload;
+      if (pulsedPrice > 0) {
+        pulseWickRef.current = {
+          high: Math.max(wick.high || 0, pulsedPrice, marketPrice || 0),
+          low: Math.min(
+            wick.low > 0 ? wick.low : pulsedPrice,
+            pulsedPrice,
+            marketPrice > 0 ? marketPrice : pulsedPrice
+          ),
+          pulsedPrice,
+        };
+      }
       pulseLockRef.current = null;
 
-      if (marketPrice > 0) {
-        const restorePrice =
-          priceManualRef.current && manualLastPriceRef.current != null
-            ? manualLastPriceRef.current
-            : marketPrice;
+      const restorePrice =
+        priceManualRef.current && manualLastPriceRef.current != null
+          ? Number(manualLastPriceRef.current)
+          : marketPrice;
+
+      if (restorePrice > 0) {
         setTicker((prev) => ({ ...prev, lastPrice: restorePrice, symbol: sym }));
         setWatchPrices((prev) => ({
           ...prev,
           [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: restorePrice },
         }));
-      }
-      setDepth((prev) => ({ ...prev, pulse: false }));
-
-      // Reload clean market candles from DB and reset Y-scale (drop extreme pulse wick)
-      (async () => {
-        try {
-          const { data } = await api.get('/market/klines', {
-            params: { symbol: sym, interval: chartInterval, limit: 200 },
-          });
-          const klines = parseApiResponse(data);
-          const rows = Array.isArray(klines?.candles) ? klines.candles : [];
-          if (rows.length) {
-            setCandles(
-              rows.map((c, i) =>
-                i === rows.length - 1
-                  ? { ...c, pulse: false, _chartReset: true, _forceChart: true }
-                  : { ...c, pulse: false }
-              )
-            );
-            return;
-          }
-        } catch {
-          /* fall through */
-        }
         setCandles((prev) => {
-          if (!prev.length || !(marketPrice > 0)) return prev;
-          const last = prev[prev.length - 1];
+          if (!prev.length) return prev;
           return [
             ...prev.slice(0, -1),
-            {
-              ...last,
-              high: Math.max(Number(last.open) || marketPrice, marketPrice),
-              low: Math.min(Number(last.open) || marketPrice, marketPrice),
-              close: marketPrice,
-              pulse: false,
-              _chartReset: true,
-              _forceChart: true,
-            },
+            sealPulseKeepWick(prev[prev.length - 1], restorePrice, pulseWickRef.current),
           ];
         });
-      })();
+      }
+      setDepth((prev) => ({ ...prev, pulse: false }));
     };
 
     const onTrade = (payload) => {
@@ -591,6 +688,17 @@ export default function Trading() {
           lastPrice: price,
         },
       }));
+
+      // After pulse: live market continues designing the graph; wick stays
+      if (!(lock?.active && Date.now() <= lock.until) && Number(price) > 0 && !payload.pulse) {
+        setCandles((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          const withWick = sealPulseKeepWick(last, price, pulseWickRef.current);
+          return [...prev.slice(0, -1), withWick];
+        });
+      }
+
       if (!payload.tickerOnly) {
         setTape((prev) => {
           const next = [{ ...payload, symbol: sym, _id: `${payload.time}-${Math.random()}` }, ...prev];
@@ -749,15 +857,17 @@ export default function Trading() {
   useEffect(() => {
     if (!user) {
       setBalances(null);
+      setInvestedBalance(0);
       return undefined;
     }
     refreshBalance().catch(() => {});
+    refreshInvestedBalance().catch(() => {});
     const onWallet = (e) => {
       if (e.detail) setBalances(e.detail);
     };
     window.addEventListener('wallet:updated', onWallet);
     return () => window.removeEventListener('wallet:updated', onWallet);
-  }, [refreshBalance, user]);
+  }, [refreshBalance, refreshInvestedBalance, user]);
 
   function requireLogin() {
     navigate('/login', { state: loginReturn });
@@ -1218,22 +1328,35 @@ export default function Trading() {
               );
             })}
           </div>
-          <div className="ex-markets__balance">
-            <small>SPOT balance</small>
-            <div>
-              {user ? (
-                <>
-                  <strong>{balances != null ? usdtBalance.toFixed(2) : '—'}</strong> USDT available
-                  {balances != null && (
-                    <span className="ex-balance-line__inr"> ({fmtINR(toInr(usdtBalance))})</span>
-                  )}
-                </>
+          <div className="ex-markets__balance ex-wallet-card">
+            <h4 className="ex-wallet-card__title">Wallet</h4>
+            {user ? (
+              balances != null ? (
+                <dl className="ex-wallet-card__kv">
+                  <dt>Total USDT</dt>
+                  <dd>{walletTotal.toFixed(2)}</dd>
+                  <dt>Available</dt>
+                  <dd>{usdtBalance.toFixed(2)}</dd>
+                  <dt>Trade amount</dt>
+                  <dd>{tradeAmount.toFixed(2)}</dd>
+                  <dt>Withdrawable</dt>
+                  <dd>{walletWithdrawable.toFixed(2)}</dd>
+                  <dt>Referral bonus</dt>
+                  <dd>
+                    {walletBonus.toFixed(2)}
+                    <span className="ex-wallet-card__note"> (trading only)</span>
+                  </dd>
+                  <dt>Locked</dt>
+                  <dd>{walletLocked.toFixed(2)}</dd>
+                </dl>
               ) : (
-                <Link to="/login" state={loginReturn} className="ex-markets__login-link">
-                  Log in to view balance
-                </Link>
-              )}
-            </div>
+                <p className="ex-wallet-card__loading">Loading wallet…</p>
+              )
+            ) : (
+              <Link to="/login" state={loginReturn} className="ex-markets__login-link">
+                Log in to view balance
+              </Link>
+            )}
           </div>
           <div className="ex-panel">
             <div className="ex-panel__head">Recent Trades</div>
@@ -1287,7 +1410,12 @@ export default function Trading() {
                 <span>Templates</span>
               </div>
             </div>
-            <LiveChart variant="exchange" className="ex-chart-wrap" candles={candles} />
+            <LiveChart
+              key={`${String(symbol).toUpperCase()}-${chartInterval}-${chartEpoch}`}
+              variant="exchange"
+              className="ex-chart-wrap"
+              candles={candles}
+            />
           </div>
 
           <div className={`ex-orders ex-zone ex-zone--trade${mobileView === 'trade' ? ' is-active' : ''}`}>

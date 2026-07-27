@@ -34,22 +34,27 @@ export async function persistCandleExpand(symbol, interval, candle, source = 'bi
     openTime: candle.openTime,
   }).lean();
 
-  // While pulse flash is active, keep pulse close — live polls only touch volume
+  // After pulse flash: live market data must reclaim the bar (never freeze OHLC on pulse forever)
   if (existing?.source === 'pulse' && source !== 'pulse') {
     return MarketData.findOneAndUpdate(
       { symbol: sym, interval, openTime: candle.openTime },
       {
         $set: {
+          open: openIn,
+          high: Math.max(openIn, highIn, closeIn),
+          low: Math.min(openIn, lowIn, closeIn),
+          close: closeIn,
           volume: Math.max(Number(existing.volume) || 0, Number(candle.volume) || 0),
-          isFinal: false,
-          source: 'pulse',
+          isFinal: candle.isFinal !== false,
+          source,
         },
       },
       { new: true }
     ).lean();
   }
 
-  const band = Math.max(closeIn * 0.08, closeIn * 0.01);
+  // Only treat absurd outliers as polluted (keep admin pulse wicks like 530 vs 570)
+  const band = Math.max(closeIn * 0.55, closeIn * 0.01);
   const existingHigh = Number(existing?.high);
   const existingLow = Number(existing?.low);
   const existingOpen = Number(existing?.open);
@@ -89,10 +94,44 @@ export async function persistCandleExpand(symbol, interval, candle, source = 'bi
 }
 
 /**
- * Bulk persist real market OHLC (overwrite).
+ * Bulk persist real market OHLC.
+ * Expands high/low so admin pulse wicks are never wiped by Binance refresh.
  */
 export async function persistMarketKlines(symbol, interval, candles, source = 'binance') {
-  return persistMarketKlinesForce(symbol, interval, candles, source);
+  const sym = String(symbol || '').toUpperCase();
+  const ops = [];
+  for (const c of candles || []) {
+    const open = Number(c.open);
+    const high = Number(c.high);
+    const low = Number(c.low);
+    const close = Number(c.close);
+    if (!c?.openTime || ![open, high, low, close].every(Number.isFinite)) continue;
+    const hi = Math.max(open, high, close);
+    const lo = Math.min(open, low, close);
+    const vol = Number(c.volume) || 0;
+    ops.push({
+      updateOne: {
+        filter: { symbol: sym, interval, openTime: c.openTime },
+        update: {
+          $set: {
+            close,
+            isFinal: c.isFinal !== false,
+            source,
+          },
+          $max: { high: hi, volume: vol },
+          $min: { low: lo },
+          $setOnInsert: {
+            symbol: sym,
+            interval,
+            openTime: c.openTime,
+            open,
+          },
+        },
+        upsert: true,
+      },
+    });
+  }
+  if (ops.length) await MarketData.bulkWrite(ops, { ordered: false });
 }
 
 /** Force overwrite OHLC — used after pulse clear / chart repair. */

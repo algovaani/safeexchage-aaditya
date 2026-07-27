@@ -313,8 +313,12 @@ export default function AdminUserDetail() {
         <section className="admin-card">
           <h2>Wallet</h2>
           <dl className="admin-kv">
+            <dt>Spot balance</dt>
+            <dd>{Number(wallet.total_balance_usdt ?? wallet.balance ?? wallet.balance_usdt ?? 0).toFixed(2)} USDT</dd>
             <dt>Total USDT</dt>
             <dd>{Number(wallet.balance ?? wallet.balance_usdt ?? 0).toFixed(2)}</dd>
+            <dt>Crypto (est.)</dt>
+            <dd>{Number(wallet.assets_usdt ?? 0).toFixed(2)} USDT</dd>
             <dt>Available</dt>
             <dd>{Number(wallet.available_balance ?? 0).toFixed(2)}</dd>
             <dt>Withdrawable</dt>
@@ -324,6 +328,27 @@ export default function AdminUserDetail() {
             <dt>Locked</dt>
             <dd>{Number(wallet.locked_balance ?? 0).toFixed(2)}</dd>
           </dl>
+          {Array.isArray(wallet.assets) && wallet.assets.length > 0 && (
+            <>
+              <h3 className="admin-user-detail__h3">Spot holdings</h3>
+              <ul className="admin-user-detail__addresses admin-user-detail__assets">
+                {wallet.assets.map((row) => {
+                  const held = Number(row.balance ?? 0);
+                  const locked = Number(row.locked_balance ?? 0);
+                  const available = Math.max(0, held - locked);
+                  return (
+                    <li key={row.asset}>
+                      <strong>{row.asset}</strong>
+                      <span>
+                        {available.toFixed(8).replace(/\.?0+$/, '')} available
+                        {locked > 0 ? ` · ${locked.toFixed(8).replace(/\.?0+$/, '')} locked` : ''}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
           {user.depositAddresses?.length > 0 && (
             <>
               <h3 className="admin-user-detail__h3">Deposit addresses</h3>

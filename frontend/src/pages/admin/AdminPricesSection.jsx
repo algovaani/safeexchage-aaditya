@@ -207,14 +207,14 @@ export default function AdminPricesSection() {
       const { data } = await api.post('/admin/prices/pulse', {
         symbol: row.symbol,
         price,
-        holdMs: 2000,
+        holdMs: 4500,
       });
       const payload = parseApiResponse(data);
       const filled = payload?.filledOrders ?? 0;
       toast.success(
         filled
-          ? `${row.displayPair} → ${fmtPrice(price)} on chart · ${filled} order(s) filled`
-          : `${row.displayPair} pulse set on chart at ${fmtPrice(price)}`
+          ? `${row.displayPair} → ${fmtPrice(price)} · ${filled} order(s) filled · returns to Binance`
+          : `${row.displayPair} pulsed at ${fmtPrice(price)} · live spike · returns to Binance`
       );
       await Promise.all([loadPrices(), loadManual()]);
     } catch (ex) {

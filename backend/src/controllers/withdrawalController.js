@@ -6,6 +6,7 @@ import {
   reserveWithdrawalFunds,
 } from '../services/withdrawalService.js';
 import { createPendingWithdrawalTransaction } from '../services/transactionService.js';
+import { notifyWithdrawalRequest, resolveNotificationsForRef } from '../services/adminNotificationService.js';
 import { roundMoney } from '../utils/money.js';
 import { error, success } from '../utils/response.js';
 
@@ -31,6 +32,8 @@ async function createWithdrawalRequest(req, res, next, payload) {
       await releaseWithdrawalFunds(req.userId, parsedAmount).catch(() => {});
       throw createError;
     }
+
+    void notifyWithdrawalRequest(req.app.get('io'), withdrawal);
 
     const message =
       payload.type === 'fiat'
@@ -106,6 +109,7 @@ export async function cancel(req, res, next) {
     }
 
     const updated = await cancelWithdrawal(withdrawal);
+    void resolveNotificationsForRef(req.app.get('io'), 'withdrawal', withdrawal._id);
     return success(res, formatWithdrawal(req, updated), 'Withdrawal cancelled');
   } catch (e) {
     if (e.status) return error(res, e.message, e.status);

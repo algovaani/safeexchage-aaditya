@@ -78,6 +78,24 @@ export function formatWalletSnapshot(wallet, assets = []) {
   };
 }
 
+/** Add assets_usdt + total_balance_usdt from live prices (spot portfolio value). */
+export function enrichWalletSnapshotWithPrices(snapshot, prices = {}) {
+  if (!snapshot) return snapshot;
+  let assetsUsdt = 0;
+  const assets = Array.isArray(snapshot.assets) ? snapshot.assets : [];
+  for (const row of assets) {
+    const asset = String(row.asset || '').toUpperCase();
+    if (!asset || asset === 'USDT') continue;
+    const qty = Number(row.balance) || 0;
+    if (!(qty > 0)) continue;
+    const px = Number(prices[`${asset}USDT`] ?? prices[`${asset}INR`] ?? 0);
+    if (px > 0) assetsUsdt += qty * px;
+  }
+  snapshot.assets_usdt = roundMoney(assetsUsdt);
+  snapshot.total_balance_usdt = roundMoney((Number(snapshot.balance_usdt) || 0) + assetsUsdt);
+  return snapshot;
+}
+
 export async function adjustUserWalletBalance({
   userId,
   adminId,

@@ -7,6 +7,7 @@ import {
   fetchAggTrades,
   intervalToMs,
   recordPriceTick,
+  clearRecentTicks,
   bucketTicksToIntervalCandles,
   syntheticOrderBook,
 } from './marketDataProvider.js';
@@ -101,6 +102,28 @@ function emitCandle(io, symbol, interval, candle) {
   io.to(roomName(sym, interval)).emit('market:klines:merged', payload);
 }
 
+/** Drop cached pulse OHLC so reconnect/subscribe does not re-paint the spike. */
+export function clearLastCandleCache(symbol, interval) {
+  const sym = String(symbol || '').toUpperCase();
+  if (interval) {
+    lastCandleByKey.delete(`${sym}|${interval}`);
+    return;
+  }
+  for (const key of [...lastCandleByKey.keys()]) {
+    if (key.startsWith(`${sym}|`)) lastCandleByKey.delete(key);
+  }
+}
+
+/** Reset in-memory tick buckets after a pulse so live candles resume cleanly. */
+export function resetPulseStreamState(symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  clearRecentTicks(sym);
+  aggState.delete(sym);
+  clearLastCandleCache(sym);
+}
+
+export { emitCandle };
+
 const emitMergedThrottled = throttleByKey(
   async (io, _room, symbol, interval, candle) => {
     await persistCandleExpand(symbol, interval, candle, 'binance');
@@ -129,13 +152,40 @@ function startBinanceTickStream({ symbol, io }) {
     if (stopped) return;
     try {
       const ticker = await safeFetchTicker(sym);
-      const livePrice = ticker.price;
+      const livePrice = Number(ticker.price);
       const pulsed = getActivePulsePrice(sym);
       const price = pulsed != null ? pulsed : livePrice;
       if (!(price > 0)) return;
-      recordPriceTick(sym, price);
+
+      // Never record pulse spike into tick buckets / DB — only live mid
+      if (livePrice > 0) recordPriceTick(sym, livePrice);
 
       const bucket = Math.floor(Date.now() / 1000) * 1000;
+
+      // During pulse: socket-only flash (no MarketData persist) so chart can resume cleanly
+      if (pulsed != null) {
+        const base = livePrice > 0 ? livePrice : pulsed;
+        emitCandle(io, sym, '1s', {
+          openTime: bucket,
+          open: base,
+          high: Math.max(base, pulsed),
+          low: Math.min(base, pulsed),
+          close: pulsed,
+          volume: 0,
+          isFinal: false,
+          pulse: true,
+        });
+        io.to(depthRoom(sym)).emit('market:trade', {
+          symbol: sym,
+          price: pulsed,
+          qty: 0,
+          time: Date.now(),
+          tickerOnly: true,
+          pulse: true,
+        });
+        return;
+      }
+
       let st = aggState.get(key);
       if (!st || st.openTime !== bucket) {
         st = {
@@ -262,10 +312,29 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
     if (stopped || !intervalMs) return;
     try {
       const ticker = await safeFetchTicker(sym);
+      const livePrice = Number(ticker.price);
       const pulsed = getActivePulsePrice(sym);
-      const price = pulsed != null ? pulsed : ticker.price;
-      if (!(price > 0)) return;
-      recordPriceTick(sym, price);
+      if (!(livePrice > 0) && pulsed == null) return;
+
+      // Keep tick history on live mid only
+      if (livePrice > 0) recordPriceTick(sym, livePrice);
+
+      if (pulsed != null) {
+        const openTime = Math.floor(Date.now() / intervalMs) * intervalMs;
+        const base = livePrice > 0 ? livePrice : pulsed;
+        emitCandle(io, sym, interval, {
+          openTime,
+          open: base,
+          high: Math.max(base, pulsed),
+          low: Math.min(base, pulsed),
+          close: pulsed,
+          volume: 0,
+          isFinal: false,
+          pulse: true,
+        });
+        return;
+      }
+
       const live = bucketTicksToIntervalCandles(sym, intervalMs, 2);
       const latest = live[live.length - 1];
       if (latest) {
@@ -381,35 +450,38 @@ export function broadcastPulseToSockets(io, { symbol, intervalCandles, depth, tr
   if (!io || !symbol) return;
   const sym = String(symbol).toUpperCase();
 
-  if (depth) emitDepth(io, sym, depth);
-
-  if (Array.isArray(intervalCandles)) {
-    for (const row of intervalCandles) {
-      if (!row?.interval || !row?.candle) continue;
-      emitCandle(io, sym, row.interval, row.candle);
-    }
-  }
-
+  // Emit pulse lock FIRST so clients arm before candle merges arrive
   if (trade) {
-    io.to(depthRoom(sym)).emit('market:trade', { symbol: sym, ...trade });
     io.emit('market:price:pulse', {
       symbol: sym,
       price: trade.price,
       fromPrice: trade.fromPrice,
       until: trade.until,
     });
-    // Also push candle on depth room so chart clients always get the spike
-    // even if interval room subscription is delayed
-    if (Array.isArray(intervalCandles)) {
-      for (const row of intervalCandles) {
-        if (!row?.interval || !row?.candle) continue;
-        io.to(depthRoom(sym)).emit('market:klines:merged', {
-          symbol: sym,
-          interval: row.interval,
-          candle: row.candle,
-        });
-      }
+  }
+
+  if (depth) emitDepth(io, sym, depth);
+
+  if (Array.isArray(intervalCandles)) {
+    for (const row of intervalCandles) {
+      if (!row?.interval || !row?.candle) continue;
+      emitCandle(io, sym, row.interval, row.candle);
+      // Also broadcast globally so Trade tab gets spike even if room subscribe raced
+      io.emit('market:klines:merged', {
+        symbol: sym,
+        interval: row.interval,
+        candle: row.candle,
+      });
+      io.to(depthRoom(sym)).emit('market:klines:merged', {
+        symbol: sym,
+        interval: row.interval,
+        candle: row.candle,
+      });
     }
+  }
+
+  if (trade) {
+    io.to(depthRoom(sym)).emit('market:trade', { symbol: sym, ...trade });
   }
 }
 

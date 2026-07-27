@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import {
+  AdminNotificationsProvider,
+  useAdminNotifications,
+} from '../context/AdminNotificationsContext.jsx';
 import { useAdminTheme } from '../hooks/useAdminTheme.js';
 import { useTheme } from '../context/ThemeContext.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
 import BrandLogo from './BrandLogo.jsx';
+import AdminNotificationBell from './AdminNotificationBell.jsx';
 import '../pages/Admin.css';
 
 const SECTIONS = [
@@ -12,12 +17,9 @@ const SECTIONS = [
   { id: 'users', label: 'Users', icon: '👤' },
   { id: 'kyc', label: 'KYC', icon: '✓' },
   { id: 'wallets', label: 'Wallets', icon: '💼' },
-  { id: 'deposits', label: 'Deposits', icon: '💳' },
+  { id: 'deposits', label: 'Deposits', icon: '💳', badgeKey: 'pendingDeposits' },
   { id: 'cashInPerson', label: 'Cash in Person', icon: '🤝' },
-  // { id: 'treasury', label: 'Treasury', icon: '🏦' },
-  // { id: 'settings', label: 'Settings', icon: '⚙️' },
-  { id: 'withdrawals', label: 'Withdrawals', icon: '🏧' },
-  // { id: 'wallet', label: 'Wallet', icon: '💰' },
+  { id: 'withdrawals', label: 'Withdrawals', icon: '🏧', badgeKey: 'pendingWithdrawals' },
   { id: 'orders', label: 'Orders', icon: '📋' },
   { id: 'staking', label: 'Investments', icon: '📊' },
   { id: 'prices', label: 'Prices', icon: '📈' },
@@ -28,7 +30,7 @@ const SECTIONS = [
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));
 
-export default function AdminLayout() {
+function AdminShell() {
   useAdminTheme();
   const { isDark } = useTheme();
   const { user, logout } = useAuth();
@@ -36,6 +38,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const section = new URLSearchParams(location.search).get('section') || 'overview';
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const notify = useAdminNotifications();
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -47,6 +50,15 @@ export default function AdminLayout() {
       document.body.style.overflow = '';
     };
   }, [drawerOpen]);
+
+  const pendingDeposits = notify?.pendingDeposits || 0;
+  const pendingWithdrawals = notify?.pendingWithdrawals || 0;
+  const badgeFor = (key) => {
+    if (key === 'pendingDeposits') return pendingDeposits;
+    if (key === 'pendingWithdrawals') return pendingWithdrawals;
+    return 0;
+  };
+  const totalPending = pendingDeposits + pendingWithdrawals;
 
   return (
     <div className={`admin-shell admin-shell--${shellTheme}${drawerOpen ? ' admin-shell--drawer-open' : ''}`}>
@@ -61,9 +73,6 @@ export default function AdminLayout() {
         <div className="admin-sidebar__top">
           <div className="admin-brand">
             <BrandLogo size="sm" />
-            {/* <div>
-              <p className="admin-brand__sub">Admin Control</p>
-            </div> */}
           </div>
           <button
             type="button"
@@ -78,19 +87,27 @@ export default function AdminLayout() {
         <p className="admin-sidebar__meta">{user?.email}</p>
 
         <nav className="admin-nav" aria-label="Admin sections">
-          {SECTIONS.map((s) => (
-            <Link
-              key={s.id}
-              to={`/admin/panel?section=${s.id}`}
-              className={`admin-nav__link${section === s.id ? ' is-active' : ''}`}
-              onClick={() => setDrawerOpen(false)}
-            >
-              <span className="admin-nav__icon" aria-hidden>
-                {s.icon}
-              </span>
-              {s.label}
-            </Link>
-          ))}
+          {SECTIONS.map((s) => {
+            const count = badgeFor(s.badgeKey);
+            return (
+              <Link
+                key={s.id}
+                to={`/admin/panel?section=${s.id}`}
+                className={`admin-nav__link${section === s.id ? ' is-active' : ''}${count > 0 ? ' has-badge' : ''}`}
+                onClick={() => setDrawerOpen(false)}
+              >
+                <span className="admin-nav__icon" aria-hidden>
+                  {s.icon}
+                </span>
+                <span className="admin-nav__label">{s.label}</span>
+                {count > 0 && (
+                  <span className="admin-nav__badge" aria-label={`${count} pending`}>
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="admin-sidebar__actions">
@@ -107,28 +124,61 @@ export default function AdminLayout() {
       </aside>
 
       <div className="admin-main">
-        <header className="admin-mobile-bar">
-          <button
-            type="button"
-            className="admin-menu-btn"
-            aria-label="Open menu"
-            aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen(true)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-          <div className="admin-mobile-bar__title">
-            <BrandLogo size="sm" className="admin-mobile-bar__logo" />
-            <span className="admin-mobile-bar__section">{SECTION_LABELS[section] || 'Admin'}</span>
+        <header className="admin-topbar">
+          <div className="admin-mobile-bar">
+            <button
+              type="button"
+              className="admin-menu-btn"
+              aria-label="Open menu"
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen(true)}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            <div className="admin-mobile-bar__title">
+              <BrandLogo size="sm" className="admin-mobile-bar__logo" />
+              <span className="admin-mobile-bar__section">{SECTION_LABELS[section] || 'Admin'}</span>
+            </div>
+          </div>
+
+          <div className="admin-topbar__right">
+            {totalPending > 0 && (
+              <div className="admin-alert-strip" role="status">
+                <span className="admin-alert-strip__pulse" aria-hidden />
+                <span>
+                  {pendingDeposits > 0 && (
+                    <Link to="/admin/panel?section=deposits" className="admin-alert-strip__link">
+                      {pendingDeposits} deposit{pendingDeposits === 1 ? '' : 's'}
+                    </Link>
+                  )}
+                  {pendingDeposits > 0 && pendingWithdrawals > 0 && ' · '}
+                  {pendingWithdrawals > 0 && (
+                    <Link to="/admin/panel?section=withdrawals" className="admin-alert-strip__link">
+                      {pendingWithdrawals} withdrawal{pendingWithdrawals === 1 ? '' : 's'}
+                    </Link>
+                  )}
+                  {' awaiting review'}
+                </span>
+              </div>
+            )}
+            <AdminNotificationBell />
           </div>
         </header>
 
         <main className={`admin-content admin-content--${shellTheme}`}>
-          <Outlet />
+          <Outlet context={{ adminPending: { pendingDeposits, pendingWithdrawals } }} />
         </main>
       </div>
     </div>
+  );
+}
+
+export default function AdminLayout() {
+  return (
+    <AdminNotificationsProvider>
+      <AdminShell />
+    </AdminNotificationsProvider>
   );
 }

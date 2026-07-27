@@ -14,11 +14,11 @@ import { processOrdersForPrice } from '../services/orderEngine.js';
 import { listActivePulses, schedulePulseRevert, setPricePulse } from '../services/pricePulseService.js';
 import {
   alignOpenTime,
+  buildMemoryPulseFlash,
   finalizePulseAfterRevert,
-  persistPulseMarketHistory,
+  persistPulseWick,
 } from '../services/pulseHistoryService.js';
-import { getMergedCandleAt } from '../services/marketDataService.js';
-import { broadcastPulseToSockets, depthRoom, ensureMarketStream } from '../services/marketStreamService.js';
+import { broadcastPulseToSockets, depthRoom, emitCandle, ensureMarketStream, resetPulseStreamState } from '../services/marketStreamService.js';
 import {
   clearTickerStatsOverride,
   listTickerStatsOverrides,
@@ -392,71 +392,44 @@ export const pricePulseSchema = z.object({
 });
 
 /**
- * One-shot pulse: spike chart + depth once, fill orders, then revert to live market.
+ * One-shot pulse: memory spike → sockets everywhere → fill orders → revert to Binance.
+ * No Mongo wait on the hot path (smooth UX, no server stack).
  */
 export async function pulsePrice(req, res, next) {
   try {
     const symbol = String(req.body.symbol || '').toUpperCase();
     const pulsePriceValue = Number(req.body.price);
-    const holdMs = Number(req.body.holdMs) || 1500;
+    const holdMs = Number(req.body.holdMs) || 4500;
 
     if (!symbol || !Number.isFinite(pulsePriceValue) || pulsePriceValue <= 0) {
       return error(res, 'symbol and positive price are required', 400);
     }
 
+    // Prefer cached live mid — don't block pulse on slow Binance
     let fromPrice = pulsePriceValue;
     try {
-      const ticker = await fetchTicker(symbol);
-      fromPrice = Number(ticker?.price) || pulsePriceValue;
+      const ticker = await fetchTicker(symbol, { force: false });
+      fromPrice = Number(ticker?.price ?? ticker?.lastPrice) || pulsePriceValue;
     } catch {
       /* use pulse as fallback baseline */
     }
 
     const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs });
-    const hi = Math.max(fromPrice, pulsePriceValue);
-    const lo = Math.min(fromPrice, pulsePriceValue);
-
-    const history = await persistPulseMarketHistory({
+    const flash = buildMemoryPulseFlash({
       symbol,
       fromPrice,
       pulsePrice: pulsePriceValue,
-      adminId: req.userId,
       holdMs: pulse.holdMs,
     });
 
     const io = req.app.get('io');
     const intervals = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
-    const intervalCandles =
-      Array.isArray(history?.candles) && history.candles.length
-        ? history.candles
-        : intervals.map((interval) => {
-            const aligned =
-              history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
-            return {
-              interval,
-              candle: {
-                openTime: aligned,
-                open: fromPrice,
-                high: hi,
-                low: lo,
-                close: pulsePriceValue,
-                volume: 1,
-                isFinal: false,
-                pulse: true,
-              },
-            };
-          });
 
-    // Fill orders from DB-backed pulse price BEFORE sockets (instant execution)
-    const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
-      fromPrice,
-      rangeOnly: true,
-    });
-
+    // 1) Broadcast FIRST so every open Trading/Markets tab sees the spike instantly
     broadcastPulseToSockets(io, {
       symbol,
-      intervalCandles,
-      depth: history?.depth,
+      intervalCandles: flash.candles,
+      depth: flash.depth,
       trade: {
         price: pulsePriceValue,
         fromPrice,
@@ -469,75 +442,109 @@ export async function pulsePrice(req, res, next) {
       },
     });
 
-    if (io) {
-      for (const interval of intervals) {
-        ensureMarketStream(io, symbol, interval);
-      }
-      if (trades.length) {
-        const { emitWalletUpdate } = await import('../services/socketService.js');
-        const userIds = new Set();
-        for (const t of trades) {
-          if (t.buyerUserId) userIds.add(String(t.buyerUserId));
-          if (t.sellerUserId) userIds.add(String(t.sellerUserId));
-        }
-        for (const uid of userIds) {
-          emitWalletUpdate(io, uid, { reason: 'pulse_fill' }).catch(() => {});
-        }
-        io.emit('market:orders:filled', {
-          symbol,
-          count: trades.length,
-          at: Date.now(),
-        });
-      }
+    // 2) Persist wick BEFORE response so refresh always shows the spike
+    let historySaved = 0;
+    let manualsSaved = 0;
+    try {
+      const wick = await persistPulseWick({
+        symbol,
+        fromPrice,
+        pulsePrice: pulsePriceValue,
+        openTimes: flash.openTimes,
+        adminId: req.userId,
+      });
+      historySaved = wick.saved || 0;
+      manualsSaved = wick.manuals || 0;
+    } catch (err) {
+      console.warn(`[pulse] persist wick ${symbol}:`, err.message);
     }
 
-    // After brief hold → clear ephemeral pulse mid, keep wick in DB, continue live chart
+    // 3) Respond — order fills / streams happen in background
+    const responsePayload = {
+      symbol,
+      fromPrice,
+      price: pulsePriceValue,
+      until: pulse.until,
+      holdMs: pulse.holdMs,
+      historySaved,
+      manualsSaved,
+      filledOrders: 0,
+      mode: 'persisted-wick',
+    };
+
+    setImmediate(async () => {
+      try {
+        const trades = await processOrdersForPrice(symbol, pulsePriceValue, {
+          fromPrice,
+          rangeOnly: true,
+        });
+        responsePayload.filledOrders = trades.length;
+
+        if (io) {
+          for (const interval of intervals) {
+            try {
+              ensureMarketStream(io, symbol, interval);
+            } catch {
+              /* ignore */
+            }
+          }
+          if (trades.length) {
+            const { emitWalletUpdate } = await import('../services/socketService.js');
+            const userIds = new Set();
+            for (const t of trades) {
+              if (t.buyerUserId) userIds.add(String(t.buyerUserId));
+              if (t.sellerUserId) userIds.add(String(t.sellerUserId));
+            }
+            for (const uid of userIds) {
+              emitWalletUpdate(io, uid, { reason: 'pulse_fill' }).catch(() => {});
+            }
+            io.emit('market:orders:filled', {
+              symbol,
+              count: trades.length,
+              at: Date.now(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn(`[pulse] fill/stream ${symbol}:`, err.message);
+      }
+    });
+
+    // 4) After hold → market close + KEEP pulse wick (persisted)
     schedulePulseRevert(symbol, pulse.holdMs, async () => {
       if (!io) return;
       let marketPrice = fromPrice;
       try {
-        const ticker = await fetchTicker(symbol);
-        marketPrice = Number(ticker?.price) || fromPrice;
+        const ticker = await fetchTicker(symbol, { force: true });
+        marketPrice = Number(ticker?.price ?? ticker?.lastPrice) || fromPrice;
       } catch {
         /* keep fromPrice */
       }
 
-      await finalizePulseAfterRevert(symbol, marketPrice, {
-        openTimes: history?.openTimes,
-      });
+      const wickHi = Math.max(marketPrice, pulsePriceValue, fromPrice);
+      const wickLo = Math.min(marketPrice, pulsePriceValue, fromPrice);
 
-      let marketDepth = null;
+      resetPulseStreamState(symbol);
       try {
-        marketDepth = await fetchDepth(symbol, { limit: 20 });
-      } catch {
-        marketDepth = null;
+        await finalizePulseAfterRevert(symbol, marketPrice, {
+          openTimes: flash.openTimes,
+          pulsedPrice: pulsePriceValue,
+          fromPrice,
+          adminId: req.userId,
+        });
+      } catch (err) {
+        console.warn(`[pulse] finalize ${symbol}:`, err.message);
       }
 
-      if (marketDepth && (marketDepth.bids?.length || marketDepth.asks?.length)) {
-        io.to(depthRoom(symbol)).emit('market:depth', {
-          symbol,
-          ...marketDepth,
-          pulse: false,
-        });
-        io.to(`m:${symbol}:1s`).emit('market:depth', {
-          symbol,
-          ...marketDepth,
-          pulse: false,
-        });
-      }
-
-      // Emit restored market candles (no extreme wick) so chart continues normally
-      for (const interval of intervals) {
-        const aligned =
-          history?.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
-        const candle = await getMergedCandleAt(symbol, interval, aligned, marketPrice);
-        if (!candle) continue;
-        io.to(`m:${symbol}:${interval}`).emit('market:klines:merged', {
-          symbol,
-          interval,
-          candle: { ...candle, pulse: false, _chartReset: true },
-        });
-      }
+      io.emit('market:price:pulse:end', {
+        symbol,
+        price: marketPrice,
+        fromPrice,
+        pulsedPrice: pulsePriceValue,
+        high: wickHi,
+        low: wickLo,
+        reloadChart: false,
+      });
 
       io.to(depthRoom(symbol)).emit('market:trade', {
         symbol,
@@ -548,38 +555,48 @@ export async function pulsePrice(req, res, next) {
         pulse: false,
       });
 
-      io.emit('market:price:pulse:end', {
-        symbol,
-        price: marketPrice,
-        fromPrice,
-        pulsedPrice: pulsePriceValue,
-        reloadChart: true,
-      });
+      // Emit restored candle WITH pulse wick so chart keeps the spike
+      for (const interval of intervals) {
+        const aligned =
+          flash.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+        const candle = {
+          openTime: aligned,
+          open: fromPrice,
+          high: wickHi,
+          low: wickLo,
+          close: marketPrice,
+          volume: 1,
+          isFinal: false,
+          pulse: false,
+          _forceChart: true,
+        };
+        emitCandle(io, symbol, interval, candle);
+        io.to(depthRoom(symbol)).emit('market:klines:merged', {
+          symbol,
+          interval,
+          candle,
+        });
+      }
+
+      fetchDepth(symbol, { limit: 20 })
+        .then((marketDepth) => {
+          if (!marketDepth?.bids?.length && !marketDepth?.asks?.length) return;
+          io.to(depthRoom(symbol)).emit('market:depth', {
+            symbol,
+            ...marketDepth,
+            pulse: false,
+          });
+          io.to(`m:${symbol}:1s`).emit('market:depth', {
+            symbol,
+            ...marketDepth,
+            pulse: false,
+          });
+        })
+        .catch(() => {});
     });
 
-    return success(
-      res,
-      {
-        symbol,
-        fromPrice,
-        price: pulsePriceValue,
-        until: pulse.until,
-        holdMs: pulse.holdMs,
-        historySaved: history?.saved || 0,
-        filledOrders: trades.length,
-        trades: trades.map((t) => ({
-          id: t._id,
-          symbol: t.symbol,
-          price: t.price,
-          quantity: t.quantity,
-        })),
-      },
-      trades.length
-        ? `Pulsed — ${trades.length} order(s) filled · chart returns to live market`
-        : 'Pulsed — chart spike · returns to live market'
-    );
+    return success(res, responsePayload, 'Price pulsed');
   } catch (e) {
-    if (e.status) return error(res, e.message, e.status);
     return next(e);
   }
 }

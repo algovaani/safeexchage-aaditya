@@ -13,6 +13,7 @@ import { createTreasuryWithdrawalFromDeposit } from '../services/treasuryService
 import { normalizeChainFromNetwork } from '../services/userDepositAddressService.js';
 import { getPlatformSettings } from '../services/platformSettingsService.js';
 import { emitWalletUpdate } from '../services/socketService.js';
+import { resolveNotificationsForRef } from '../services/adminNotificationService.js';
 import { error, success } from '../utils/response.js';
 import {
   buildDateRangeFilter,
@@ -243,6 +244,7 @@ export async function verifyDeposit(req, res, next) {
         await updated.save();
       }
       await emitWalletUpdate(req.app.get('io'), updated.userId, { reason: 'deposit_approved' });
+      void resolveNotificationsForRef(req.app.get('io'), 'deposit', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -257,6 +259,7 @@ export async function verifyDeposit(req, res, next) {
       }
       const updated = await rejectDepositWithReversal(deposit, req.userId, note || (action === 'cancel' ? 'Cancelled by admin' : ''));
       await emitWalletUpdate(req.app.get('io'), updated.userId, { reason: 'deposit_rejected' });
+      void resolveNotificationsForRef(req.app.get('io'), 'deposit', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -287,6 +290,7 @@ export async function bulkDepositAction(req, res, next) {
         }
         await creditWalletForDeposit(deposit, req.userId);
         await emitWalletUpdate(req.app.get('io'), deposit.userId, { reason: 'deposit_approved' });
+        void resolveNotificationsForRef(req.app.get('io'), 'deposit', deposit._id);
         results.approved += 1;
       } catch (err) {
         results.failed += 1;
@@ -316,6 +320,7 @@ export async function bulkRejectDeposits(req, res, next) {
         }
         await rejectDepositWithReversal(deposit, req.userId, note);
         await emitWalletUpdate(req.app.get('io'), deposit.userId, { reason: 'deposit_rejected' });
+        void resolveNotificationsForRef(req.app.get('io'), 'deposit', deposit._id);
         results.rejected += 1;
       } catch {
         results.failed += 1;
