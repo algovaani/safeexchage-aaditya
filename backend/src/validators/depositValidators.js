@@ -74,6 +74,17 @@ export const verifyDepositValidators = [
     .isIn(['approve', 'reject', 'cancel'])
     .withMessage('action must be approve, reject, or cancel'),
   body('note').optional({ values: 'falsy' }).trim().isLength({ max: 500 }),
+  body('apply_bonus').optional().isBoolean().toBoolean(),
+  body('bonus_percent')
+    .optional({ values: 'falsy' })
+    .isFloat({ min: 0, max: 1000 })
+    .withMessage('bonus_percent must be between 0 and 1000')
+    .toFloat(),
+  body('bonus_flat')
+    .optional({ values: 'falsy' })
+    .isFloat({ min: 0 })
+    .withMessage('bonus_flat must be a non-negative number')
+    .toFloat(),
   body().custom((_, { req }) => {
     if (req.body.action === 'reject' && !req.body.note?.trim()) {
       throw new Error('note is required when rejecting a deposit');

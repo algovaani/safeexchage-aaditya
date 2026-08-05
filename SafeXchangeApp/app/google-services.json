@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1093491603164",
+    "project_id": "safexchange-f6fe9",
+    "storage_bucket": "safexchange-f6fe9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1093491603164:android:ed6d15a2df832b5ecf2619",
+        "android_client_info": {
+          "package_name": "com.app.safexchange"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCg_qHaXMd5wIquPR-njOm8mwSaz6cf2oo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

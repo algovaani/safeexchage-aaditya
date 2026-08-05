@@ -17,6 +17,7 @@ const transactionSchema = new mongoose.Schema(
         'stake_reward',
         'stake_early_withdrawal',
         'referral_reward',
+        'deposit_bonus',
         'spot_buy',
         'spot_sell',
         'admin_credit',
@@ -49,5 +50,11 @@ const transactionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+transactionSchema.index({ userId: 1, createdAt: -1 });
+transactionSchema.index({ userId: 1, type: 1, createdAt: -1 });
+transactionSchema.index({ userId: 1, status: 1, createdAt: -1 });
+transactionSchema.index({ userId: 1, spotTradeId: 1 }, { sparse: true });
+transactionSchema.index({ userId: 1, spotOrderId: 1 }, { sparse: true });
 
 export const Transaction = mongoose.model('Transaction', transactionSchema);

@@ -332,3 +332,32 @@ export const dashboardAPI = {
 export const walletAPI = {
   getBalance: () => unwrap(api.get('/wallet/balance')),
 };
+
+export const marketingAPI = {
+  getActiveBanners: () => unwrap(api.get('/marketing/banners/active')),
+  getActiveNotices: () => unwrap(api.get('/marketing/notices/active')),
+  getSupportContacts: () => unwrap(api.get('/marketing/support/contacts')),
+};
+
+export const adminMarketingAPI = {
+  // Banners
+  listBanners: () => unwrap(api.get('/admin/marketing/banners')),
+  createBanner: (body) => unwrap(api.post('/admin/marketing/banners', body)),
+  createBannerWithImage: (formData) =>
+    unwrap(api.post('/admin/marketing/banners', formData, { headers: { 'Content-Type': 'multipart/form-data' } })),
+  updateBanner: (id, body) => unwrap(api.patch(`/admin/marketing/banners/${id}`, body)),
+  deleteBanner: (id) => unwrap(api.delete(`/admin/marketing/banners/${id}`)),
+
+  // Notices
+  listNotices: () => unwrap(api.get('/admin/marketing/notices')),
+  createNotice: (body) => unwrap(api.post('/admin/marketing/notices', body)),
+  createNoticeWithImage: (formData) =>
+    unwrap(api.post('/admin/marketing/notices', formData, { headers: { 'Content-Type': 'multipart/form-data' } })),
+  updateNotice: (id, body) => unwrap(api.patch(`/admin/marketing/notices/${id}`, body)),
+  deleteNotice: (id) => unwrap(api.delete(`/admin/marketing/notices/${id}`)),
+
+  // Support contacts
+  listSupportContacts: () => unwrap(api.get('/admin/marketing/support-contacts')),
+  createSupportContact: (body) => unwrap(api.post('/admin/marketing/support-contacts', body)),
+  updateSupportContact: (id, body) => unwrap(api.patch(`/admin/marketing/support-contacts/${id}`, body)),
+};

@@ -341,7 +341,7 @@ export default function Account() {
               {bonusUsdt > 0 && (
                 <>
                   {lockedUsdt > 0 ? ' · ' : ''}
-                  Referral bonus: {fmtINR(toInr(bonusUsdt))} (trading only)
+                  Referral bonus: {fmtINR(toInr(bonusUsdt))} (trading only, not withdrawable)
                 </>
               )}
             </p>

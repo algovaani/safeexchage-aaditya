@@ -13,8 +13,9 @@ export function getApiBaseUrl(req) {
 export function toPublicFileUrl(req, storedPath) {
   if (!storedPath) return null;
   const normalized = storedPath.replace(/\\/g, '/');
-  const relative = normalized.startsWith('uploads/')
-    ? normalized
-    : `uploads/${normalized.replace(/^\/+/, '')}`;
+  const relative =
+    normalized.startsWith('uploads/') || normalized.startsWith('storage/')
+      ? normalized
+      : `uploads/${normalized.replace(/^\/+/, '')}`;
   return `${getApiBaseUrl(req)}/${relative}`;
 }

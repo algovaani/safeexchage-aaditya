@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Inbox, Loader2, Search } from 'lucide-react';
 import { api, parseApiResponse, withdrawalAPI } from '../api/client.js';
@@ -58,54 +58,61 @@ export default function Transactions() {
   const [cancelBusyId, setCancelBusyId] = useState(null);
 
   const debouncedSearch = useDebounced(search);
+  const filterKey = `${debouncedSearch}|${type}|${status}|${from}|${to}|${pageSize}`;
+  const filterKeyRef = useRef(filterKey);
+  const queryPage = filterKeyRef.current !== filterKey ? 1 : page;
 
   const queryParams = useMemo(() => {
-    const params = { page, pageSize, sortBy: 'createdAt', sortDir: 'desc' };
+    const params = { page: queryPage, pageSize, sortBy: 'createdAt', sortDir: 'desc' };
     if (debouncedSearch) params.search = debouncedSearch;
     if (type) params.type = type;
     if (status) params.status = status;
     if (from) params.from = from;
     if (to) params.to = to;
     return params;
-  }, [page, pageSize, debouncedSearch, type, status, from, to]);
+  }, [queryPage, pageSize, debouncedSearch, type, status, from, to]);
 
-  const fetchRows = useCallback(async () => {
+  const fetchRows = useCallback(async (signal) => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.get('/transactions', { params: queryParams });
+      const { data } = await api.get('/transactions', { params: queryParams, signal });
+      if (signal?.aborted) return;
       const payload = parseApiResponse(data);
       setRows(payload?.rows || []);
       setTotal(payload?.total || 0);
       setTotalPages(payload?.totalPages || 1);
     } catch (err) {
+      if (signal?.aborted || err?.code === 'ERR_CANCELED') return;
       setError(err.message || 'Failed to load transactions');
       setRows([]);
       setTotal(0);
       setTotalPages(1);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [queryParams]);
 
   useEffect(() => {
-    fetchRows();
-  }, [fetchRows]);
+    if (filterKeyRef.current !== filterKey) {
+      filterKeyRef.current = filterKey;
+      if (page !== 1) {
+        setPage(1);
+        return;
+      }
+    }
+    const controller = new AbortController();
+    fetchRows(controller.signal);
+    return () => controller.abort();
+  }, [fetchRows, filterKey, page]);
 
   useEffect(() => {
-    const onFocus = () => fetchRows();
     const onOrders = () => fetchRows();
-    window.addEventListener('focus', onFocus);
     window.addEventListener('orders:updated', onOrders);
     return () => {
-      window.removeEventListener('focus', onFocus);
       window.removeEventListener('orders:updated', onOrders);
     };
   }, [fetchRows]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, type, status, from, to, pageSize]);
 
   async function handleExport() {
     setExporting(true);
@@ -157,8 +164,8 @@ export default function Transactions() {
     }
   }
 
-  const fromRow = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const toRow = Math.min(page * pageSize, total);
+  const fromRow = total === 0 ? 0 : (queryPage - 1) * pageSize + 1;
+  const toRow = Math.min(queryPage * pageSize, total);
 
   return (
     <div className="space-y-6">
@@ -299,16 +306,16 @@ export default function Transactions() {
               <button
                 type="button"
                 className="ui-btn ui-btn--ghost text-sm"
-                disabled={page <= 1}
+                disabled={queryPage <= 1}
                 onClick={() => setPage((p) => p - 1)}
               >
                 Previous
               </button>
-              <span>Page {page} of {totalPages}</span>
+              <span>Page {queryPage} of {totalPages}</span>
               <button
                 type="button"
                 className="ui-btn ui-btn--ghost text-sm"
-                disabled={page >= totalPages}
+                disabled={queryPage >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
               >
                 Next

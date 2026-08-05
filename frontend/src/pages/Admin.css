@@ -987,6 +987,16 @@ button.admin-stat--action {
   text-transform: capitalize;
 }
 
+.admin-bonus-pill {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  background: rgba(14, 203, 129, 0.12);
+  color: #0ecb81;
+}
+
 .admin-badge--pending {
   background: rgba(217, 119, 6, 0.12);
   color: #b45309;

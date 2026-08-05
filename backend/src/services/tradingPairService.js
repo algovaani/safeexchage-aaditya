@@ -369,15 +369,6 @@ export async function updateTradingPair(id, body) {
     throw Object.assign(new Error('manual_low_24h cannot be greater than manual_high_24h'), { status: 400 });
   }
 
-  // Volume always = |high − low| when both manual high/low are set
-  if (
-    pair.priceAuto === false &&
-    pair.manualHigh24h != null &&
-    pair.manualLow24h != null
-  ) {
-    pair.manualVolume = Math.abs(Number(pair.manualHigh24h) - Number(pair.manualLow24h));
-  }
-
   await pair.save();
   invalidateTradingPairCache();
   try {

@@ -26,6 +26,9 @@ const SECTIONS = [
   { id: 'coins', label: 'Exchange Coins', icon: '🪙' },
   { id: 'futures', label: 'Futures', icon: '⚡' },
   { id: 'logs', label: 'Logs', icon: '📜' },
+  { id: 'banners', label: 'Banners', icon: '🖼️' },
+  { id: 'notices', label: 'Notices', icon: '🔔' },
+  { id: 'support', label: 'Support', icon: '💬' },
 ];
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));

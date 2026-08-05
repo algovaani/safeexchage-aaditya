@@ -8,6 +8,7 @@ import * as treasuryAdmin from '../controllers/treasuryAdminController.js';
 import * as settingsAdmin from '../controllers/settingsAdminController.js';
 import * as userWalletAdmin from '../controllers/userWalletAdminController.js';
 import * as adminUser from '../controllers/adminUserController.js';
+import * as marketingAdmin from '../controllers/marketingController.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 import { validateRequest } from '../middleware/validateRequest.js';
 import { validateBody } from '../middleware/validate.js';
@@ -53,6 +54,8 @@ import {
   adjustUserFundsValidators,
   userFundHistoryValidators,
 } from '../validators/userWalletValidators.js';
+import { marketingBannerImageUploadSingle } from '../middleware/marketingBannerUpload.js';
+import { marketingNoticeImageUploadSingle } from '../middleware/marketingNoticeUpload.js';
 import {
   adminUserIdParamValidators,
   adminUserDepositsValidators,
@@ -60,10 +63,21 @@ import {
   adminUserTradesValidators,
   adminUserOrdersValidators,
   adminSetUserPasswordValidators,
+  adminSetUserSupportAccessValidators,
   adminUserReferralsValidators,
 } from '../validators/adminUserValidators.js';
 import reportsRoutes from './admin/reportsRoutes.js';
 import * as adminNotify from '../controllers/adminNotificationController.js';
+import {
+  bannerCreateValidators,
+  bannerUpdateValidators,
+  bannerDeleteValidators,
+  noticeCreateValidators,
+  noticeUpdateValidators,
+  noticeDeleteValidators,
+  supportCreateValidators,
+  supportUpdateValidators,
+} from '../validators/marketingValidators.js';
 
 const r = Router();
 
@@ -74,6 +88,10 @@ r.get('/notifications/summary', adminNotify.notificationSummary);
 r.get('/notifications', adminNotify.listNotifications);
 r.patch('/notifications/read-all', adminNotify.markAllRead);
 r.patch('/notifications/:id/read', adminNotify.markRead);
+r.post('/notifications/device', adminNotify.registerDevice);
+r.post('/notifications/device/unregister', adminNotify.unregisterDevice);
+r.get('/notifications/fcm-status', adminNotify.fcmStatus);
+r.post('/notifications/test-push', adminNotify.testPush);
 r.get('/users', adminUsersListValidators, validateRequest, a.listUsers);
 r.post(
   '/users/:userId/fund-adjustment',
@@ -93,6 +111,12 @@ r.post(
   adminSetUserPasswordValidators,
   validateRequest,
   adminUser.setUserPassword
+);
+r.patch(
+  '/users/:userId/support-access',
+  adminSetUserSupportAccessValidators,
+  validateRequest,
+  adminUser.setUserSupportAccess
 );
 r.get('/users/:userId/deposits', adminUserDepositsValidators, validateRequest, adminUser.listUserDeposits);
 r.get(
@@ -209,6 +233,42 @@ r.get('/orders', adminOrdersListValidators, validateRequest, a.listAllOrders);
 r.post('/manual-prices', validateBody(manualPriceSchema), a.upsertManualPrice);
 r.get('/manual-prices', a.listManualPrices);
 r.delete('/manual-prices/:id', a.deleteManualPrice);
+r.get('/marketing/banners', marketingAdmin.listBanners);
+r.post(
+  '/marketing/banners',
+  marketingBannerImageUploadSingle,
+  bannerCreateValidators,
+  validateRequest,
+  marketingAdmin.createBanner
+);
+r.patch('/marketing/banners/:id', bannerUpdateValidators, validateRequest, marketingAdmin.updateBanner);
+r.delete('/marketing/banners/:id', bannerDeleteValidators, validateRequest, marketingAdmin.deleteBanner);
+
+r.get('/marketing/notices', marketingAdmin.listNotices);
+r.post(
+  '/marketing/notices',
+  marketingNoticeImageUploadSingle,
+  noticeCreateValidators,
+  validateRequest,
+  marketingAdmin.createNotice
+);
+r.patch('/marketing/notices/:id', noticeUpdateValidators, validateRequest, marketingAdmin.updateNotice);
+
+r.delete('/marketing/notices/:id', noticeDeleteValidators, validateRequest, marketingAdmin.deleteNotice);
+
+r.get('/marketing/support-contacts', marketingAdmin.listSupportContacts);
+r.post(
+  '/marketing/support-contacts',
+  supportCreateValidators,
+  validateRequest,
+  marketingAdmin.createSupportContact
+);
+r.patch(
+  '/marketing/support-contacts/:id',
+  supportUpdateValidators,
+  validateRequest,
+  marketingAdmin.updateSupportContact
+);
 r.post('/prices/pulse', a.pulsePrice);
 r.get('/prices/pulses', a.listPricePulses);
 r.get('/ticker-stats', a.listTickerStats);

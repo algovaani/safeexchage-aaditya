@@ -12,4 +12,6 @@ export {
   stakingAPI,
   dashboardAPI,
   walletAPI,
+  marketingAPI,
+  adminMarketingAPI,
 } from '../services/api.js';

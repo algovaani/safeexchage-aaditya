@@ -1341,10 +1341,10 @@ export default function Trading() {
                   <dd>{tradeAmount.toFixed(2)}</dd>
                   <dt>Withdrawable</dt>
                   <dd>{walletWithdrawable.toFixed(2)}</dd>
-                  <dt>Referral bonus</dt>
+                  <dt>Trading bonus</dt>
                   <dd>
                     {walletBonus.toFixed(2)}
-                    <span className="ex-wallet-card__note"> (trading only)</span>
+                    <span className="ex-wallet-card__note"> (trade only)</span>
                   </dd>
                   <dt>Locked</dt>
                   <dd>{walletLocked.toFixed(2)}</dd>

@@ -233,6 +233,7 @@ export default function Deposit() {
                 <th>Coin</th>
                 <th>Type</th>
                 <th>Amount</th>
+                <th>Trading bonus</th>
                 <th>Reference</th>
                 <th>Status</th>
                 <th>Date</th>
@@ -251,6 +252,9 @@ export default function Deposit() {
                       </span>
                     )}
                   </td>
+                  <td className="tabular-nums text-accent">
+                    {Number(d.bonusAmount) > 0 ? `+${fmtUSD(d.bonusAmount)}` : '—'}
+                  </td>
                   <td className="text-xs text-text-secondary max-w-[200px] truncate">
                     {d.type === 'crypto' ? d.txnHash || '—' : d.utrNumber || '—'}
                   </td>
@@ -264,7 +268,7 @@ export default function Deposit() {
               ))}
               {!history.length && (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-text-secondary">
+                  <td colSpan={7} className="text-center py-10 text-text-secondary">
                     No deposits yet.
                   </td>
                 </tr>

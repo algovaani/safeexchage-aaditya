@@ -42,6 +42,8 @@ const userSchema = new mongoose.Schema(
     ethWalletAddress: { type: String, default: '', trim: true },
     trcWalletAddress: { type: String, default: '', trim: true },
     usdtWalletAddress: { type: String, default: '', trim: true },
+    /** When true, user can see support name & phone on the Support page. Email is always visible. */
+    showSupportContactDetails: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

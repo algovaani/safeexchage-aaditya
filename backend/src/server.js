@@ -24,6 +24,7 @@ import { withdrawalRouter, withdrawalsRouter } from './routes/withdrawalRoutes.j
 import tradeRoutes from './routes/tradeRoutes.js';
 import stakingRoutes from './routes/stakingRoutes.js';
 import configRoutes from './routes/configRoutes.js';
+import marketingRoutes from './routes/marketingRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
@@ -99,6 +100,7 @@ app.get('/', (_req, res) => {
 // Coin logos stored in storage/coins (writable) — served under /uploads/coins for URL compatibility
 app.use('/uploads/coins', express.static(path.join(process.cwd(), 'storage', 'coins')));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/storage', express.static(path.join(process.cwd(), 'storage')));
 
 app.use('/api/', globalApiRateLimit);
 
@@ -132,6 +134,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/trades', tradeRoutes);
 app.use('/api/staking', stakingRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/marketing', marketingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/cash-in-person', cashInPersonRoutes);

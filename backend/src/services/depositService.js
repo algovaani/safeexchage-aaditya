@@ -4,7 +4,7 @@ import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
 import { storedFiatProofPath } from '../middleware/fiatDepositUpload.js';
 import { toPublicFileUrl } from '../utils/fileUrl.js';
-import { roundMoney } from '../utils/money.js';
+import { roundMoney, storeMoney } from '../utils/money.js';
 import {
   computeDepositUsdtCredit,
   depositCreditReference,
@@ -59,6 +59,9 @@ export function formatDeposit(req, doc, { includeUser = false } = {}) {
     submittedAt: doc.createdAt,
     createdAt: doc.createdAt,
     reviewedAt: doc.reviewedAt || null,
+    bonusPercent: doc.bonusPercent != null ? roundMoney(doc.bonusPercent) : 0,
+    bonusFlat: doc.bonusFlat != null ? roundMoney(doc.bonusFlat) : 0,
+    bonusAmount: doc.bonusAmount != null ? roundMoney(doc.bonusAmount) : 0,
   };
 
   if (includeUser && doc.userId && typeof doc.userId === 'object') {
@@ -73,7 +76,19 @@ export function formatDeposit(req, doc, { includeUser = false } = {}) {
   return payload;
 }
 
-export async function creditWalletForDeposit(deposit, reviewedBy) {
+export function computeDepositBonusAmount(creditUsdt, { bonusPercent = 0, bonusFlat = 0 } = {}) {
+  const base = Number(creditUsdt);
+  const pct = Math.max(0, Number(bonusPercent) || 0);
+  const flat = Math.max(0, Number(bonusFlat) || 0);
+  if (!(base > 0) && flat <= 0) return 0;
+  return roundMoney(flat + ((base > 0 ? base : 0) * pct) / 100);
+}
+
+export async function creditWalletForDeposit(
+  deposit,
+  reviewedBy,
+  { bonusPercent = 0, bonusFlat = 0 } = {}
+) {
   const depositId = deposit?._id || deposit;
   if (!depositId) {
     throw Object.assign(new Error('Deposit not found'), { status: 404 });
@@ -112,6 +127,12 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
   let balanceAfter = null;
   let creditAmount;
   let creditCurrency;
+  const bonusAmount =
+    creditNativeAsset ? 0 : computeDepositBonusAmount(conversion.usdtAmount, { bonusPercent, bonusFlat });
+
+  claimed.bonusPercent = roundMoney(Math.max(0, Number(bonusPercent) || 0));
+  claimed.bonusFlat = roundMoney(Math.max(0, Number(bonusFlat) || 0));
+  claimed.bonusAmount = bonusAmount;
 
   try {
     if (creditNativeAsset) {
@@ -121,9 +142,15 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
       creditCurrency = currency;
       wallet = await Wallet.findOne({ userId: claimed.userId }).lean();
     } else {
+      const walletInc = { balance: conversion.usdtAmount };
+      const setOnInsert = { currency: 'USDT' };
+      if (bonusAmount > 0) {
+        walletInc.balance = storeMoney(conversion.usdtAmount + bonusAmount);
+        walletInc.bonusBalance = bonusAmount;
+      }
       wallet = await Wallet.findOneAndUpdate(
         { userId: claimed.userId },
-        { $inc: { balance: conversion.usdtAmount }, $setOnInsert: { currency: 'USDT' } },
+        { $inc: walletInc, $setOnInsert: setOnInsert },
         { upsert: true, new: true }
       );
       balanceAfter = roundMoney(wallet.balance);
@@ -163,9 +190,30 @@ export async function creditWalletForDeposit(deposit, reviewedBy) {
       method: claimed.type === 'crypto' ? 'crypto' : 'fiat',
       reference: creditReference,
       depositId: claimed._id,
-      adminNote: '',
+      adminNote: bonusAmount > 0 ? `Includes ${bonusAmount} USDT trading bonus` : '',
     });
     claimed.transactionId = transaction._id;
+  } else if (bonusAmount > 0) {
+    await Transaction.findByIdAndUpdate(transaction._id, {
+      $set: {
+        adminNote: `Includes ${bonusAmount} USDT trading bonus`,
+      },
+    });
+  }
+
+  if (bonusAmount > 0 && !creditNativeAsset) {
+    await Transaction.create({
+      userId: claimed.userId,
+      type: 'deposit_bonus',
+      amount: bonusAmount,
+      balanceAfter,
+      currency: 'USDT',
+      status: 'completed',
+      method: 'manual',
+      reference: `Deposit bonus: ${claimed._id}`,
+      depositId: claimed._id,
+      adminNote: 'Trading only — not withdrawable',
+    });
   }
 
   if (claimed.type === 'crypto') {
@@ -212,11 +260,17 @@ export async function rejectDepositWithReversal(deposit, reviewedBy, note = '') 
       });
     } else {
       const usdtAmount = deposit.usdtAmount ?? deposit.amount;
+      const bonusAmount = roundMoney(deposit.bonusAmount || 0);
       const wallet = await Wallet.findOne({ userId: deposit.userId });
       if (wallet) {
-        const debit = Math.min(wallet.balance, usdtAmount);
+        const totalDebit = roundMoney(usdtAmount + bonusAmount);
+        const debit = Math.min(wallet.balance, totalDebit);
         if (debit > 0) {
+          const bonusDebit = Math.min(wallet.bonusBalance || 0, bonusAmount, debit);
           wallet.balance = roundMoney(wallet.balance - debit);
+          if (bonusDebit > 0) {
+            wallet.bonusBalance = roundMoney(Math.max(0, (wallet.bonusBalance || 0) - bonusDebit));
+          }
           await wallet.save();
           await Transaction.create({
             userId: deposit.userId,

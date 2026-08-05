@@ -2,10 +2,7 @@ import { Transaction } from '../models/Transaction.js';
 import { success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import {
-  backfillOpenSpotOrderTransactions,
-  backfillOrphanFinancialRecords,
-  backfillSpotTradeTransactions,
-  ensureOpeningBalanceTransaction,
+  ensureUserTransactionReports,
 } from '../services/transactionService.js';
 import {
   buildDateRangeFilter,
@@ -46,10 +43,7 @@ export async function listTransactions(req, res, next) {
     const dt = parseDatatableQuery(req.query);
     const userId = req.userId;
 
-    await backfillOrphanFinancialRecords(userId);
-    await backfillSpotTradeTransactions(userId);
-    await backfillOpenSpotOrderTransactions(userId);
-    await ensureOpeningBalanceTransaction(userId);
+    await ensureUserTransactionReports(userId);
 
     const filter = { userId, ...buildDateRangeFilter(req.query) };
     const types = transactionTypesForFilter(req.query.type);

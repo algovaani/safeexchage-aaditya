@@ -15,11 +15,14 @@ import {
   Menu,
   X,
   Landmark,
+  HelpCircle,
+  Info,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
+import { marketingAPI } from '../api/client.js';
 import { fmtINR } from '../utils/format.js';
 import ThemeToggle from './ThemeToggle.jsx';
 import BrandLogo from './BrandLogo.jsx';
@@ -36,6 +39,7 @@ const NAV = [
   { to: '/transactions', icon: FileText, label: 'Reports' },
   { to: '/refer', icon: Gift, label: 'Refer & Earn' },
   { to: '/account/profile', icon: Settings, label: 'Settings' },
+  { to: '/support', icon: HelpCircle, label: 'Support' },
 ];
 
 function isNavActive(pathname, item) {
@@ -55,6 +59,7 @@ export default function Layout() {
   const fullWidth = false;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [portfolio, setPortfolio] = useState(null);
+  const [noticeModal, setNoticeModal] = useState(null);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -71,6 +76,42 @@ export default function Layout() {
       );
     }
   }, [user, liveWallet, walletVersion]);
+
+  // Show admin-enabled notice once per browser session (dismissed = not shown again).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const active = await marketingAPI.getActiveNotices();
+        const latest = Array.isArray(active) ? active[0] : null;
+        if (!latest) return;
+
+        const noticeId = String(latest._id || latest.id || '');
+        if (!noticeId) return;
+
+        const key = `dismissed_notice_${noticeId}`;
+        if (sessionStorage.getItem(key)) return;
+
+        if (cancelled) return;
+        setNoticeModal(latest);
+      } catch {
+        // Ignore notice errors — never block app
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  function dismissNotice() {
+    if (!noticeModal) return;
+    const noticeId = String(noticeModal._id || noticeModal.id || '');
+    const key = `dismissed_notice_${noticeId}`;
+    sessionStorage.setItem(key, '1');
+    setNoticeModal(null);
+  }
 
   const displayName = user?.name?.trim() || user?.email?.split('@')[0] || 'Trader';
   const initial = displayName[0]?.toUpperCase() || 'S';
@@ -118,6 +159,59 @@ export default function Layout() {
       )}
 
       <div className="app-main">
+        {noticeModal && (
+          <div
+            className="dialog-modal-backdrop"
+            role="presentation"
+            onClick={() => dismissNotice()}
+          >
+            <div
+              className="dialog-modal"
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="dialog-modal__header">
+                <Info size={22} className="dialog-modal__icon dialog-modal__icon--info" />
+                <div className="dialog-modal__header-text">
+                  <h2>{noticeModal.title || 'Notice'}</h2>
+                </div>
+                <button
+                  type="button"
+                  className="dialog-modal__close"
+                  aria-label="Close"
+                  onClick={() => dismissNotice()}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="dialog-modal__body">
+                {noticeModal.imageUrl ? (
+                  <img
+                    src={noticeModal.imageUrl}
+                    alt="notice"
+                    className="w-full rounded-md object-cover max-h-64"
+                    loading="lazy"
+                  />
+                ) : null}
+                <p style={{ whiteSpace: 'pre-wrap', margin: 0, color: 'var(--text-secondary)' }}>
+                  {noticeModal.message || ''}
+                </p>
+              </div>
+
+              <div className="dialog-modal__actions">
+                <button
+                  type="button"
+                  className="dialog-modal__btn dialog-modal__btn--info"
+                  onClick={() => dismissNotice()}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <header className="app-navbar">
           <button type="button" className="app-navbar__menu" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
             <Menu size={20} />

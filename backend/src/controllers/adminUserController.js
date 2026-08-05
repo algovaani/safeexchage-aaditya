@@ -130,6 +130,7 @@ export async function getUserDetail(req, res, next) {
         referredByLabel,
         referredByCode,
         invitedCount,
+        showSupportContactDetails: Boolean(user.showSupportContactDetails),
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
         wallet: enrichWalletSnapshotWithPrices(
@@ -192,6 +193,32 @@ export async function setUserPassword(req, res, next) {
         password,
       },
       'User password updated'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function setUserSupportAccess(req, res, next) {
+  try {
+    const { userId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return error(res, 'Invalid user id', 400);
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return error(res, 'User not found', 404);
+
+    user.showSupportContactDetails = Boolean(req.body.showSupportContactDetails);
+    await user.save();
+
+    return success(
+      res,
+      {
+        id: user._id,
+        showSupportContactDetails: Boolean(user.showSupportContactDetails),
+      },
+      'User support access updated'
     );
   } catch (e) {
     return next(e);

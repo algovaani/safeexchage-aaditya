@@ -56,6 +56,10 @@ const depositSchema = new mongoose.Schema(
     payhookPaymentId: { type: String, default: '', index: true, sparse: true },
     payhookCheckoutUrl: { type: String, default: '' },
     payhookDepositAddress: { type: String, default: '' },
+    /** Trading-only bonus granted on admin approval (% + flat → bonusAmount). */
+    bonusPercent: { type: Number, default: 0, min: 0 },
+    bonusFlat: { type: Number, default: 0, min: 0 },
+    bonusAmount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true, collection: 'deposits' }
 );

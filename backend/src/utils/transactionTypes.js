@@ -22,7 +22,7 @@ export const STAKE_TRANSACTION_TYPES = [
 
 export const DEPOSIT_TRANSACTION_TYPES = ['deposit'];
 export const WITHDRAWAL_TRANSACTION_TYPES = ['withdrawal'];
-export const REFERRAL_TRANSACTION_TYPES = ['referral_reward'];
+export const REFERRAL_TRANSACTION_TYPES = ['referral_reward', 'deposit_bonus'];
 
 export const SPOT_TRANSACTION_TYPES = ['spot_buy', 'spot_sell'];
 
@@ -32,6 +32,7 @@ export const TRANSACTION_TYPE_LABELS = {
   deposit: 'Deposit',
   withdrawal: 'Withdrawal',
   referral_reward: 'Referral Reward',
+  deposit_bonus: 'Deposit Bonus',
   spot_buy: 'Spot Buy',
   spot_sell: 'Spot Sell',
   trade_margin_locked: 'Trade Hold',

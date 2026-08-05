@@ -11,6 +11,9 @@ import {
 } from './depositConversionService.js';
 import { roundMoney } from '../utils/money.js';
 
+/** Skip repeat legacy backfill work after a user has been synced once this process. */
+const reportsBackfillDone = new Set();
+
 function depositStatusToTransactionStatus(status) {
   if (status === 'approved') return 'completed';
   if (status === 'rejected') return 'rejected';
@@ -100,22 +103,41 @@ export async function backfillSpotTradeTransactions(userId) {
     .limit(500)
     .lean();
 
-  for (const trade of trades) {
-    const order = await Order.findById(trade.buyOrderId).select('side userId').lean();
+  if (!trades.length) return;
+
+  const tradeIds = trades.map((t) => t._id);
+  const existing = await Transaction.find({
+    userId,
+    spotTradeId: { $in: tradeIds },
+  })
+    .select('spotTradeId')
+    .lean();
+  const existingIds = new Set(existing.map((row) => String(row.spotTradeId)));
+  const missing = trades.filter((t) => !existingIds.has(String(t._id)));
+  if (!missing.length) return;
+
+  const orderIds = [...new Set(missing.map((t) => t.buyOrderId).filter(Boolean))];
+  const orders = orderIds.length
+    ? await Order.find({ _id: { $in: orderIds } })
+        .select('side userId')
+        .lean()
+    : [];
+  const orderById = new Map(orders.map((o) => [String(o._id), o]));
+
+  const docs = [];
+  for (const trade of missing) {
+    const order = orderById.get(String(trade.buyOrderId));
     const side =
       order && String(order.userId) === String(userId)
         ? order.side
         : String(trade.buyerUserId) === String(userId)
           ? 'buy'
           : 'sell';
-    const existing = await Transaction.findOne({ userId, spotTradeId: trade._id }).lean();
-    if (existing) continue;
-
     const notional = trade.price * trade.quantity;
     const fee = trade.fee || 0;
     const amount = side === 'buy' ? notional + fee : notional - fee;
 
-    await Transaction.create({
+    docs.push({
       userId,
       type: side === 'buy' ? 'spot_buy' : 'spot_sell',
       amount: roundMoney(amount),
@@ -129,6 +151,10 @@ export async function backfillSpotTradeTransactions(userId) {
       updatedAt: trade.updatedAt,
     });
   }
+
+  if (docs.length) {
+    await Transaction.insertMany(docs, { ordered: false });
+  }
 }
 
 /** Pending spot order rows for open / partially filled orders missing from reports. */
@@ -140,15 +166,26 @@ export async function backfillOpenSpotOrderTransactions(userId) {
     .sort({ createdAt: -1 })
     .lean();
 
+  if (!openOrders.length) return;
+
+  const orderIds = openOrders.map((o) => o._id);
+  const existing = await Transaction.find({
+    userId,
+    spotOrderId: { $in: orderIds },
+  })
+    .select('spotOrderId')
+    .lean();
+  const existingIds = new Set(existing.map((row) => String(row.spotOrderId)));
+
+  const docs = [];
   for (const order of openOrders) {
-    const existing = await Transaction.findOne({ userId, spotOrderId: order._id }).lean();
-    if (existing) continue;
+    if (existingIds.has(String(order._id))) continue;
 
     const estPrice = order.price || order.avgFillPrice || 0;
     const notional = estPrice * order.quantity;
     const amount = order.side === 'buy' ? notional * 1.001 : notional * 0.999;
 
-    await Transaction.create({
+    docs.push({
       userId,
       type: order.side === 'buy' ? 'spot_buy' : 'spot_sell',
       amount: roundMoney(amount || 0),
@@ -161,9 +198,85 @@ export async function backfillOpenSpotOrderTransactions(userId) {
       updatedAt: order.updatedAt,
     });
   }
+
+  if (docs.length) {
+    await Transaction.insertMany(docs, { ordered: false });
+  }
 }
 
 /** Show legacy registration/demo wallet credit when no deposit records exist. */
+async function needsTransactionBackfill(userId) {
+  const [orphanDeposit, orphanWithdrawal, openOrder] = await Promise.all([
+    Deposit.exists({ userId, transactionId: null }),
+    Withdrawal.exists({ userId, transactionId: null }),
+    Order.exists({ userId, status: { $in: ['open', 'partially_filled'] } }),
+  ]);
+  if (orphanDeposit || orphanWithdrawal) return true;
+
+  const recentTrades = await Trade.find({
+    $or: [{ buyerUserId: userId }, { sellerUserId: userId }],
+  })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .select('_id')
+    .lean();
+  if (recentTrades.length) {
+    const tradeIds = recentTrades.map((t) => t._id);
+    const linkedTrades = await Transaction.countDocuments({
+      userId,
+      spotTradeId: { $in: tradeIds },
+    });
+    if (linkedTrades < tradeIds.length) return true;
+  }
+
+  if (openOrder) {
+    const orders = await Order.find({
+      userId,
+      status: { $in: ['open', 'partially_filled'] },
+    })
+      .select('_id')
+      .limit(20)
+      .lean();
+    if (orders.length) {
+      const orderIds = orders.map((o) => o._id);
+      const linkedOrders = await Transaction.countDocuments({
+        userId,
+        spotOrderId: { $in: orderIds },
+      });
+      if (linkedOrders < orderIds.length) return true;
+    }
+  }
+
+  const [txCount, depositCount, withdrawalCount] = await Promise.all([
+    Transaction.countDocuments({ userId }),
+    Deposit.countDocuments({ userId }),
+    Withdrawal.countDocuments({ userId }),
+  ]);
+  if (txCount === 0 && depositCount === 0 && withdrawalCount === 0) {
+    const wallet = await Wallet.findOne({ userId }).select('balance').lean();
+    if (wallet?.balance > 0) return true;
+  }
+
+  return false;
+}
+
+/** Run legacy report backfill once per user (fast no-op on repeat visits). */
+export async function ensureUserTransactionReports(userId) {
+  const key = String(userId);
+  if (reportsBackfillDone.has(key)) return;
+
+  if (!(await needsTransactionBackfill(userId))) {
+    reportsBackfillDone.add(key);
+    return;
+  }
+
+  await backfillOrphanFinancialRecords(userId);
+  await backfillSpotTradeTransactions(userId);
+  await backfillOpenSpotOrderTransactions(userId);
+  await ensureOpeningBalanceTransaction(userId);
+  reportsBackfillDone.add(key);
+}
+
 export async function ensureOpeningBalanceTransaction(userId) {
   const wallet = await Wallet.findOne({ userId }).lean();
   if (!wallet || wallet.balance <= 0) return;

@@ -31,6 +31,7 @@ const DEPOSIT_EXPORT_COLUMNS = [
   { key: 'currency', label: 'Currency', export: (r) => r.currency || 'USDT' },
   { key: 'reference', label: 'Reference', export: (r) => r.reference || '' },
   { key: 'status', label: 'Status' },
+  { key: 'bonusAmount', label: 'Trading bonus', export: (r) => (r.bonusAmount > 0 ? r.bonusAmount : '') },
   { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
 ];
 
@@ -238,7 +239,12 @@ export async function verifyDeposit(req, res, next) {
       if (deposit.status !== 'pending') {
         return error(res, 'Only pending deposits can be approved', 400);
       }
-      const { deposit: updated } = await creditWalletForDeposit(deposit, req.userId);
+      const bonusPercent = req.body.apply_bonus ? Number(req.body.bonus_percent) || 0 : 0;
+      const bonusFlat = req.body.apply_bonus ? Number(req.body.bonus_flat) || 0 : 0;
+      const { deposit: updated } = await creditWalletForDeposit(deposit, req.userId, {
+        bonusPercent,
+        bonusFlat,
+      });
       if (!updated.chain) {
         updated.chain = normalizeChainFromNetwork(updated.network) || '';
         await updated.save();

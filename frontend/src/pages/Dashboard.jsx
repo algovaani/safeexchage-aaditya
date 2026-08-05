@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Inbox } from 'lucide-react';
-import { api, dashboardAPI, parseApiResponse } from '../api/client.js';
+import { api, dashboardAPI, parseApiResponse, marketingAPI } from '../api/client.js';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
 import { fmtINR, fmtUSD, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [banners, setBanners] = useState([]);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('15m');
   const [candles, setCandles] = useState([]);
@@ -56,6 +57,23 @@ export default function Dashboard() {
   useEffect(() => {
     if (!chartAssets.includes(symbol)) setSymbol(chartAssets[0]);
   }, [chartAssets, symbol]);
+
+  // Admin-enabled marketing banners (dashboard par show hota hai)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await marketingAPI.getActiveBanners();
+        if (cancelled) return;
+        setBanners(Array.isArray(payload) ? payload : payload?.rows || []);
+      } catch {
+        if (!cancelled) setBanners([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -184,6 +202,25 @@ export default function Dashboard() {
         <h1 className="text-xl font-medium text-text-primary mb-1">Dashboard</h1>
         <p className="text-sm text-text-secondary">Portfolio overview and market activity</p>
       </div>
+
+      {banners.length > 0 && (
+        <div className="space-y-3">
+          {banners.map((b) => (
+            <div key={String(b._id || b.id)} className="ui-card p-4">
+              <p className="text-sm text-text-primary font-medium">Announcement</p>
+              {b.imageUrl ? (
+                <img
+                  src={b.imageUrl}
+                  alt="banner"
+                  className="w-full mt-3 rounded-md object-cover max-h-52"
+                  loading="lazy"
+                />
+              ) : null}
+              <p className="text-sm text-text-secondary mt-1">{b.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {loading

@@ -9,6 +9,8 @@ import WalletManagementSection from './admin/WalletManagementSection.jsx';
 import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import AdminPricesSection from './admin/AdminPricesSection.jsx';
 import AdminLogsSection from './admin/AdminLogsSection.jsx';
+import DepositApproveModal from '../components/admin/DepositApproveModal.jsx';
+import MarketingAdminSection from './admin/MarketingAdminSection.jsx';
 import { formatMarketTime } from '../utils/timeFormat.js';
 import { formatLoginId } from '../utils/format.js';
 import { useDialog } from '../context/DialogContext.jsx';
@@ -103,6 +105,9 @@ const SECTION_TITLES = {
   staking: 'Investment Plans',
   futures: 'Futures',
   logs: 'System Logs',
+  banners: 'Banners',
+  notices: 'Notices',
+  support: 'Support',
 };
 
 function WalletQrPreview({ label, address }) {
@@ -723,6 +728,7 @@ export default function Admin() {
   const [depositRows, setDepositRows] = useState([]);
   const [depositActionId, setDepositActionId] = useState(null);
   const [depositBulkBusy, setDepositBulkBusy] = useState(false);
+  const [depositApproveRow, setDepositApproveRow] = useState(null);
   const depositActionLockRef = useRef(false);
   const [settingsForm, setSettingsForm] = useState({
     bnbWalletAddress: '',
@@ -839,19 +845,36 @@ export default function Admin() {
     await refresh();
   }
 
-  async function verifyDeposit(id, action, note = '') {
+  async function verifyDeposit(id, action, note = '', bonus = {}) {
     if (depositActionLockRef.current || depositBulkBusy) return;
     depositActionLockRef.current = true;
     setDepositActionId(String(id));
     try {
-      await api.patch(`/admin/deposits/${id}/verify`, { action, note });
+      await api.patch(`/admin/deposits/${id}/verify`, {
+        action,
+        note,
+        apply_bonus: Boolean(bonus.apply_bonus),
+        bonus_percent: Number(bonus.bonus_percent) || 0,
+        bonus_flat: Number(bonus.bonus_flat) || 0,
+      });
       bumpTables();
       setSelectedDepositIds([]);
+      setDepositApproveRow(null);
       await refresh();
     } finally {
       depositActionLockRef.current = false;
       setDepositActionId(null);
     }
+  }
+
+  function openApproveDeposit(row) {
+    setDepositApproveRow(row);
+  }
+
+  async function confirmApproveDeposit(bonus) {
+    const id = depositApproveRow?.id || depositApproveRow?._id;
+    if (!id) return;
+    await verifyDeposit(id, 'approve', '', bonus);
   }
 
   async function rejectDeposit(id) {
@@ -1426,6 +1449,17 @@ export default function Admin() {
         sortable: true,
         render: (row) => (row.usdtAmount != null ? `${Number(row.usdtAmount).toFixed(2)} USDT` : '—'),
       },
+      {
+        key: 'bonusAmount',
+        label: 'Trading bonus',
+        sortable: true,
+        render: (row) =>
+          Number(row.bonusAmount) > 0 ? (
+            <span className="admin-bonus-pill">{Number(row.bonusAmount).toFixed(2)} USDT</span>
+          ) : (
+            '—'
+          ),
+      },
       { key: 'chain', label: 'Chain', sortable: true, render: (row) => row.chain || row.network || '—' },
       {
         key: 'txnHash',
@@ -1502,7 +1536,7 @@ export default function Admin() {
                   type="button"
                   className="admin-btn admin-btn--primary admin-btn--sm"
                   disabled={rowBusy}
-                  onClick={() => verifyDeposit(id, 'approve')}
+                  onClick={() => openApproveDeposit(row)}
                 >
                   {depositActionId === String(id) ? 'Approving…' : 'Approve'}
                 </button>
@@ -2372,6 +2406,18 @@ export default function Admin() {
 
       {activeTab === 'logs' && <AdminLogsSection refreshKey={tableRefreshKey} />}
 
+      {activeTab === 'banners' && (
+        <MarketingAdminSection mode="banners" refreshKey={tableRefreshKey} onMutate={bumpTables} />
+      )}
+
+      {activeTab === 'notices' && (
+        <MarketingAdminSection mode="notices" refreshKey={tableRefreshKey} onMutate={bumpTables} />
+      )}
+
+      {activeTab === 'support' && (
+        <MarketingAdminSection mode="support" refreshKey={tableRefreshKey} onMutate={bumpTables} />
+      )}
+
       {treasuryDeposit && (
         <TreasurySweepDrawer
           row={treasuryDeposit}
@@ -2380,6 +2426,13 @@ export default function Admin() {
           onSuccess={onTreasurySuccess}
         />
       )}
+
+      <DepositApproveModal
+        row={depositApproveRow}
+        busy={Boolean(depositActionId)}
+        onClose={() => !depositActionId && setDepositApproveRow(null)}
+        onConfirm={confirmApproveDeposit}
+      />
     </div>
   );
 }

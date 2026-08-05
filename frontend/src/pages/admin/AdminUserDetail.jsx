@@ -100,6 +100,59 @@ function SetPasswordForm({ userId, currentPassword, onSaved }) {
   );
 }
 
+function SupportAccessForm({ userId, enabled, onSaved }) {
+  const [checked, setChecked] = useState(Boolean(enabled));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    setChecked(Boolean(enabled));
+  }, [enabled]);
+
+  async function save(e) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg('');
+    try {
+      const { data } = await api.patch(`/admin/users/${userId}/support-access`, {
+        showSupportContactDetails: checked,
+      });
+      const result = parseApiResponse(data);
+      setChecked(Boolean(result?.showSupportContactDetails));
+      setMsg(checked ? 'User can now see support name and phone.' : 'Support name and phone hidden for this user.');
+      onSaved?.();
+    } catch (ex) {
+      setMsg(ex.response?.data?.message || ex.message || 'Failed to update support access');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="admin-set-password" onSubmit={save}>
+      <h3 className="admin-user-detail__h3">Support access</h3>
+      <label className="flex items-center gap-3 text-sm text-text-secondary cursor-pointer admin-set-password__row">
+        <input
+          type="checkbox"
+          className="rounded border-border accent-accent"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+        />
+        Show name &amp; phone to users
+      </label>
+      <p className="admin-muted" style={{ marginTop: '0.5rem' }}>
+        When enabled, this user sees support name and phone on the Support page. Email is always visible to all users.
+      </p>
+      <div className="admin-set-password__row" style={{ marginTop: '0.75rem' }}>
+        <button type="submit" className="admin-btn admin-btn--primary admin-btn--sm" disabled={busy}>
+          {busy ? 'Saving…' : 'Save support access'}
+        </button>
+      </div>
+      {msg && <p className="admin-set-password__msg">{msg}</p>}
+    </form>
+  );
+}
+
 export default function AdminUserDetail() {
   const { userId } = useParams();
   const navigate = useNavigate();
@@ -136,6 +189,11 @@ export default function AdminUserDetail() {
         key: 'usdtAmount',
         label: 'USDT credit',
         render: (r) => (r.usdtAmount != null ? `${r.usdtAmount} USDT` : '—'),
+      },
+      {
+        key: 'bonusAmount',
+        label: 'Trading bonus',
+        render: (r) => (Number(r.bonusAmount) > 0 ? `${Number(r.bonusAmount).toFixed(2)} USDT` : '—'),
       },
       { key: 'chain', label: 'Chain', render: (r) => r.chain || r.network || '—' },
       { key: 'toAddress', label: 'To address', render: (r) => <CopyCell value={r.toAddress} /> },
@@ -307,6 +365,11 @@ export default function AdminUserDetail() {
             <dt>Joined</dt>
             <dd>{formatAdminDate(user.createdAt)} {formatMarketTime(user.createdAt)}</dd>
           </dl>
+          <SupportAccessForm
+            userId={userId}
+            enabled={user.showSupportContactDetails}
+            onSaved={load}
+          />
           <SetPasswordForm userId={userId} currentPassword={user.password} onSaved={load} />
         </section>
 
@@ -324,7 +387,7 @@ export default function AdminUserDetail() {
             <dt>Withdrawable</dt>
             <dd>{Number(wallet.withdrawable_balance ?? wallet.available_balance ?? 0).toFixed(2)}</dd>
             <dt>Referral bonus</dt>
-            <dd>{Number(wallet.bonus_balance ?? 0).toFixed(2)} (trading only)</dd>
+            <dd>{Number(wallet.bonus_balance ?? 0).toFixed(2)} (trading only, not withdrawable)</dd>
             <dt>Locked</dt>
             <dd>{Number(wallet.locked_balance ?? 0).toFixed(2)}</dd>
           </dl>

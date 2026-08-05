@@ -389,33 +389,9 @@ export default function TradingPairsAdminSection() {
     setEditOpen(false);
   }
 
-  /** Volume = |high − low| when both values are valid numbers. */
+  /** Update manual high/low without overwriting a manually entered volume. */
   function setManualHighLow(patch) {
-    setEditForm((f) => {
-      const next = { ...f, ...patch };
-      const autoVol = volumeFromHighLow(next.manualHigh24h, next.manualLow24h);
-      if (autoVol !== '') next.manualVolume = autoVol;
-      return next;
-    });
-  }
-
-  /** Volume = |high − low| when both values are valid numbers. */
-  function calcManualVolume(highStr, lowStr) {
-    const high = Number(highStr);
-    const low = Number(lowStr);
-    if (!(Number.isFinite(high) && Number.isFinite(low) && highStr !== '' && lowStr !== '')) {
-      return '';
-    }
-    return String(Math.abs(high - low));
-  }
-
-  function setManualHighLow(patch) {
-    setEditForm((f) => {
-      const next = { ...f, ...patch };
-      const vol = calcManualVolume(next.manualHigh24h, next.manualLow24h);
-      if (vol !== '') next.manualVolume = vol;
-      return next;
-    });
+    setEditForm((f) => ({ ...f, ...patch }));
   }
 
   function onLogoFilePick(file) {
@@ -474,15 +450,13 @@ export default function TradingPairsAdminSection() {
       if (!editForm.priceAuto) {
         const high = editForm.manualHigh24h === '' ? null : Number(editForm.manualHigh24h);
         const low = editForm.manualLow24h === '' ? null : Number(editForm.manualLow24h);
-        let volume =
-          editForm.manualVolume === '' ? null : Number(editForm.manualVolume);
+        const volume = editForm.manualVolume === '' ? null : Number(editForm.manualVolume);
         if (high != null && low != null && Number.isFinite(high) && Number.isFinite(low)) {
           if (low > high) {
             toast.error('24h low cannot be greater than 24h high');
             setEditBusy(false);
             return;
           }
-          volume = Math.abs(high - low);
         }
         patch.manual_price = Number(editForm.manualPrice);
         patch.manual_change_24h =
@@ -1255,17 +1229,11 @@ export default function TradingPairsAdminSection() {
                         step="any"
                         min="0"
                         value={editForm.manualVolume}
-                        readOnly={
-                          editForm.manualHigh24h !== '' &&
-                          editForm.manualLow24h !== '' &&
-                          Number.isFinite(Number(editForm.manualHigh24h)) &&
-                          Number.isFinite(Number(editForm.manualLow24h))
-                        }
                         onChange={(e) => setEditForm((f) => ({ ...f, manualVolume: e.target.value }))}
-                        placeholder="Auto from |high − low|"
+                        placeholder="Optional"
                       />
                       <p className="admin-coins__hint">
-                        Auto-calculated as |High − Low| when both high and low are set. Shown on Trading / Markets as 24h volume.
+                        Shown on Trading / Markets as 24h volume. You can enter any value; it is not auto-overwritten when high/low change.
                       </p>
                     </div>
                   </>

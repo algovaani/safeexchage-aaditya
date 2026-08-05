@@ -3,6 +3,7 @@ import { Deposit } from '../models/Deposit.js';
 import { Withdrawal } from '../models/Withdrawal.js';
 import { User } from '../models/User.js';
 import { emitAdminNotification } from './socketService.js';
+import { sendAdminPushNotification } from './fcmPushService.js';
 
 function userLabel(user) {
   if (!user) return 'User';
@@ -44,12 +45,31 @@ export async function getPendingRequestCounts() {
 }
 
 async function pushToAdmins(io, notificationDoc, extra = {}) {
-  if (!io || !notificationDoc) return;
+  if (!notificationDoc) return;
+  const formatted = formatAdminNotification(notificationDoc);
   const counts = extra.counts || (await getPendingRequestCounts());
-  emitAdminNotification(io, {
-    notification: formatAdminNotification(notificationDoc),
-    counts,
-    at: Date.now(),
+
+  if (io) {
+    emitAdminNotification(io, {
+      notification: formatted,
+      counts,
+      at: Date.now(),
+    });
+  }
+
+  // Mobile FCM — works in background + foreground
+  void sendAdminPushNotification({
+    title: formatted.title,
+    body: formatted.message,
+    data: {
+      type: formatted.type || '',
+      refType: formatted.refType || '',
+      refId: formatted.refId || '',
+      section: formatted.section || 'deposits',
+      amount: formatted.amount != null ? String(formatted.amount) : '',
+      currency: formatted.currency || '',
+      notificationId: formatted.id || '',
+    },
   });
 }
 

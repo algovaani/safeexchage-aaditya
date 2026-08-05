@@ -23,6 +23,7 @@ const Transactions = lazy(() => import('./pages/Transactions.jsx'));
 const Trading = lazy(() => import('./pages/Trading.jsx'));
 const Futures = lazy(() => import('./pages/Futures.jsx'));
 const Staking = lazy(() => import('./pages/Staking.jsx'));
+const Support = lazy(() => import('./pages/Support.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
 const AdminUserDetail = lazy(() => import('./pages/admin/AdminUserDetail.jsx'));
 
@@ -182,6 +183,16 @@ export default function App() {
             <ProtectedRoute>
               <Lazy>
                 <Staking />
+              </Lazy>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/support"
+          element={
+            <ProtectedRoute>
+              <Lazy>
+                <Support />
               </Lazy>
             </ProtectedRoute>
           }

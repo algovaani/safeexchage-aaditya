@@ -56,5 +56,25 @@ export async function loadUser(req, res, next) {
   return next();
 }
 
+/** Verify JWT when present; continue without user if missing or invalid. */
+export async function optionalAuthMiddleware(req, res, next) {
+  const token = extractBearerToken(req);
+  if (!token) return next();
+
+  try {
+    if (await isTokenBlacklisted(token)) return next();
+    const payload = verifyToken(token);
+    const user = await User.findById(payload.sub).select('-passwordHash').lean();
+    if (!user || user.status === 'blocked') return next();
+    req.userId = user._id.toString();
+    req.userRole = user.role;
+    req.user = user;
+    req.authToken = token;
+  } catch {
+    /* optional auth — ignore invalid tokens */
+  }
+  return next();
+}
+
 /** @deprecated Use authMiddleware — kept for existing imports */
 export const requireAuth = authMiddleware;

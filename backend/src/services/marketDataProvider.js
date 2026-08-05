@@ -223,12 +223,12 @@ export function applyManualPairPrice(row) {
   if (high != null) next.high_24h = high;
   if (low != null) next.low_24h = low;
 
-  // Volume = |high − low| when both set; else use explicit manual volume
+  // Prefer explicit manual volume; otherwise fall back to |high − low| when both are set.
   let vol = null;
-  if (high != null && low != null) {
-    vol = Math.abs(high - low);
-  } else if (pair.manualVolume != null && Number.isFinite(Number(pair.manualVolume))) {
+  if (pair.manualVolume != null && Number.isFinite(Number(pair.manualVolume))) {
     vol = Number(pair.manualVolume);
+  } else if (high != null && low != null) {
+    vol = Math.abs(high - low);
   }
   if (vol != null && vol >= 0) {
     next.volume = vol;

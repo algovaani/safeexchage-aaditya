@@ -18,6 +18,11 @@ export const adminSetUserPasswordValidators = [
     .withMessage('password must be 6–128 characters'),
 ];
 
+export const adminSetUserSupportAccessValidators = [
+  ...adminUserIdParamValidators,
+  body('showSupportContactDetails').isBoolean().toBoolean(),
+];
+
 export const adminUserDepositsValidators = [
   ...adminUserIdParamValidators,
   ...datatableQueryValidators,
