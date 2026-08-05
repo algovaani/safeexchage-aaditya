@@ -87,11 +87,15 @@ function applyActivePulseToRow(row) {
   if (!row?.symbol) return row;
   const pulsed = getActivePulsePrice(row.symbol);
   if (pulsed == null) return row;
+  const high = Number(row.high_24h);
+  const low = Number(row.low_24h);
   return {
     ...row,
     price: pulsed,
     lastPrice: pulsed,
     pulsed: true,
+    high_24h: Number.isFinite(high) && high > 0 ? Math.max(high, pulsed) : pulsed,
+    low_24h: Number.isFinite(low) && low > 0 ? Math.min(low, pulsed) : pulsed,
   };
 }
 

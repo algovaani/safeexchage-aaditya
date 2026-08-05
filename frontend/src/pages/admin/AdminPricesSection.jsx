@@ -276,7 +276,8 @@ export default function AdminPricesSection() {
           <div>
             <h2>Live prices, pulse &amp; ticker stats</h2>
             <p className="admin-muted" style={{ margin: '0.35rem 0 0' }}>
-              Pulse spikes last price on the chart. Use <strong>Edit stats</strong> to set the
+              Pulse spikes last price on the chart and expands 24h High/Low to include the pulse
+              extreme. Use <strong>Edit stats</strong> to fine-tune
               trading header values: 24h Change, High, Low, and Volume (USDT).
             </p>
           </div>

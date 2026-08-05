@@ -457,6 +457,8 @@ export function broadcastPulseToSockets(io, { symbol, intervalCandles, depth, tr
       price: trade.price,
       fromPrice: trade.fromPrice,
       until: trade.until,
+      high_24h: trade.high_24h,
+      low_24h: trade.low_24h,
     });
   }
 

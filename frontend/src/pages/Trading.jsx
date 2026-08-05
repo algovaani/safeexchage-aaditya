@@ -622,7 +622,31 @@ export default function Trading() {
       };
 
       // Instant UI: last price + chart line jump to pulse NOW
-      setTicker((prev) => ({ ...prev, lastPrice: price, symbol: sym }));
+      // Also expand 24h high/low so pulsed extreme shows in the header
+      const headerHigh = Number(payload.high_24h);
+      const headerLow = Number(payload.low_24h);
+      setTicker((prev) => {
+        const prevHigh = Number(prev?.highPrice);
+        const prevLow = Number(prev?.lowPrice);
+        const nextHigh = Number.isFinite(headerHigh) && headerHigh > 0
+          ? headerHigh
+          : Number.isFinite(prevHigh) && prevHigh > 0
+            ? Math.max(prevHigh, price, from)
+            : Math.max(price, from);
+        const nextLow = Number.isFinite(headerLow) && headerLow > 0
+          ? headerLow
+          : Number.isFinite(prevLow) && prevLow > 0
+            ? Math.min(prevLow, price, from)
+            : Math.min(price, from);
+        return {
+          ...prev,
+          lastPrice: price,
+          symbol: sym,
+          highPrice: nextHigh,
+          lowPrice: nextLow,
+          stats_override: true,
+        };
+      });
       setWatchPrices((prev) => ({
         ...prev,
         [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: price },
@@ -658,7 +682,30 @@ export default function Trading() {
           : marketPrice;
 
       if (restorePrice > 0) {
-        setTicker((prev) => ({ ...prev, lastPrice: restorePrice, symbol: sym }));
+        const headerHigh = Number(payload.high_24h);
+        const headerLow = Number(payload.low_24h);
+        setTicker((prev) => {
+          const prevHigh = Number(prev?.highPrice);
+          const prevLow = Number(prev?.lowPrice);
+          const nextHigh = Number.isFinite(headerHigh) && headerHigh > 0
+            ? headerHigh
+            : Number.isFinite(prevHigh) && prevHigh > 0
+              ? Math.max(prevHigh, pulsedPrice || 0, restorePrice)
+              : prevHigh;
+          const nextLow = Number.isFinite(headerLow) && headerLow > 0
+            ? headerLow
+            : Number.isFinite(prevLow) && prevLow > 0
+              ? Math.min(prevLow, pulsedPrice > 0 ? pulsedPrice : prevLow, restorePrice)
+              : prevLow;
+          return {
+            ...prev,
+            lastPrice: restorePrice,
+            symbol: sym,
+            highPrice: nextHigh,
+            lowPrice: nextLow,
+            stats_override: true,
+          };
+        });
         setWatchPrices((prev) => ({
           ...prev,
           [sym]: { ...(prev[sym] || { symbol: sym }), lastPrice: restorePrice },

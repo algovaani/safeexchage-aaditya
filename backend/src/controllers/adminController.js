@@ -21,9 +21,13 @@ import {
 import { broadcastPulseToSockets, depthRoom, emitCandle, ensureMarketStream, resetPulseStreamState } from '../services/marketStreamService.js';
 import {
   clearTickerStatsOverride,
+  expandTickerExtremesFromPulse,
   listTickerStatsOverrides,
   upsertTickerStatsOverride,
 } from '../services/tickerStatsOverrideService.js';
+import { invalidatePriceCache } from '../services/marketDataProvider.js';
+import { getPairSync, invalidateTradingPairCache, refreshTradingPairCache } from '../services/tradingPairService.js';
+import { TradingPair } from '../models/TradingPair.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney } from '../utils/money.js';
 import { z } from 'zod';
@@ -407,11 +411,52 @@ export async function pulsePrice(req, res, next) {
 
     // Prefer cached live mid — don't block pulse on slow Binance
     let fromPrice = pulsePriceValue;
+    let liveHigh = null;
+    let liveLow = null;
     try {
       const ticker = await fetchTicker(symbol, { force: false });
       fromPrice = Number(ticker?.price ?? ticker?.lastPrice) || pulsePriceValue;
+      liveHigh = Number(ticker?.high_24h ?? ticker?.highPrice);
+      liveLow = Number(ticker?.low_24h ?? ticker?.lowPrice);
+      if (!Number.isFinite(liveHigh) || liveHigh <= 0) liveHigh = null;
+      if (!Number.isFinite(liveLow) || liveLow <= 0) liveLow = null;
     } catch {
       /* use pulse as fallback baseline */
+    }
+
+    // Expand displayed 24h high/low so pulse extreme shows in the trading header
+    let statsHigh = liveHigh != null ? Math.max(liveHigh, pulsePriceValue) : pulsePriceValue;
+    let statsLow = liveLow != null ? Math.min(liveLow, pulsePriceValue) : pulsePriceValue;
+    try {
+      const pair = getPairSync(symbol);
+      if (pair?.priceAuto === false && Number(pair.manualPrice) > 0) {
+        const curHigh =
+          pair.manualHigh24h != null && Number.isFinite(Number(pair.manualHigh24h))
+            ? Number(pair.manualHigh24h)
+            : liveHigh;
+        const curLow =
+          pair.manualLow24h != null && Number.isFinite(Number(pair.manualLow24h))
+            ? Number(pair.manualLow24h)
+            : liveLow;
+        statsHigh = curHigh != null ? Math.max(curHigh, pulsePriceValue) : pulsePriceValue;
+        statsLow = curLow != null ? Math.min(curLow, pulsePriceValue) : pulsePriceValue;
+        await TradingPair.findByIdAndUpdate(pair.id || pair._id, {
+          $set: { manualHigh24h: statsHigh, manualLow24h: statsLow },
+        });
+        invalidateTradingPairCache();
+        await refreshTradingPairCache();
+      } else {
+        const expanded = await expandTickerExtremesFromPulse(symbol, pulsePriceValue, {
+          liveHigh,
+          liveLow,
+          updatedBy: req.userId,
+        });
+        if (expanded?.high_24h != null) statsHigh = Number(expanded.high_24h);
+        if (expanded?.low_24h != null) statsLow = Number(expanded.low_24h);
+      }
+      invalidatePriceCache();
+    } catch (err) {
+      console.warn(`[pulse] expand 24h stats ${symbol}:`, err.message);
     }
 
     const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs });
@@ -439,6 +484,8 @@ export async function pulsePrice(req, res, next) {
         time: Date.now(),
         isBuyerMaker: pulsePriceValue < fromPrice,
         pulse: true,
+        high_24h: statsHigh,
+        low_24h: statsLow,
       },
     });
 
@@ -470,6 +517,8 @@ export async function pulsePrice(req, res, next) {
       manualsSaved,
       filledOrders: 0,
       mode: 'persisted-wick',
+      high_24h: statsHigh,
+      low_24h: statsLow,
     };
 
     setImmediate(async () => {
@@ -543,6 +592,8 @@ export async function pulsePrice(req, res, next) {
         pulsedPrice: pulsePriceValue,
         high: wickHi,
         low: wickLo,
+        high_24h: statsHigh,
+        low_24h: statsLow,
         reloadChart: false,
       });
 

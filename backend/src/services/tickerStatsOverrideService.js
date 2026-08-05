@@ -113,6 +113,76 @@ export async function applyTickerStatsOverridesToPairs(pairs) {
   });
 }
 
+/**
+ * After an admin price pulse, expand 24h high/low so the trading header
+ * reflects the pulsed extreme (e.g. pulse 550 → low_24h becomes ≤ 550).
+ * Preserves other override fields; only widens extremes.
+ */
+export async function expandTickerExtremesFromPulse(
+  symbol,
+  pulsePrice,
+  { liveHigh = null, liveLow = null, updatedBy = null } = {}
+) {
+  const sym = normalizeSymbol(symbol);
+  const px = Number(pulsePrice);
+  if (!sym || !(px > 0)) return null;
+
+  const existing = await TickerStatsOverride.findOne({ symbol: sym }).lean();
+  const baselineHigh =
+    existing?.high_24h != null && Number.isFinite(Number(existing.high_24h))
+      ? Number(existing.high_24h)
+      : liveHigh != null && Number.isFinite(Number(liveHigh))
+        ? Number(liveHigh)
+        : null;
+  const baselineLow =
+    existing?.low_24h != null && Number.isFinite(Number(existing.low_24h))
+      ? Number(existing.low_24h)
+      : liveLow != null && Number.isFinite(Number(liveLow))
+        ? Number(liveLow)
+        : null;
+
+  const nextHigh =
+    baselineHigh != null && Number.isFinite(baselineHigh) ? Math.max(baselineHigh, px) : px;
+  const nextLow =
+    baselineLow != null && Number.isFinite(baselineLow) && baselineLow > 0
+      ? Math.min(baselineLow, px)
+      : px;
+
+  // Nothing to expand
+  if (
+    existing &&
+    existing.enabled !== false &&
+    Number(existing.high_24h) === nextHigh &&
+    Number(existing.low_24h) === nextLow
+  ) {
+    return formatTickerStatsOverride(existing);
+  }
+
+  const patch = {
+    symbol: sym,
+    high_24h: nextHigh,
+    low_24h: nextLow,
+    enabled: true,
+    updatedBy: updatedBy || existing?.updatedBy || null,
+  };
+
+  // Preserve other stats if an override already exists
+  if (existing) {
+    if (existing.change_24h != null) patch.change_24h = existing.change_24h;
+    if (existing.volume != null) patch.volume = existing.volume;
+    if (existing.quoteVolume != null) patch.quoteVolume = existing.quoteVolume;
+  }
+
+  const doc = await TickerStatsOverride.findOneAndUpdate(
+    { symbol: sym },
+    { $set: patch },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  invalidateTickerStatsOverrideCache();
+  return formatTickerStatsOverride(doc);
+}
+
 export async function upsertTickerStatsOverride(symbol, body, updatedBy = null) {
   const sym = normalizeSymbol(symbol);
   if (!sym) {
