@@ -192,6 +192,12 @@ export function recordPriceTick(symbol, price) {
   while (arr.length > 3600) arr.shift();
 }
 
+/** Latest in-memory tick for order matching (websocket / stream). */
+export function getLatestPriceTick(symbol) {
+  const ticks = recentTicks.get(normalizeSymbol(symbol)) || [];
+  return ticks.length ? ticks[ticks.length - 1] : null;
+}
+
 /** Drop in-memory ticks so a pulse wick cannot poison live candle buckets. */
 export function clearRecentTicks(symbol) {
   if (symbol == null || symbol === '') {

@@ -1,4 +1,5 @@
 import { AdminNotification } from '../models/AdminNotification.js';
+import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { Deposit } from '../models/Deposit.js';
 import { Withdrawal } from '../models/Withdrawal.js';
 import { User } from '../models/User.js';
@@ -31,17 +32,23 @@ export function formatAdminNotification(doc) {
     readAt: row.readAt || null,
     resolvedAt: row.resolvedAt || null,
     /** Admin panel deep-link section */
-    section: row.refType === 'withdrawal' ? 'withdrawals' : 'deposits',
+    section:
+      row.refType === 'withdrawal'
+        ? 'withdrawals'
+        : row.refType === 'cash_in_person'
+          ? 'cashInPerson'
+          : 'deposits',
   };
 }
 
 export async function getPendingRequestCounts() {
-  const [pendingDeposits, pendingWithdrawals, unread] = await Promise.all([
+  const [pendingDeposits, pendingWithdrawals, pendingCashInPerson, unread] = await Promise.all([
     Deposit.countDocuments({ status: 'pending' }),
     Withdrawal.countDocuments({ status: 'pending' }),
+    CashInPersonRequest.countDocuments({ status: 'pending' }),
     AdminNotification.countDocuments({ read: false, resolved: false }),
   ]);
-  return { pendingDeposits, pendingWithdrawals, unread };
+  return { pendingDeposits, pendingWithdrawals, pendingCashInPerson, unread };
 }
 
 async function pushToAdmins(io, notificationDoc, extra = {}) {
@@ -173,6 +180,65 @@ export async function notifyWithdrawalRequest(io, withdrawal) {
     return doc;
   } catch (err) {
     console.warn('[adminNotify] withdrawal:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Persist + push admin alert for a new cash-in-person request. Never throws to callers.
+ */
+export async function notifyCashInPersonRequest(io, request) {
+  try {
+    if (!request?._id) return null;
+
+    let user = null;
+    try {
+      user = await User.findById(request.userId).select('name email mobile').lean();
+    } catch {
+      /* ignore */
+    }
+
+    const reqType = request.type === 'withdraw' ? 'withdraw' : 'deposit';
+    const amount =
+      request.requestedAmount != null && Number(request.requestedAmount) > 0
+        ? Number(request.requestedAmount)
+        : null;
+    const currency = String(request.currency || 'USDT').toUpperCase();
+    const who = userLabel(user);
+    const city = String(request.city || '').trim();
+    const mobile = String(request.mobile || '').trim();
+    const contact = mobile || city || 'contact details on file';
+    const amountPart = amount != null ? ` for ${amount} ${currency}` : '';
+    const title = `New cash-in-person ${reqType}`;
+    const message = `${who} requested a cash-in-person ${reqType}${amountPart} (${contact}) — awaiting approval.`;
+
+    let doc;
+    try {
+      doc = await AdminNotification.create({
+        type: 'cash_in_person_request',
+        title,
+        message,
+        refType: 'cash_in_person',
+        refId: request._id,
+        userId: request.userId || null,
+        amount,
+        currency,
+        channel: 'cash_in_person',
+        meta: {
+          requestType: reqType,
+          mobile,
+          city,
+        },
+      });
+    } catch (err) {
+      if (err?.code === 11000) return null;
+      throw err;
+    }
+
+    await pushToAdmins(io, doc);
+    return doc;
+  } catch (err) {
+    console.warn('[adminNotify] cashInPerson:', err.message);
     return null;
   }
 }

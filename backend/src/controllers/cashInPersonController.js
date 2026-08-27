@@ -1,5 +1,10 @@
 import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
+import { notifyCashInPersonRequest } from '../services/adminNotificationService.js';
+import { assertUserMayWithdraw } from '../services/withdrawEligibilityService.js';
 import { formatCashInPersonRequest } from '../services/cashInPersonService.js';
+import { reserveWithdrawalFunds, releaseWithdrawalFunds } from '../services/withdrawalService.js';
+import { roundMoney } from '../utils/money.js';
+import { emitWalletUpdate } from '../services/socketService.js';
 import { error, success } from '../utils/response.js';
 
 export async function submitRequest(req, res, next) {
@@ -18,20 +23,49 @@ export async function submitRequest(req, res, next) {
 
     const requestedAmount =
       amount != null && amount !== '' && Number.isFinite(Number(amount)) && Number(amount) > 0
-        ? Number(amount)
+        ? roundMoney(Number(amount))
         : null;
 
     if (requestType === 'withdraw' && !(requestedAmount > 0)) {
       return error(res, 'Amount is required for withdraw requests', 400);
     }
 
-    const row = await CashInPersonRequest.create({
-      userId: req.userId,
-      type: requestType,
-      mobile: String(mobile).trim(),
-      city: String(city).trim(),
-      requestedAmount,
-    });
+    let fundsLocked = false;
+    let fundsLockedAmount = 0;
+
+    if (requestType === 'withdraw') {
+      // Same gates as crypto/fiat withdraw — no spam requests without deposit/KYC/balance
+      await assertUserMayWithdraw(req.userId, requestedAmount);
+      await reserveWithdrawalFunds(req.userId, requestedAmount);
+      fundsLocked = true;
+      fundsLockedAmount = requestedAmount;
+    }
+
+    let row;
+    try {
+      row = await CashInPersonRequest.create({
+        userId: req.userId,
+        type: requestType,
+        mobile: String(mobile).trim(),
+        city: String(city).trim(),
+        requestedAmount,
+        fundsLocked,
+        fundsLockedAmount,
+      });
+    } catch (createErr) {
+      if (fundsLocked) {
+        await releaseWithdrawalFunds(req.userId, fundsLockedAmount).catch(() => {});
+      }
+      throw createErr;
+    }
+
+    if (fundsLocked) {
+      await emitWalletUpdate(req.app.get('io'), req.userId, {
+        reason: 'cash_in_person_withdraw_lock',
+      }).catch(() => {});
+    }
+
+    void notifyCashInPersonRequest(req.app.get('io'), row);
 
     return success(
       res,
@@ -39,6 +73,7 @@ export async function submitRequest(req, res, next) {
       'Request submitted — our team will contact you shortly'
     );
   } catch (e) {
+    if (e.status) return error(res, e.message, e.status);
     return next(e);
   }
 }

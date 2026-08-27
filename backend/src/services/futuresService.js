@@ -7,12 +7,13 @@ import { fetchTicker } from './marketDataProvider.js';
 import { getFuturesSettings } from './futuresSettingsService.js';
 import { emitWalletUpdate, emitFuturesUpdate } from './socketService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
-import { applyBonusClamp } from './walletAdjustmentService.js';
+import { debitForTrade, creditTradeProfit, tradeableBalance, ensureWalletBuckets } from './walletAdjustmentService.js';
 import {
   initialMargin,
   tradingFee,
   unrealizedPnl,
-  liquidationPrice,
+  resolveLiquidationPrice,
+  maintenanceMargin,
   roePercent,
   notional,
   validateTpSl,
@@ -31,7 +32,26 @@ async function resolveMarkPrice(symbol) {
   return mark;
 }
 
-function positionView(pos, markPrice, settings) {
+function walletEquity(wallet) {
+  ensureWalletBuckets(wallet);
+  return storeMoney(wallet?.balance || 0);
+}
+
+function updatePositionLiquidationPrice(position, settings, wallet) {
+  const marginMode = position.marginMode || 'cross';
+  const equity = marginMode === 'cross' && wallet ? walletEquity(wallet) : null;
+  return resolveLiquidationPrice({
+    side: position.side,
+    entryPrice: position.entryPrice,
+    quantity: position.quantity,
+    margin: position.margin,
+    walletEquity: equity,
+    maintenanceRate: settings.maintenanceMarginRate,
+    marginMode,
+  });
+}
+
+function positionView(pos, markPrice, settings, { walletEquity: equity } = {}) {
   const mark = markPrice ?? pos.markPrice ?? pos.entryPrice;
   const upnl = unrealizedPnl({
     side: pos.side,
@@ -39,12 +59,14 @@ function positionView(pos, markPrice, settings) {
     entryPrice: pos.entryPrice,
     markPrice: mark,
   });
-  const liq = liquidationPrice({
+  const liq = resolveLiquidationPrice({
     side: pos.side,
     entryPrice: pos.entryPrice,
     quantity: pos.quantity,
     margin: pos.margin,
+    walletEquity: equity,
     maintenanceRate: settings?.maintenanceMarginRate,
+    marginMode: pos.marginMode || 'cross',
   });
   const closeFee = tradingFee(pos.quantity, mark, settings?.takerFeeRate);
 
@@ -82,7 +104,8 @@ async function getWallet(userId, session) {
 }
 
 function availableBalance(wallet) {
-  return storeMoney(Math.max(0, wallet.balance - wallet.lockedBalance));
+  ensureWalletBuckets(wallet);
+  return tradeableBalance(wallet);
 }
 
 async function logTx(session, payload) {
@@ -95,11 +118,12 @@ async function createOrder(session, payload) {
 }
 
 function validateLeverage(leverage, settings) {
-  const lev = Number(leverage);
+  const lev = Math.round(Number(leverage));
   if (!Number.isFinite(lev) || lev < settings.minLeverage || lev > settings.maxLeverage) {
     throw httpError(`Leverage must be between ${settings.minLeverage}x and ${settings.maxLeverage}x`);
   }
-  if (settings.allowedLeverages?.length && !settings.allowedLeverages.includes(lev)) {
+  const allowed = (settings.allowedLeverages || []).map((x) => Number(x)).filter((x) => Number.isFinite(x));
+  if (allowed.length && !allowed.includes(lev)) {
     throw httpError('Selected leverage is not allowed');
   }
   return lev;
@@ -119,11 +143,15 @@ function validateOrderInputs({ quantity, price, settings }) {
 
 export async function listOpenPositions(userId, { markPrices = {} } = {}) {
   const settings = await getFuturesSettings();
-  const rows = await FuturesPosition.find({ userId, status: 'open' }).sort({ createdAt: -1 }).lean();
+  const [rows, wallet] = await Promise.all([
+    FuturesPosition.find({ userId, status: 'open' }).sort({ createdAt: -1 }).lean(),
+    Wallet.findOne({ userId }).lean(),
+  ]);
+  const equity = wallet ? walletEquity(wallet) : null;
   return Promise.all(
     rows.map(async (p) => {
       const mark = markPrices[p.symbol] ?? (await resolveMarkPrice(p.symbol).catch(() => p.entryPrice));
-      return positionView(p, mark, settings);
+      return positionView(p, mark, settings, { walletEquity: equity });
     })
   );
 }
@@ -147,11 +175,22 @@ export async function listPositionHistory(userId, { page = 1, limit = 20 } = {})
   };
 }
 
+const ORDER_HISTORY_ACTIONS = [
+  'open',
+  'close',
+  'partial_close',
+  'take_profit',
+  'stop_loss',
+  'liquidation',
+  'reverse',
+];
+
 export async function listOrderHistory(userId, { page = 1, limit = 30 } = {}) {
   const skip = (Math.max(1, page) - 1) * limit;
+  const filter = { userId, action: { $in: ORDER_HISTORY_ACTIONS } };
   const [rows, total] = await Promise.all([
-    FuturesOrder.find({ userId }).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
-    FuturesOrder.countDocuments({ userId }),
+    FuturesOrder.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    FuturesOrder.countDocuments(filter),
   ]);
   return {
     items: rows.map((o) => ({
@@ -186,18 +225,21 @@ export async function estimateOrder(userId, body) {
   const mark = body.limitPrice ? Number(body.limitPrice) : await resolveMarkPrice(body.symbol);
   const { qty, px } = validateOrderInputs({ quantity: body.quantity, price: mark, settings });
 
+  const marginMode = body.marginMode === 'isolated' ? 'isolated' : 'cross';
   const margin = initialMargin(qty, px, leverage);
   const fee = tradingFee(qty, px, settings.takerFeeRate);
-  const liq = liquidationPrice({
+  const wallet = await Wallet.findOne({ userId }).lean();
+  const available = wallet ? availableBalance(wallet) : 0;
+  const equity = wallet ? walletEquity(wallet) : available;
+  const liq = resolveLiquidationPrice({
     side,
     entryPrice: px,
     quantity: qty,
     margin,
+    walletEquity: marginMode === 'cross' ? equity : null,
     maintenanceRate: settings.maintenanceMarginRate,
+    marginMode,
   });
-
-  const wallet = await Wallet.findOne({ userId }).lean();
-  const available = wallet ? availableBalance(wallet) : 0;
 
   return {
     symbol: String(body.symbol).toUpperCase(),
@@ -205,7 +247,7 @@ export async function estimateOrder(userId, body) {
     quantity: qty,
     price: px,
     leverage,
-    marginMode: body.marginMode === 'isolated' ? 'isolated' : 'cross',
+    marginMode,
     requiredMargin: margin,
     estimatedFee: fee,
     totalRequired: storeMoney(margin + fee),
@@ -250,11 +292,11 @@ export async function openPosition(userId, body, { io } = {}) {
 
   try {
     const wallet = await getWallet(userId, session);
+    ensureWalletBuckets(wallet);
     if (availableBalance(wallet) < totalLock) throw httpError('Insufficient available balance');
 
-    wallet.balance = storeMoney(wallet.balance - openFee);
+    debitForTrade(wallet, openFee);
     wallet.lockedBalance = storeMoney(wallet.lockedBalance + marginNeeded);
-    applyBonusClamp(wallet);
     await wallet.save({ session });
 
     let position = await FuturesPosition.findOne({ userId, symbol, side, marginMode, status: 'open' }).session(session);
@@ -294,12 +336,15 @@ export async function openPosition(userId, body, { io } = {}) {
       });
     }
 
-    position.liquidationPrice = liquidationPrice({
+    const equityAfter = walletEquity(wallet);
+    position.liquidationPrice = resolveLiquidationPrice({
       side,
       entryPrice: position.entryPrice,
       quantity: position.quantity,
       margin: position.margin,
+      walletEquity: marginMode === 'cross' ? equityAfter : null,
       maintenanceRate: settings.maintenanceMarginRate,
+      marginMode,
     });
     position.markPrice = execPrice;
     position.unrealizedPnl = 0;
@@ -346,7 +391,9 @@ export async function openPosition(userId, body, { io } = {}) {
 
     await session.commitTransaction();
 
-    const view = positionView(position.toObject(), execPrice, settings);
+    const view = positionView(position.toObject(), execPrice, settings, {
+      walletEquity: marginMode === 'cross' ? equityAfter : null,
+    });
     if (io) {
       await emitWalletUpdate(io, userId, { reason: 'futures_open' });
       emitFuturesUpdate(io, userId, { positions: [view], event: 'position:opened' });
@@ -391,7 +438,8 @@ export async function closePosition(userId, positionId, { quantity, reason = 'ma
     if (wallet.lockedBalance < marginPortion) throw httpError('Insufficient locked margin');
 
     wallet.lockedBalance = storeMoney(wallet.lockedBalance - marginPortion);
-    wallet.balance = storeMoney(wallet.balance + returnAmount);
+    ensureWalletBuckets(wallet);
+    creditTradeProfit(wallet, returnAmount);
     await wallet.save({ session });
 
     const action = isPartial ? 'partial_close' : reason === 'manual' ? 'close' : reason;
@@ -463,13 +511,7 @@ export async function closePosition(userId, positionId, { quantity, reason = 'ma
       position.margin = remainMargin;
       position.realizedPnl = storeMoney(Number(position.realizedPnl || 0) + pnl);
       position.tradingFees = storeMoney(Number(position.tradingFees || 0) + closeFee);
-      position.liquidationPrice = liquidationPrice({
-        side: position.side,
-        entryPrice: position.entryPrice,
-        quantity: remainQty,
-        margin: remainMargin,
-        maintenanceRate: settings.maintenanceMarginRate,
-      });
+      position.liquidationPrice = updatePositionLiquidationPrice(position, settings, wallet);
       position.markPrice = mark;
       position.unrealizedPnl = unrealizedPnl({
         side: position.side,
@@ -492,7 +534,9 @@ export async function closePosition(userId, positionId, { quantity, reason = 'ma
 
     await session.commitTransaction();
 
-    const view = positionView(position.toObject(), mark, settings);
+    const view = positionView(position.toObject(), mark, settings, {
+      walletEquity: (position.marginMode || 'cross') === 'cross' ? walletEquity(wallet) : null,
+    });
     if (io) {
       await emitWalletUpdate(io, userId, { reason: 'futures_close' });
       emitFuturesUpdate(io, userId, {
@@ -530,7 +574,10 @@ export async function editPositionTpSl(userId, positionId, { takeProfitPrice, st
   await position.save();
 
   const mark = await resolveMarkPrice(position.symbol).catch(() => position.entryPrice);
-  const view = positionView(position.toObject(), mark, settings);
+  const wallet = await Wallet.findOne({ userId }).lean();
+  const view = positionView(position.toObject(), mark, settings, {
+    walletEquity: (position.marginMode || 'cross') === 'cross' && wallet ? walletEquity(wallet) : null,
+  });
   if (io) emitFuturesUpdate(io, userId, { positions: [view], event: 'position:updated' });
   return view;
 }
@@ -567,13 +614,7 @@ export async function adjustPositionMargin(userId, positionId, { amount, action 
 
     await wallet.save({ session });
 
-    position.liquidationPrice = liquidationPrice({
-      side: position.side,
-      entryPrice: position.entryPrice,
-      quantity: position.quantity,
-      margin: position.margin,
-      maintenanceRate: settings.maintenanceMarginRate,
-    });
+    position.liquidationPrice = updatePositionLiquidationPrice(position, settings, wallet);
     await position.save({ session });
 
     await createOrder(session, {
@@ -596,7 +637,9 @@ export async function adjustPositionMargin(userId, positionId, { amount, action 
     await session.commitTransaction();
 
     const mark = await resolveMarkPrice(position.symbol).catch(() => position.entryPrice);
-    const view = positionView(position.toObject(), mark, settings);
+    const view = positionView(position.toObject(), mark, settings, {
+      walletEquity: (position.marginMode || 'cross') === 'cross' ? walletEquity(wallet) : null,
+    });
     if (io) {
       await emitWalletUpdate(io, userId, { reason: 'futures_margin_adjust' });
       emitFuturesUpdate(io, userId, { positions: [view], event: 'position:updated' });

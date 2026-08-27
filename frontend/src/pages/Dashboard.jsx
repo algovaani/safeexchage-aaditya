@@ -9,6 +9,14 @@ import { useRealtime } from '../context/RealtimeContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { LIST_MARKET_POLL_MS } from '../config/marketPoll.js';
 import CoinIcon from '../components/CoinIcon.jsx';
+import BannerSlider from '../components/BannerSlider.jsx';
+import {
+  readSwrSync,
+  writeSwrSync,
+  readSwrIdb,
+  writeSwrIdb,
+  SwrKeys,
+} from '../utils/swrCache.js';
 
 const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
@@ -37,9 +45,9 @@ export default function Dashboard() {
   const { toInr } = usePlatformConfig();
   const { wallet: liveWallet, walletVersion } = useRealtime();
   const { pairs: tradingPairs } = useTradingPairs();
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary] = useState(() => readSwrSync(SwrKeys.dashboardSummary)?.data || null);
   const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !readSwrSync(SwrKeys.dashboardSummary)?.data);
   const [banners, setBanners] = useState([]);
   const [symbol, setSymbol] = useState('BTCUSDT');
   const [timeframe, setTimeframe] = useState('15m');
@@ -90,7 +98,10 @@ export default function Dashboard() {
             .catch(() => ({ rows: [] })),
         ]);
         if (!active) return;
-        setSummary(sum);
+        if (sum) {
+          setSummary(sum);
+          writeSwrSync(SwrKeys.dashboardSummary, sum);
+        }
         setOrders(Array.isArray(ordRes?.rows) ? ordRes.rows : []);
       } finally {
         if (active) setLoading(false);
@@ -116,6 +127,13 @@ export default function Dashboard() {
   useEffect(() => {
     let active = true;
     const interval = resolveChartInterval(timeframe);
+    const cacheKey = SwrKeys.klines(symbol, interval);
+
+    readSwrIdb(cacheKey).then((cached) => {
+      if (!active || !Array.isArray(cached?.data) || !cached.data.length) return;
+      setCandles((prev) => (prev.length ? prev : cached.data));
+    });
+
     (async () => {
       try {
         const [tRes, kRes] = await Promise.all([
@@ -125,10 +143,12 @@ export default function Dashboard() {
         if (!active) return;
         setTicker(parseApiResponse(tRes.data));
         const k = parseApiResponse(kRes.data);
-        setCandles(Array.isArray(k?.candles) ? k.candles : []);
+        const nextCandles = Array.isArray(k?.candles) ? k.candles : [];
+        setCandles(nextCandles);
+        if (nextCandles.length) writeSwrIdb(cacheKey, nextCandles);
       } catch {
         if (active) {
-          setCandles([]);
+          setCandles((prev) => prev);
           setTicker(null);
         }
       }
@@ -142,7 +162,10 @@ export default function Dashboard() {
         if (!active) return;
         setTicker(parseApiResponse(tRes.data));
         const k = parseApiResponse(kRes.data);
-        if (Array.isArray(k?.candles) && k.candles.length) setCandles(k.candles);
+        if (Array.isArray(k?.candles) && k.candles.length) {
+          setCandles(k.candles);
+          writeSwrIdb(cacheKey, k.candles);
+        }
       } catch {
         /* keep last */
       }
@@ -203,24 +226,7 @@ export default function Dashboard() {
         <p className="text-sm text-text-secondary">Portfolio overview and market activity</p>
       </div>
 
-      {banners.length > 0 && (
-        <div className="space-y-3">
-          {banners.map((b) => (
-            <div key={String(b._id || b.id)} className="ui-card p-4">
-              <p className="text-sm text-text-primary font-medium">Announcement</p>
-              {b.imageUrl ? (
-                <img
-                  src={b.imageUrl}
-                  alt="banner"
-                  className="w-full mt-3 rounded-md object-cover max-h-52"
-                  loading="lazy"
-                />
-              ) : null}
-              <p className="text-sm text-text-secondary mt-1">{b.message}</p>
-            </div>
-          ))}
-        </div>
-      )}
+      {banners.length > 0 ? <BannerSlider banners={banners} /> : null}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {loading

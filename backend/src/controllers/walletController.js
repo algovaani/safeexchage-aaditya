@@ -1,18 +1,15 @@
-import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
-import { success } from '../utils/response.js';
-import { listUserAssets } from '../services/assetBalanceService.js';
-import { formatWalletSnapshot, enrichWalletSnapshotWithPrices } from '../services/walletAdjustmentService.js';
+import { success, error } from '../utils/response.js';
+import { enrichWalletSnapshotWithPrices } from '../services/walletAdjustmentService.js';
+import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
 import { fetchPriceMap } from '../services/marketDataProvider.js';
 
 export async function balance(req, res, next) {
   try {
-    const [w, assets, priceData] = await Promise.all([
-      Wallet.findOne({ userId: req.userId }).lean(),
-      listUserAssets(req.userId),
+    const [snapshot, priceData] = await Promise.all([
+      fetchWalletSnapshotForUser(req.userId),
       fetchPriceMap().catch(() => ({ prices: {} })),
     ]);
-    const snapshot = formatWalletSnapshot(w, assets);
     enrichWalletSnapshotWithPrices(snapshot, priceData?.prices || {});
     return success(res, snapshot, 'Wallet balance fetched');
   } catch (e) {
@@ -20,37 +17,22 @@ export async function balance(req, res, next) {
   }
 }
 
-export async function deposit(req, res, next) {
-  try {
-    const { amount, reference } = req.body;
-    const tx = await Transaction.create({
-      userId: req.userId,
-      type: 'deposit',
-      amount,
-      status: 'pending',
-      method: 'manual',
-      reference: reference || '',
-    });
-    return success(res, tx, 'Deposit request submitted', 201);
-  } catch (e) {
-    return next(e);
-  }
+/** @deprecated Removed — use /api/deposit/* flow. Blocks direct API abuse. */
+export async function deposit(_req, res) {
+  return error(
+    res,
+    'This endpoint is disabled. Use Deposit → Crypto/Fiat submit instead.',
+    410
+  );
 }
 
-export async function withdraw(req, res, next) {
-  try {
-    const { amount } = req.body;
-    const tx = await Transaction.create({
-      userId: req.userId,
-      type: 'withdrawal',
-      amount,
-      status: 'pending',
-      method: 'manual',
-    });
-    return success(res, tx, 'Withdrawal request submitted', 201);
-  } catch (e) {
-    return next(e);
-  }
+/** @deprecated Removed — use /api/withdrawal/* flow. Blocks zero-balance withdraw spam. */
+export async function withdraw(_req, res) {
+  return error(
+    res,
+    'This endpoint is disabled. Use Withdraw → Crypto/Fiat submit instead.',
+    410
+  );
 }
 
 export async function transactions(req, res, next) {

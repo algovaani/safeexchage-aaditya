@@ -58,3 +58,22 @@ export const authLoginRateLimit = rateLimit({
       'Too many login attempts. Please wait 15 minutes and try again.'
     ),
 });
+
+/**
+ * Strict limit on withdraw / cash-in-person withdraw submits.
+ * Always enforced (including local) so Postman spam cannot flood pending queue.
+ */
+export const withdrawSubmitRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: Number(process.env.WITHDRAW_RATE_LIMIT_MAX) || (isDev ? 20 : 5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  // userId is set by authMiddleware which runs before this limiter
+  keyGenerator: (req) => `wd:${req.userId || req.ip}`,
+  validate: false,
+  handler: (_req, res) =>
+    apiRateLimitResponse(
+      res,
+      'Too many withdrawal requests. Please wait before trying again.'
+    ),
+});

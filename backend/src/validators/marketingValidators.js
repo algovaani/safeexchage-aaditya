@@ -6,7 +6,7 @@ const STR_MAX = 500;
 // Banners
 // ---------------------------
 export const bannerCreateValidators = [
-  body('message').trim().notEmpty().isLength({ max: STR_MAX }),
+  body('message').optional({ values: 'falsy' }).trim().isLength({ max: STR_MAX }),
   body('imageUrl')
     .optional({ values: 'falsy' })
     .trim()

@@ -29,7 +29,8 @@ import dashboardRoutes from './routes/dashboardRoutes.js';
 import transactionRoutes from './routes/transactionRoutes.js';
 import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
 import futuresRoutes from './routes/futuresRoutes.js';
-import { handleMarketSubscribe, handleMarketUnsubscribe } from './services/marketStreamService.js';
+import { handleMarketSubscribe, handleMarketUnsubscribe, handleMarketDisconnect } from './services/marketStreamService.js';
+import { startBinanceWsPriceFeed } from './services/binanceWsService.js';
 import { attachUserSockets } from './services/socketService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
@@ -37,10 +38,22 @@ import { installGracefulShutdown, installProcessHandlers } from './config/proces
 import { isDbConnected } from './config/db.js';
 import { getProcessRole, shouldRunHttp, shouldRunBackgroundJobs } from './config/processRole.js';
 import { startBackgroundJobs, stopBackgroundJobs } from './jobs/backgroundJobs.js';
+import { migrateAllWalletBuckets } from './services/walletBucketService.js';
+import { reconcileAllSellAssetLocks } from './services/sellLockRepairService.js';
+import {
+  attachSpotOrderMonitorIo,
+  startSpotOrderMonitor,
+  stopSpotOrderMonitor,
+} from './services/spotOrderMonitor.js';
 
 installProcessHandlers();
 
 const ROLE = getProcessRole();
+
+if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).length < 16) {
+  console.error('[fatal] JWT_SECRET is missing or too short (min 16 chars). Refusing to start.');
+  process.exit(1);
+}
 
 if (!shouldRunHttp()) {
   console.error(`[api] PROCESS_ROLE=${ROLE} — this entry is HTTP-only. Use src/worker.js for worker/scanner.`);
@@ -155,6 +168,10 @@ io.on('connection', (socket) => {
   socket.on('market:unsubscribe', (payload) => {
     handleMarketUnsubscribe(socket, payload || {});
   });
+
+  socket.on('disconnect', () => {
+    handleMarketDisconnect(socket);
+  });
 });
 
 const PORT = Number(process.env.PORT) || 5001;
@@ -166,6 +183,27 @@ async function warmApiCaches() {
     await ensureCommodityPairs();
     await refreshTradingPairCache();
     console.info('[pairs] Trading pair cache loaded (api)');
+    try {
+      const { updated } = await migrateAllWalletBuckets();
+      if (updated > 0) {
+        console.info(`[wallet] Migrated bucket balances for ${updated} wallet(s) (api)`);
+      }
+    } catch (err) {
+      console.warn('[wallet] Bucket migration skipped:', err.message);
+    }
+    try {
+      const { fixed } = await reconcileAllSellAssetLocks();
+      if (fixed > 0) {
+        console.info(`[orders] Reconciled stuck sell locks for ${fixed} asset row(s) (api)`);
+      }
+    } catch (err) {
+      console.warn('[orders] Sell lock reconcile skipped:', err.message);
+    }
+    try {
+      await startBinanceWsPriceFeed();
+    } catch (err) {
+      console.warn('[binance-ws] Feed start skipped:', err.message);
+    }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);
   }
@@ -185,6 +223,8 @@ async function main() {
       await startBackgroundJobs({ io });
     } else {
       console.info('[api] Background jobs disabled here — run safex-worker / PROCESS_ROLE=worker');
+      attachSpotOrderMonitorIo(io);
+      startSpotOrderMonitor();
       await warmApiCaches();
     }
   } catch (err) {
@@ -196,6 +236,8 @@ async function main() {
       if (shouldRunBackgroundJobs()) {
         await startBackgroundJobs({ io });
       } else {
+        attachSpotOrderMonitorIo(io);
+        startSpotOrderMonitor();
         await warmApiCaches();
       }
     } else {
@@ -232,6 +274,8 @@ async function main() {
     onShutdown: async () => {
       if (shouldRunBackgroundJobs()) {
         await stopBackgroundJobs();
+      } else {
+        stopSpotOrderMonitor();
       }
       await mongoose.disconnect().catch(() => {});
     },

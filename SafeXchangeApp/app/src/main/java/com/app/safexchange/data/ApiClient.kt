@@ -52,6 +52,21 @@ interface AdminApi {
         @Body body: VerifyBody,
     ): ApiEnvelope<WithdrawalRow>
 
+    @GET("admin/cash-in-person")
+    suspend fun listCashInPerson(
+        @Query("page") page: Int = 1,
+        @Query("pageSize") pageSize: Int = 50,
+        @Query("status") status: String? = "pending",
+        @Query("sortBy") sortBy: String = "createdAt",
+        @Query("sortDir") sortDir: String = "desc",
+    ): ApiEnvelope<PaginatedRows<CashInPersonRow>>
+
+    @PATCH("admin/cash-in-person/{id}/verify")
+    suspend fun verifyCashInPerson(
+        @Path("id") id: String,
+        @Body body: VerifyCashInPersonBody,
+    ): ApiEnvelope<CashInPersonRow>
+
     @POST("admin/notifications/device")
     suspend fun registerDevice(@Body body: DeviceTokenBody): ApiEnvelope<Any>
 
@@ -72,8 +87,12 @@ object ApiClient {
 
     fun init(store: AuthStore) {
         authStore = store
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+        val headersInterceptor = Interceptor { chain ->
+            chain.proceed(
+                chain.request().newBuilder()
+                    .header("Accept", "application/json")
+                    .build()
+            )
         }
         val authInterceptor = Interceptor { chain ->
             val token = runBlocking { authStore.getToken() }
@@ -86,12 +105,21 @@ object ApiClient {
             }
             chain.proceed(req)
         }
-        val client = OkHttpClient.Builder()
+        val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .addInterceptor(headersInterceptor)
             .addInterceptor(authInterceptor)
-            .addInterceptor(logging)
-            .build()
+
+        if (BuildConfig.DEBUG) {
+            builder.addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BASIC
+                }
+            )
+        }
+
+        val client = builder.build()
 
         api = Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)

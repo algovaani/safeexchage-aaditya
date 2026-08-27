@@ -1,15 +1,20 @@
 import { Order } from '../models/Order.js';
 import { Trade } from '../models/Trade.js';
 import { Wallet } from '../models/Wallet.js';
+import { AssetBalance } from '../models/AssetBalance.js';
 import { error, success } from '../utils/response.js';
-import { fetchTicker } from '../services/marketDataProvider.js';
-import { processOrdersForPrice } from '../services/orderEngine.js';
+import { fetchTicker, fetchLivePriceForMatching } from '../services/marketDataProvider.js';
+import { processOrdersForPrice, notifySpotOrderFills } from '../services/orderEngine.js';
 import {
   baseAssetFromSymbol,
-  getAvailableAssetBalance,
   listUserAssets,
+  lockAsset,
+  unlockAsset,
+  reconcileSellAssetLocks,
 } from '../services/assetBalanceService.js';
-import { formatWalletSnapshot } from '../services/walletAdjustmentService.js';
+import { formatWalletSnapshot, tradeableBalance } from '../services/walletAdjustmentService.js';
+import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
+import { emitWalletUpdate } from '../services/socketService.js';
 import { roundMoney } from '../utils/money.js';
 import { unitPriceToUsdt } from '../utils/inrTrading.js';
 import { Transaction } from '../models/Transaction.js';
@@ -23,11 +28,11 @@ const FEE_RATE = 0.001;
 
 async function assertBuyAffordable(userId, { symbol, orderType, quantity, price }) {
   const wallet = await Wallet.findOne({ userId });
-  const available = (wallet?.balance || 0) - (wallet?.lockedBalance || 0);
+  const available = tradeableBalance(wallet);
 
   let unitPrice = price;
   if (orderType === 'market') {
-    const ticker = await fetchTicker(symbol);
+    const ticker = await fetchTicker(symbol, { skipPulse: true });
     unitPrice = Number(ticker.price);
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
       throw Object.assign(new Error('Market price unavailable'), { status: 503 });
@@ -38,15 +43,25 @@ async function assertBuyAffordable(userId, { symbol, orderType, quantity, price 
 
   const cost = unitPrice * quantity * (1 + FEE_RATE);
   if (!wallet || available < cost) {
-    throw Object.assign(new Error('Insufficient USDT balance'), { status: 400 });
+    const msg = wallet
+      ? `Insufficient USDT balance (need ${roundMoney(cost)} USDT, available ${roundMoney(available)} USDT)`
+      : 'Insufficient USDT balance';
+    throw Object.assign(new Error(msg), { status: 400 });
   }
 }
 
 async function assertSellAffordable(userId, { symbol, quantity }) {
   const baseAsset = baseAssetFromSymbol(symbol);
-  const available = await getAvailableAssetBalance(userId, baseAsset);
+  const row = await AssetBalance.findOne({ userId, asset: baseAsset }).lean();
+  const balance = row?.balance || 0;
+  const locked = row?.lockedBalance || 0;
+  const available = balance - locked;
   if (available + 1e-12 < quantity) {
-    throw Object.assign(new Error(`Insufficient ${baseAsset} balance`), { status: 400 });
+    const msg =
+      locked > 0
+        ? `Insufficient ${baseAsset} balance (available ${roundMoney(available)} ${baseAsset}, ${roundMoney(locked)} locked in open sell orders)`
+        : `Insufficient ${baseAsset} balance (available ${roundMoney(available)} ${baseAsset})`;
+    throw Object.assign(new Error(msg), { status: 400 });
   }
 }
 
@@ -156,7 +171,10 @@ export async function createOrder(req, res, next) {
     if (side === 'buy') {
       await assertBuyAffordable(req.userId, { symbol: sym, orderType, quantity, price });
     } else {
+      const baseAsset = baseAssetFromSymbol(sym);
+      await reconcileSellAssetLocks(req.userId, baseAsset);
       await assertSellAffordable(req.userId, { symbol: sym, quantity });
+      await lockAsset(req.userId, baseAsset, quantity);
     }
 
     const order = await Order.create({
@@ -196,12 +214,10 @@ export async function createOrder(req, res, next) {
       });
     }
 
+    let trades = [];
     try {
-      const ticker = await fetchTicker(sym);
-      const marketPrice = Number(ticker.price);
-      if (Number.isFinite(marketPrice) && marketPrice > 0) {
-        await processOrdersForPrice(sym, marketPrice);
-      }
+      const marketPrice = await fetchLivePriceForMatching(sym);
+      trades = await processOrdersForPrice(sym, marketPrice);
     } catch (fillErr) {
       console.warn('order fill on create:', fillErr.message);
     }
@@ -209,10 +225,16 @@ export async function createOrder(req, res, next) {
     const updated = await Order.findById(order._id).lean();
     const finalOrder = updated || order.toObject();
 
-    const [wallet, assets] = await Promise.all([
-      Wallet.findOne({ userId: req.userId }).lean(),
-      listUserAssets(req.userId),
+    const [walletSnapshot] = await Promise.all([
+      fetchWalletSnapshotForUser(req.userId),
+      trades.length
+        ? notifySpotOrderFills(req.app.get('io'), sym, trades)
+        : Promise.resolve(),
     ]);
+
+    void emitWalletUpdate(req.app.get('io'), req.userId, {
+      reason: finalOrder.status === 'filled' ? 'spot_order_filled' : 'spot_order_placed',
+    }).catch(() => {});
 
     const message =
       finalOrder.status === 'filled'
@@ -227,13 +249,24 @@ export async function createOrder(req, res, next) {
       res,
       {
         ...formatOrder(finalOrder),
-        wallet: formatWalletSnapshot(wallet, assets),
+        wallet: walletSnapshot,
       },
       message,
       201
     );
   } catch (e) {
-    if (e.status) return error(res, e.message, e.status);
+    if (req.body?.side === 'sell' && req.body?.quantity > 0) {
+      const sym = String(req.body.symbol || '').toUpperCase();
+      if (sym) {
+        await unlockAsset(req.userId, baseAssetFromSymbol(sym), req.body.quantity).catch(() => {});
+      }
+    }
+    if (e.status) {
+      console.warn(
+        `[orders] rejected user=${req.userId} ${req.body?.side || ''} ${req.body?.symbol || ''}: ${e.message}`
+      );
+      return error(res, e.message, e.status);
+    }
     return next(e);
   }
 }

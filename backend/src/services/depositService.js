@@ -11,6 +11,7 @@ import {
   isNativeCryptoDeposit,
 } from './depositConversionService.js';
 import { creditAsset, debitAsset, getAssetBalance } from './assetBalanceService.js';
+import { creditMain, creditBonus, ensureWalletBuckets } from './walletBucketService.js';
 import { canTreasuryWithdraw } from './treasuryService.js';
 import { completeLinkedTransaction, rejectLinkedTransaction } from './transactionService.js';
 import { normalizeChainFromNetwork } from './userDepositAddressService.js';
@@ -142,17 +143,22 @@ export async function creditWalletForDeposit(
       creditCurrency = currency;
       wallet = await Wallet.findOne({ userId: claimed.userId }).lean();
     } else {
-      const walletInc = { balance: conversion.usdtAmount };
-      const setOnInsert = { currency: 'USDT' };
-      if (bonusAmount > 0) {
-        walletInc.balance = storeMoney(conversion.usdtAmount + bonusAmount);
-        walletInc.bonusBalance = bonusAmount;
+      wallet = await Wallet.findOne({ userId: claimed.userId });
+      if (!wallet) {
+        wallet = await Wallet.create({
+          userId: claimed.userId,
+          currency: 'USDT',
+          balance: 0,
+          mainBalance: 0,
+          referralBalance: 0,
+          bonusBalance: 0,
+          lockedBalance: 0,
+        });
       }
-      wallet = await Wallet.findOneAndUpdate(
-        { userId: claimed.userId },
-        { $inc: walletInc, $setOnInsert: setOnInsert },
-        { upsert: true, new: true }
-      );
+      ensureWalletBuckets(wallet);
+      creditMain(wallet, conversion.usdtAmount);
+      if (bonusAmount > 0) creditBonus(wallet, bonusAmount);
+      await wallet.save();
       balanceAfter = roundMoney(wallet.balance);
       creditAmount = conversion.usdtAmount;
       creditCurrency = 'USDT';

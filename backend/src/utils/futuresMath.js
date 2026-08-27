@@ -39,7 +39,7 @@ export function roePercent(unrealized, margin) {
   return roundMoney((Number(unrealized) / m) * 100);
 }
 
-/** Liquidation price estimate */
+/** Isolated-margin liquidation price (position margin only) */
 export function liquidationPrice({ side, entryPrice, quantity, margin, maintenanceRate = 0.004 }) {
   const qty = Number(quantity);
   const entry = Number(entryPrice);
@@ -52,6 +52,54 @@ export function liquidationPrice({ side, entryPrice, quantity, margin, maintenan
 
   const liq = side === 'short' ? entry + delta : entry - delta;
   return roundMoney(Math.max(liq, 0));
+}
+
+/** Cross-margin liquidation — total wallet equity backs the position */
+export function crossLiquidationPrice({ side, entryPrice, quantity, walletEquity, maintenanceRate = 0.004 }) {
+  const qty = Number(quantity);
+  const entry = Number(entryPrice);
+  const equity = Number(walletEquity);
+  if (!(qty > 0) || !(entry > 0) || !Number.isFinite(equity)) return null;
+
+  const m = Number(maintenanceRate);
+  let liq;
+  if (side === 'short') {
+    const denom = qty * (1 + m);
+    if (!(denom > 0)) return null;
+    liq = (equity + entry * qty) / denom;
+  } else {
+    const denom = qty * (1 - m);
+    if (!(denom > 0)) return null;
+    liq = (entry * qty - equity) / denom;
+  }
+  return roundMoney(Math.max(liq, 0));
+}
+
+export function resolveLiquidationPrice({
+  side,
+  entryPrice,
+  quantity,
+  margin,
+  walletEquity,
+  maintenanceRate = 0.004,
+  marginMode = 'isolated',
+}) {
+  if (marginMode === 'cross' && walletEquity != null && Number.isFinite(Number(walletEquity))) {
+    return crossLiquidationPrice({ side, entryPrice, quantity, walletEquity, maintenanceRate });
+  }
+  return liquidationPrice({ side, entryPrice, quantity, margin, maintenanceRate });
+}
+
+/** Max quantity affordable: margin + fee <= available */
+export function maxAffordableQuantity({ available, price, leverage, feeRate = 0.0004 }) {
+  const bal = Number(available);
+  const px = Number(price);
+  const lev = Math.max(1, Number(leverage) || 1);
+  const fee = Number(feeRate) || 0;
+  if (!(bal > 0) || !(px > 0)) return 0;
+  const denom = px * (1 / lev + fee);
+  if (!(denom > 0)) return 0;
+  return bal / denom;
 }
 
 /** Check if mark price hit liquidation */

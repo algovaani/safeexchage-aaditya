@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
+import { resolveNotificationsForRef } from '../services/adminNotificationService.js';
 import {
   approveCashInPersonRequest,
   formatCashInPersonRequest,
@@ -120,6 +121,7 @@ export async function verifyRequest(req, res, next) {
         creditAmount,
         req.app.get('io')
       );
+      void resolveNotificationsForRef(req.app.get('io'), 'cash_in_person', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(
         res,
@@ -132,6 +134,7 @@ export async function verifyRequest(req, res, next) {
 
     if (action === 'reject') {
       const updated = await rejectCashInPersonRequest(request, req.userId, note || '');
+      void resolveNotificationsForRef(req.app.get('io'), 'cash_in_person', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(res, enrichRow(updated.toObject()), 'Request rejected');
     }

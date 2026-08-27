@@ -28,12 +28,14 @@ import {
   intervalToMs,
   recordPriceTick,
   clearRecentTicks,
+  getLatestPriceTick,
   bucketRecentPricesToSecondCandles,
   bucketTicksToIntervalCandles,
   bucketTradesToSecondCandles,
   parseKlineEvent,
   syntheticOrderBook,
 } from './coingeckoService.js';
+import { applyWsPriceToRow, getWsLivePrice } from './binanceWsService.js';
 
 /**
  * Binance REST hosts, tried in order. `api.binance.com` is geo-blocked in some
@@ -57,7 +59,8 @@ const REST_HOSTS = [
 
 // Remember the host that last worked so we don't retry blocked ones every call.
 let preferredHostIndex = 0;
-const CACHE_TTL_MS = Number(process.env.BINANCE_PRICE_CACHE_MS) || 4000;
+const CACHE_TTL_MS = Number(process.env.BINANCE_PRICE_CACHE_MS) || 3_000;
+const LIVE_TICKER_MAX_AGE_MS = Number(process.env.BINANCE_LIVE_TICKER_MAX_MS) || 3_000;
 
 const BINANCE_INTERVALS = new Set([
   '1s', '1m', '3m', '5m', '15m', '30m',
@@ -79,7 +82,11 @@ function isManualPricePair(symbol) {
 async function pairsWithManualAndStats(rawPairs) {
   await ensureTradingPairCache();
   const withStats = await applyTickerStatsOverridesToPairs(rawPairs);
-  return applyActivePulses(applyManualPairPrices(withStats));
+  return applyActivePulses(applyWsPrices(applyManualPairPrices(withStats)));
+}
+
+function applyWsPrices(pairs) {
+  return (Array.isArray(pairs) ? pairs : []).map(applyWsPriceToRow);
 }
 
 /** Active admin pulse always wins last price (memory-only, site-wide). */
@@ -110,6 +117,7 @@ export {
   intervalToMs,
   recordPriceTick,
   clearRecentTicks,
+  getLatestPriceTick,
   bucketRecentPricesToSecondCandles,
   bucketTicksToIntervalCandles,
   bucketTradesToSecondCandles,
@@ -418,6 +426,25 @@ export async function fetchAllPairPrices({ force = false } = {}) {
   }
 }
 
+export async function fetchLivePriceForMatching(symbol) {
+  const sym = normalizeSymbol(symbol);
+  const ws = getWsLivePrice(sym);
+  if (ws?.price > 0 && Date.now() - ws.time < 5_000) {
+    return ws.price;
+  }
+  const tick = getLatestPriceTick(sym);
+  const tickFreshMs = Number(process.env.ORDER_MATCH_TICK_MAX_MS) || 8_000;
+  if (tick && Date.now() - tick.time < tickFreshMs && tick.price > 0) {
+    return tick.price;
+  }
+  const row = await fetchTicker(sym, { skipPulse: true, force: true });
+  const price = Number(row?.price ?? row?.lastPrice);
+  if (!(price > 0)) {
+    throw new Error(`Live price unavailable for ${sym}`);
+  }
+  return price;
+}
+
 export async function fetchTicker(symbol, opts = {}) {
   const sym = normalizeSymbol(symbol);
   await ensureTradingPairCache();
@@ -427,11 +454,26 @@ export async function fetchTicker(symbol, opts = {}) {
     throw err;
   }
 
-  // Prefer cache / fast path so refresh storms don't hang on CoinGecko
+  // Prefer WebSocket tick, then short-lived REST cache
+  const ws = getWsLivePrice(sym);
+  if (ws?.price > 0 && !opts.force) {
+    let row = priceCache.pairs?.find((p) => p.symbol === sym);
+    if (row) {
+      row = applyWsPriceToRow(applyManualPairPrice(row));
+      const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
+      const withStats = applyTickerStatsOverride(
+        { ...row, stale: false, updatedAt: new Date(ws.time).toISOString() },
+        override
+      );
+      const finalized = applyManualPairPrice(withStats);
+      return opts.skipPulse ? finalized : applyActivePulseToRow(finalized);
+    }
+  }
+
   if (priceCache.pairs?.length && !opts.force) {
     const cached = priceCache.pairs.find((p) => p.symbol === sym);
     const age = Date.now() - (priceCache.fetchedAt || 0);
-    if (cached && age < Math.max(CACHE_TTL_MS * 3, 12_000)) {
+    if (cached && age < LIVE_TICKER_MAX_AGE_MS) {
       let row = applyManualPairPrice(cached);
       const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
       const withStats = applyTickerStatsOverride(
@@ -442,8 +484,9 @@ export async function fetchTicker(symbol, opts = {}) {
         },
         override
       );
-      // Pulse always wins last price while active (even if Auto is off)
-      return applyActivePulseToRow(applyManualPairPrice(withStats));
+      const finalized = applyManualPairPrice(withStats);
+      // Pulse wins for UI; order matching uses skipPulse for live market price
+      return opts.skipPulse ? finalized : applyActivePulseToRow(finalized);
     }
   }
 
@@ -463,18 +506,18 @@ export async function fetchTicker(symbol, opts = {}) {
   let base = applyManualPairPrice(row);
   const override = isManualPricePair(sym) ? null : await getTickerStatsOverride(sym);
   recordPriceTick(sym, Number(base.price) || 0);
-  return applyActivePulseToRow(
-    applyManualPairPrice(
-      applyTickerStatsOverride(
-        {
-          ...base,
-          stale: result.stale,
-          updatedAt: result.updatedAt,
-        },
-        override
-      )
+  const finalized = applyManualPairPrice(
+    applyTickerStatsOverride(
+      {
+        ...base,
+        stale: result.stale,
+        updatedAt: result.updatedAt,
+      },
+      override
     )
   );
+  const withWs = applyWsPriceToRow(finalized);
+  return opts.skipPulse ? withWs : applyActivePulseToRow(withWs);
 }
 
 export async function fetchPriceMap(opts = {}) {

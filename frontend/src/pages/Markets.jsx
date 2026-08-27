@@ -9,6 +9,7 @@ import CoinIcon from '../components/CoinIcon.jsx';
 import { fmtINR, fmtPct } from '../utils/format.js';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
+import { readSwrSync, writeSwrSync, SwrKeys } from '../utils/swrCache.js';
 import './Markets.css';
 
 const CATEGORIES = ['All', 'Crypto'];
@@ -135,8 +136,14 @@ export default function Markets() {
   const [category, setCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('order');
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedLive = readSwrSync(SwrKeys.livePrices);
+  const initialRows = (() => {
+    const pairs = cachedLive?.data?.pairs;
+    if (!Array.isArray(pairs) || !pairs.length) return [];
+    return pairs.map((row) => mapLiveRow(row, tradingPairs || []));
+  })();
+  const [rows, setRows] = useState(initialRows);
+  const [loading, setLoading] = useState(!initialRows.length);
 
   useEffect(() => {
     let active = true;
@@ -157,6 +164,7 @@ export default function Markets() {
 
         const payload = parseApiResponse(data);
         const livePairs = payload?.pairs || [];
+        writeSwrSync(SwrKeys.livePrices, { pairs: livePairs, updatedAt: payload?.updatedAt });
         const bySymbol = new Map(livePairs.map((p) => [p.symbol, p]));
 
         const nextRows = livePairs.map((row) => mapLiveRow(row, tradingPairs));

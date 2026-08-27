@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { api, parseApiResponse, dashboardAPI } from '../api/client.js';
-import LiveChart from '../components/LiveChart.jsx';
+import { api, parseApiResponse, dashboardAPI, getApiErrorMessage } from '../api/client.js';
+import { emitToast } from '../utils/toastBus.js';
 import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useRealtime } from '../context/RealtimeContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { fmtINR } from '../utils/format.js';
@@ -11,8 +12,17 @@ import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { DEPTH_POLL_MS, TRADE_MARKET_POLL_MS, CLOCK_TICK_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
 import { notifyWalletUpdated } from '../utils/walletEvents.js';
+import {
+  readSwrSync,
+  writeSwrSync,
+  readSwrIdb,
+  writeSwrIdb,
+  SwrKeys,
+} from '../utils/swrCache.js';
 import CoinIcon from '../components/CoinIcon.jsx';
 import './Trading.css';
+
+const LiveChart = lazy(() => import('../components/LiveChart.jsx'));
 
 const CHART_INTERVALS = [
   { id: '1m', label: '1m' },
@@ -162,7 +172,7 @@ export default function Trading() {
   const toast = useToast();
   const { user, loading: authLoading } = useAuth();
   const { toInr, usdtInrRate } = usePlatformConfig();
-  const { pairs: tradingPairs, symbols: watchlistSymbols, refresh: refreshPairs } = useTradingPairs();
+  const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const loginReturn = { from: { pathname: '/trade' } };
@@ -182,11 +192,32 @@ export default function Trading() {
   const [ordersRefreshTick, setOrdersRefreshTick] = useState(0);
   const [buyTable, setBuyTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
   const [sellTable, setSellTable] = useState({ rows: [], total: 0, totalPages: 1, page: 1, loading: false });
-  const [ticker, setTicker] = useState(null);
+  const [ticker, setTicker] = useState(() => {
+    const cached = readSwrSync(SwrKeys.livePrices);
+    const pairs = cached?.data?.pairs;
+    if (!Array.isArray(pairs)) return null;
+    const sym = (searchParams.get('symbol')?.toUpperCase() || 'BNBUSDT');
+    const row = pairs.find((p) => p.symbol === sym);
+    if (!row) return null;
+    return {
+      symbol: row.symbol,
+      lastPrice: row.price_inr ?? row.price,
+      openPrice: row.open_24h,
+      priceChangePercent: row.change_24h,
+      priceChange: row.change_24h_abs,
+      highPrice: row.high_24h,
+      lowPrice: row.low_24h,
+      volume: row.volume,
+      quoteVolume: row.quoteVolume,
+      stats_override: Boolean(row.stats_override),
+    };
+  });
   const [priceDir, setPriceDir] = useState('up');
   const prevPriceRef = useRef(null);
-  const [balances, setBalances] = useState(null);
-  const [investedBalance, setInvestedBalance] = useState(0);
+  const { wallet: balances, walletVersion, refreshWallet } = useRealtime();
+  const [investedBalance, setInvestedBalance] = useState(
+    () => Number(readSwrSync(SwrKeys.dashboardSummary)?.data?.stats?.total_staked ?? 0) || 0
+  );
   const [depth, setDepth] = useState({ bids: [], asks: [], mid: null });
   const [tape, setTape] = useState([]);
 
@@ -201,23 +232,49 @@ export default function Trading() {
   const [mobileView, setMobileView] = useState('chart');
   const [mobileOrderSide, setMobileOrderSide] = useState('buy');
 
-  const [watchPrices, setWatchPrices] = useState({});
+  const [watchPrices, setWatchPrices] = useState(() => {
+    const cached = readSwrSync(SwrKeys.livePrices);
+    const pairs = cached?.data?.pairs;
+    if (!Array.isArray(pairs)) return {};
+    const bySym = {};
+    for (const row of pairs) {
+      if (!row?.symbol) continue;
+      bySym[row.symbol] = {
+        symbol: row.symbol,
+        lastPrice: row.price_inr ?? row.price,
+        openPrice: row.open_24h,
+        priceChangePercent: row.change_24h,
+        priceChange: row.change_24h_abs,
+        highPrice: row.high_24h,
+        lowPrice: row.low_24h,
+        volume: row.volume,
+        quoteVolume: row.quoteVolume,
+        quoteAsset: row.quote_asset || (row.symbol.endsWith('INR') ? 'INR' : 'USDT'),
+        stats_override: Boolean(row.stats_override),
+        price_auto: row.price_auto !== false,
+        price_manual: Boolean(row.price_manual),
+      };
+    }
+    return bySym;
+  });
   const [liveClock, setLiveClock] = useState(() => formatLiveClock());
 
   const debouncedTableSearch = useDebounced(tableSearch);
 
   const usdtBalance = Number(
-    balances?.available_balance ??
-      Math.max(0, Number(balances?.balance_usdt ?? balances?.balance ?? 0) - Number(balances?.locked_balance ?? 0))
+    balances?.tradeable_balance ??
+      balances?.available_balance ??
+      balances?.main_available ??
+      Math.max(0, Number(balances?.main_balance ?? 0))
   );
 
-  const walletTotal = Number(balances?.balance_usdt ?? balances?.balance ?? 0);
-  const walletWithdrawable = Number(
-    balances?.withdrawable_balance ??
-      Math.max(0, walletTotal - Number(balances?.locked_balance ?? 0) - Number(balances?.bonus_balance ?? 0))
-  );
+  const walletMain = Number(balances?.main_balance ?? 0);
+  const walletReferral = Number(balances?.referral_balance ?? 0);
   const walletBonus = Number(balances?.bonus_balance ?? 0);
   const walletLocked = Number(balances?.locked_balance ?? 0);
+  const walletWithdrawable = Number(
+    balances?.withdrawable_balance ?? balances?.main_available ?? walletMain
+  );
   const tradeAmount = Number(investedBalance) || 0;
 
   const base = pairBase(symbol, tradingPairs);
@@ -244,10 +301,6 @@ export default function Trading() {
     const list = symbols.length ? symbols : watchlistSymbols.filter((p) => p.endsWith(suffix));
     return list.filter((p) => !q || p.includes(q) || (pairMeta(p, tradingPairs)?.name || '').toUpperCase().includes(q));
   }, [search, watchlistSymbols, marketTab, tradingPairs]);
-
-  useEffect(() => {
-    refreshPairs?.();
-  }, [refreshPairs]);
 
   useEffect(() => {
     const param = searchParams.get('symbol')?.toUpperCase();
@@ -296,6 +349,7 @@ export default function Trading() {
     const { data } = await api.get('/market/prices/live');
     const payload = parseApiResponse(data);
     const pairs = payload?.pairs || [];
+    writeSwrSync(SwrKeys.livePrices, { pairs, updatedAt: payload?.updatedAt });
     const bySym = {};
 
     for (const row of pairs) {
@@ -423,8 +477,15 @@ export default function Trading() {
     let active = true;
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const requestSymbol = String(symbol).toUpperCase();
+    const cacheKey = SwrKeys.klines(requestSymbol, chartInterval);
     pulseWickRef.current = null;
     pulseLockRef.current = null;
+
+    readSwrIdb(cacheKey).then((cached) => {
+      if (!active || !Array.isArray(cached?.data) || !cached.data.length) return;
+      setCandles((prev) => (prev.length ? prev : cached.data));
+    });
+
     (async () => {
       try {
         const { data } = await api.get('/market/klines', {
@@ -434,7 +495,10 @@ export default function Trading() {
         if (!active) return;
         const klines = parseApiResponse(data);
         const rows = klines?.candles || [];
-        if (rows.length) setCandles(rows);
+        if (rows.length) {
+          setCandles(rows);
+          writeSwrIdb(cacheKey, rows);
+        }
       } catch (err) {
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
         /* keep empty until live socket paints */
@@ -446,17 +510,12 @@ export default function Trading() {
     };
   }, [symbol, chartInterval]);
 
-  const refreshBalance = useCallback(async () => {
-    const { data } = await api.get('/wallet/balance');
-    const wallet = parseApiResponse(data);
-    setBalances(wallet);
-    notifyWalletUpdated(wallet);
-    return wallet;
-  }, []);
+  const refreshBalance = refreshWallet;
 
   const refreshInvestedBalance = useCallback(async () => {
     try {
       const summary = await dashboardAPI.getSummary();
+      writeSwrSync(SwrKeys.dashboardSummary, summary);
       setInvestedBalance(Number(summary?.stats?.total_staked ?? 0));
     } catch {
       setInvestedBalance(0);
@@ -903,18 +962,11 @@ export default function Trading() {
 
   useEffect(() => {
     if (!user) {
-      setBalances(null);
       setInvestedBalance(0);
       return undefined;
     }
-    refreshBalance().catch(() => {});
     refreshInvestedBalance().catch(() => {});
-    const onWallet = (e) => {
-      if (e.detail) setBalances(e.detail);
-    };
-    window.addEventListener('wallet:updated', onWallet);
-    return () => window.removeEventListener('wallet:updated', onWallet);
-  }, [refreshBalance, refreshInvestedBalance, user]);
+  }, [refreshInvestedBalance, user, walletVersion]);
 
   function requireLogin() {
     navigate('/login', { state: loginReturn });
@@ -947,18 +999,24 @@ export default function Trading() {
     };
     setOrderBusySide(side);
     try {
-      const { data } = await api.post('/orders', payload, { silentToast: true });
+      const { data } = await api.post('/orders', payload);
       const result = parseApiResponse(data);
+      if (result?.status === 'rejected') {
+        emitToast({ type: 'error', message: data?.message || 'Order rejected (insufficient balance)' });
+      } else if (result?.status === 'filled') {
+        emitToast({ type: 'success', message: data?.message || 'Order filled' });
+      } else {
+        emitToast({ type: 'success', message: data?.message || 'Order placed' });
+      }
       if (result?.wallet) {
-        setBalances(result.wallet);
         notifyWalletUpdated(result.wallet);
       } else {
-        await refreshBalance();
+        await refreshWallet();
       }
       await fetchTableData();
       window.dispatchEvent(new CustomEvent('orders:updated'));
-    } catch {
-      /* API error toast handled globally */
+    } catch (err) {
+      emitToast({ type: 'error', message: getApiErrorMessage(err) });
     } finally {
       setOrderBusySide(null);
     }
@@ -1380,19 +1438,16 @@ export default function Trading() {
             {user ? (
               balances != null ? (
                 <dl className="ex-wallet-card__kv">
-                  <dt>Total USDT</dt>
-                  <dd>{walletTotal.toFixed(2)}</dd>
-                  <dt>Available</dt>
+                  <dt>Tradeable</dt>
                   <dd>{usdtBalance.toFixed(2)}</dd>
-                  <dt>Trade amount</dt>
-                  <dd>{tradeAmount.toFixed(2)}</dd>
+                  <dt>Main</dt>
+                  <dd>{walletMain.toFixed(2)}</dd>
+                  <dt>Referral</dt>
+                  <dd>{walletReferral.toFixed(2)}</dd>
+                  <dt>Bonus</dt>
+                  <dd>{walletBonus.toFixed(2)}</dd>
                   <dt>Withdrawable</dt>
                   <dd>{walletWithdrawable.toFixed(2)}</dd>
-                  <dt>Trading bonus</dt>
-                  <dd>
-                    {walletBonus.toFixed(2)}
-                    <span className="ex-wallet-card__note"> (trade only)</span>
-                  </dd>
                   <dt>Locked</dt>
                   <dd>{walletLocked.toFixed(2)}</dd>
                 </dl>
@@ -1457,12 +1512,14 @@ export default function Trading() {
                 <span>Templates</span>
               </div>
             </div>
-            <LiveChart
-              key={`${String(symbol).toUpperCase()}-${chartInterval}-${chartEpoch}`}
-              variant="exchange"
-              className="ex-chart-wrap"
-              candles={candles}
-            />
+            <Suspense fallback={<div className="ex-chart-wrap ex-chart-wrap--loading" aria-busy="true" />}>
+              <LiveChart
+                key={`${String(symbol).toUpperCase()}-${chartInterval}-${chartEpoch}`}
+                variant="exchange"
+                className="ex-chart-wrap"
+                candles={candles}
+              />
+            </Suspense>
           </div>
 
           <div className={`ex-orders ex-zone ex-zone--trade${mobileView === 'trade' ? ' is-active' : ''}`}>

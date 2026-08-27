@@ -5,6 +5,7 @@ import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { debitMain, ensureWalletBuckets, mainBalanceFree, creditMain } from '../services/walletBucketService.js';
 import {
   addDays,
   calculateEarnedSoFar,
@@ -136,16 +137,17 @@ export async function createStake(req, res, next) {
     }
 
     const wallet = await Wallet.findOne({ userId: req.userId }).session(session);
-    if (!wallet || wallet.balance < stakeAmount) {
+    ensureWalletBuckets(wallet);
+    if (!wallet || mainBalanceFree(wallet) < stakeAmount) {
       await session.abortTransaction();
-      return error(res, 'Insufficient USDT balance', 400);
+      return error(res, 'Insufficient main wallet balance', 400);
     }
 
     const needsApproval = Boolean(plan.requiresApproval);
     const startDate = needsApproval ? null : startOfDay();
     const maturityDate = needsApproval ? null : addDays(startDate, plan.lockDays);
 
-    wallet.balance = storeMoney(wallet.balance - stakeAmount);
+    debitMain(wallet, stakeAmount);
     wallet.lockedBalance = storeMoney((wallet.lockedBalance || 0) + stakeAmount);
     await wallet.save({ session });
 
@@ -257,7 +259,8 @@ export async function withdrawStake(req, res, next) {
       }
 
       wallet.lockedBalance = storeMoney(wallet.lockedBalance - row.amount);
-      wallet.balance = storeMoney(wallet.balance + row.amount);
+      ensureWalletBuckets(wallet);
+      creditMain(wallet, row.amount);
       row.status = 'withdrawn';
       row.rewardEarned = 0;
 

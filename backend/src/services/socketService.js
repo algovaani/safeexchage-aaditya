@@ -1,7 +1,5 @@
 import { verifyToken } from '../utils/token.js';
-import { Wallet } from '../models/Wallet.js';
-import { listUserAssets } from './assetBalanceService.js';
-import { formatWalletSnapshot } from './walletAdjustmentService.js';
+import { fetchWalletSnapshotForUser } from './walletSnapshotService.js';
 
 export const ADMINS_ROOM = 'admins';
 
@@ -55,12 +53,9 @@ export function attachUserSockets(io) {
 export async function emitWalletUpdate(io, userId, { reason = null } = {}) {
   if (!io || !userId) return;
   try {
-    const [wallet, assets] = await Promise.all([
-      Wallet.findOne({ userId }).lean(),
-      listUserAssets(userId),
-    ]);
+    const wallet = await fetchWalletSnapshotForUser(userId);
     io.to(userRoom(userId)).emit('wallet:update', {
-      wallet: formatWalletSnapshot(wallet, assets),
+      wallet,
       reason,
       at: Date.now(),
     });

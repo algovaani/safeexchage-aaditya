@@ -7,6 +7,7 @@ import {
   getPriceCacheTtlMs,
   normalizeSymbol,
 } from '../services/marketDataProvider.js';
+import { isBinanceWsConnected } from '../services/binanceWsService.js';
 import { ensureTradingPairCache, getTradingPairSymbolsSync, listTradingPairs } from '../services/tradingPairService.js';
 import { error, success } from '../utils/response.js';
 
@@ -30,7 +31,8 @@ export async function livePrices(_req, res, next) {
         ...result,
         source: result.provider || 'binance',
         pollIntervalSeconds: pollMs / 1000,
-        hint: 'Prices via Binance public API',
+        wsConnected: isBinanceWsConnected(),
+        hint: 'Live prices via Binance WebSocket + REST (matches Binance app)',
       },
       'Live prices fetched'
     );

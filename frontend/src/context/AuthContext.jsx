@@ -5,6 +5,25 @@ const AuthContext = createContext(null);
 
 const STORAGE_KEY = 'safex_token';
 const LEGACY_STORAGE_KEY = 'vencrypto_token';
+const USER_CACHE_KEY = 'safex_user_v1';
+
+function readCachedUser() {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedUser(user) {
+  try {
+    if (user) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => {
@@ -18,13 +37,15 @@ export function AuthProvider({ children }) {
     }
     return null;
   });
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(!!token);
+  const [user, setUser] = useState(() => (token ? readCachedUser() : null));
+  // Instant route paint when we already have a cached profile
+  const [loading, setLoading] = useState(!!token && !user);
 
   useEffect(() => {
     setAuthToken(token);
     if (!token) {
       setUser(null);
+      writeCachedUser(null);
       setLoading(false);
       return;
     }
@@ -34,13 +55,16 @@ export function AuthProvider({ children }) {
         // Short timeout + no retry so live site never hangs on /auth/me
         const { data } = await api.get('/auth/me', { timeout: 8_000, __noRetry: true });
         if (cancelled) return;
-        setUser(parseApiResponse(data));
+        const next = parseApiResponse(data);
+        setUser(next);
+        writeCachedUser(next);
       } catch (err) {
         if (cancelled) return;
         const status = err?.response?.status;
         // Only clear session on real auth failures — not timeouts / offline blips
         if (status === 401 || status === 403) {
           localStorage.removeItem(STORAGE_KEY);
+          writeCachedUser(null);
           setToken(null);
           setUser(null);
         } else {
@@ -59,6 +83,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(STORAGE_KEY, payload.token);
     setToken(payload.token);
     setUser(payload.user);
+    writeCachedUser(payload.user);
     return payload;
   };
 
@@ -93,6 +118,7 @@ export function AuthProvider({ children }) {
       /* ignore — clear local session anyway */
     }
     localStorage.removeItem(STORAGE_KEY);
+    writeCachedUser(null);
     setToken(null);
     setUser(null);
   };
@@ -101,6 +127,7 @@ export function AuthProvider({ children }) {
     const { data } = await api.get('/auth/me');
     const profile = parseApiResponse(data);
     setUser(profile);
+    writeCachedUser(profile);
     return profile;
   };
 

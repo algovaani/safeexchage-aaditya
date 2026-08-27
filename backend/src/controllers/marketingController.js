@@ -55,14 +55,25 @@ export async function listBanners(req, res, next) {
 
 export async function createBanner(req, res, next) {
   try {
+    const rawImageUrl = req.file ? storedBannerFilePath(req.file.filename) : (req.body.imageUrl || '');
+    const cleanImageUrl = String(rawImageUrl).trim().replace(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?/i, '');
+
     const doc = await MarketingBanner.create({
-      message: req.body.message,
-      imageUrl: req.file ? storedBannerFilePath(req.file.filename) : req.body.imageUrl || '',
+      message: String(req.body.message || '').trim(),
+      imageUrl: cleanImageUrl,
       enabled: Boolean(req.body.enabled),
       sortOrder: req.body.sortOrder ?? 0,
       createdBy: toAdminCreatedBy(req),
     });
-    return success(res, doc.toObject(), 'Banner created', 201);
+    if (!doc.message && !doc.imageUrl) {
+      await MarketingBanner.findByIdAndDelete(doc._id);
+      return error(res, 'Add a banner image or message', 400);
+    }
+    const bannerObj = doc.toObject();
+    return success(res, {
+      ...bannerObj,
+      imageUrl: bannerObj.imageUrl ? toPublicFileUrl(req, bannerObj.imageUrl) : '',
+    }, 'Banner created', 201);
   } catch (e) {
     return next(e);
   }
@@ -71,11 +82,16 @@ export async function createBanner(req, res, next) {
 export async function updateBanner(req, res, next) {
   try {
     const { id } = req.params;
+    let imageUrl = req.body.imageUrl != null ? String(req.body.imageUrl).trim() : undefined;
+    if (imageUrl != null) {
+      imageUrl = imageUrl.replace(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?/i, '');
+    }
+
     const doc = await MarketingBanner.findByIdAndUpdate(
       id,
       {
         ...(req.body.message != null ? { message: req.body.message } : {}),
-        ...(req.body.imageUrl != null ? { imageUrl: String(req.body.imageUrl).trim() } : {}),
+        ...(imageUrl != null ? { imageUrl } : {}),
         ...(req.body.enabled != null ? { enabled: Boolean(req.body.enabled) } : {}),
         ...(req.body.sortOrder != null ? { sortOrder: req.body.sortOrder } : {}),
       },
@@ -83,7 +99,10 @@ export async function updateBanner(req, res, next) {
     ).lean();
 
     if (!doc) return error(res, 'Banner not found', 404);
-    return success(res, doc, 'Banner updated');
+    return success(res, {
+      ...doc,
+      imageUrl: doc.imageUrl ? toPublicFileUrl(req, doc.imageUrl) : '',
+    }, 'Banner updated');
   } catch (e) {
     return next(e);
   }
@@ -120,15 +139,22 @@ export async function listNotices(req, res, next) {
 
 export async function createNotice(req, res, next) {
   try {
+    const rawImageUrl = req.file ? storedNoticeFilePath(req.file.filename) : (req.body.imageUrl || '');
+    const cleanImageUrl = String(rawImageUrl).trim().replace(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?/i, '');
+
     const doc = await MarketingNotice.create({
       title: req.body.title,
       message: req.body.message,
-      imageUrl: req.file ? storedNoticeFilePath(req.file.filename) : req.body.imageUrl || '',
+      imageUrl: cleanImageUrl,
       enabled: Boolean(req.body.enabled),
       sortOrder: req.body.sortOrder ?? 0,
       createdBy: toAdminCreatedBy(req),
     });
-    return success(res, doc.toObject(), 'Notice created', 201);
+    const noticeObj = doc.toObject();
+    return success(res, {
+      ...noticeObj,
+      imageUrl: noticeObj.imageUrl ? toPublicFileUrl(req, noticeObj.imageUrl) : '',
+    }, 'Notice created', 201);
   } catch (e) {
     return next(e);
   }
@@ -137,11 +163,17 @@ export async function createNotice(req, res, next) {
 export async function updateNotice(req, res, next) {
   try {
     const { id } = req.params;
+    let imageUrl = req.body.imageUrl != null ? String(req.body.imageUrl).trim() : undefined;
+    if (imageUrl != null) {
+      imageUrl = imageUrl.replace(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?/i, '');
+    }
+
     const doc = await MarketingNotice.findByIdAndUpdate(
       id,
       {
         ...(req.body.title != null ? { title: req.body.title } : {}),
         ...(req.body.message != null ? { message: req.body.message } : {}),
+        ...(imageUrl != null ? { imageUrl } : {}),
         ...(req.body.enabled != null ? { enabled: Boolean(req.body.enabled) } : {}),
         ...(req.body.sortOrder != null ? { sortOrder: req.body.sortOrder } : {}),
       },
@@ -149,7 +181,10 @@ export async function updateNotice(req, res, next) {
     ).lean();
 
     if (!doc) return error(res, 'Notice not found', 404);
-    return success(res, doc, 'Notice updated');
+    return success(res, {
+      ...doc,
+      imageUrl: doc.imageUrl ? toPublicFileUrl(req, doc.imageUrl) : '',
+    }, 'Notice updated');
   } catch (e) {
     return next(e);
   }

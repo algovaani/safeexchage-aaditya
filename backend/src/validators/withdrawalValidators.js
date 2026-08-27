@@ -71,16 +71,24 @@ function walletAddressError(network) {
   return 'Invalid wallet address for the selected network';
 }
 
+const MIN_WITHDRAW = Number(process.env.WITHDRAW_MIN_AMOUNT) || 1;
+const MAX_WITHDRAW = Number(process.env.WITHDRAW_MAX_AMOUNT) || 100_000;
+
 export const cryptoWithdrawValidators = [
   body('amount')
     .isFloat({ gt: 0 })
     .withMessage('amount must be a positive number')
-    .toFloat(),
+    .toFloat()
+    .custom((v) => {
+      if (v < MIN_WITHDRAW) throw new Error(`Minimum withdrawal is ${MIN_WITHDRAW} USDT`);
+      if (v > MAX_WITHDRAW) throw new Error(`Maximum withdrawal is ${MAX_WITHDRAW} USDT`);
+      return true;
+    }),
   body('currency')
     .optional({ values: 'falsy' })
     .trim()
-    .isLength({ min: 2, max: 16 })
-    .withMessage('currency must be 2–16 characters'),
+    .isIn(['USDT', 'BNB', 'ETH', 'BTC', 'TRX', 'SOL', 'DOGE'])
+    .withMessage('Unsupported currency'),
   body('wallet_address')
     .customSanitizer((v) => normalizeWalletAddress(v))
     .notEmpty()
@@ -104,7 +112,12 @@ export const fiatWithdrawValidators = [
   body('amount')
     .isFloat({ gt: 0 })
     .withMessage('amount must be a positive number')
-    .toFloat(),
+    .toFloat()
+    .custom((v) => {
+      if (v < MIN_WITHDRAW) throw new Error(`Minimum withdrawal is ${MIN_WITHDRAW} USDT`);
+      if (v > MAX_WITHDRAW) throw new Error(`Maximum withdrawal is ${MAX_WITHDRAW} USDT`);
+      return true;
+    }),
   body('bank_name')
     .trim()
     .notEmpty()
@@ -114,12 +127,16 @@ export const fiatWithdrawValidators = [
     .trim()
     .notEmpty()
     .withMessage('account_number is required')
-    .isLength({ max: 64 }),
+    .isLength({ max: 64 })
+    .matches(/^[0-9A-Za-z\- ]{6,64}$/)
+    .withMessage('Invalid account number'),
   body('ifsc')
     .trim()
     .notEmpty()
     .withMessage('ifsc is required')
-    .isLength({ max: 16 }),
+    .toUpperCase()
+    .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+    .withMessage('Invalid IFSC code'),
   body('account_holder')
     .trim()
     .notEmpty()

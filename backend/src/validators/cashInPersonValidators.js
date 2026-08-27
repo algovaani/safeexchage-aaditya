@@ -1,13 +1,26 @@
 import { body, param, query } from 'express-validator';
 
+const MIN = Number(process.env.WITHDRAW_MIN_AMOUNT) || 1;
+const MAX = Number(process.env.WITHDRAW_MAX_AMOUNT) || 100_000;
+
 export const submitCashInPersonValidators = [
   body('mobile').trim().notEmpty().withMessage('Mobile number is required').isLength({ max: 20 }),
   body('city').trim().notEmpty().withMessage('City is required').isLength({ max: 120 }),
   body('type').optional().isIn(['deposit', 'withdraw']).withMessage('Type must be deposit or withdraw'),
-  body('amount')
-    .optional({ nullable: true })
-    .isFloat({ min: 0 })
-    .withMessage('Amount must be a positive number'),
+  body('amount').custom((value, { req }) => {
+    const isWithdraw = req.body?.type === 'withdraw';
+    if (!isWithdraw) {
+      if (value == null || value === '') return true;
+      const n = Number(value);
+      if (!(n >= 0)) throw new Error('Amount must be a positive number');
+      return true;
+    }
+    const n = Number(value);
+    if (!(n > 0)) throw new Error('Amount is required for withdraw requests');
+    if (n < MIN) throw new Error(`Minimum withdrawal is ${MIN} USDT`);
+    if (n > MAX) throw new Error(`Maximum withdrawal is ${MAX} USDT`);
+    return true;
+  }),
 ];
 
 export const adminCashInPersonListValidators = [

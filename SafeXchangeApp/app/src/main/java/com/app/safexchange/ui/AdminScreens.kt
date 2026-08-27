@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.PersonPin
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -63,11 +64,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.app.safexchange.SafeXchangeApp
+import com.app.safexchange.BuildConfig
 import com.app.safexchange.data.ApiClient
+import com.app.safexchange.data.ApiErrorParser
+import com.app.safexchange.data.CashInPersonRow
 import com.app.safexchange.data.DepositRow
 import com.app.safexchange.data.DeviceTokenBody
 import com.app.safexchange.data.LoginBody
 import com.app.safexchange.data.VerifyBody
+import com.app.safexchange.data.VerifyCashInPersonBody
 import com.app.safexchange.data.WithdrawalRow
 import com.app.safexchange.fcm.AdminFirebaseMessagingService
 import com.google.firebase.messaging.FirebaseMessaging
@@ -101,11 +106,17 @@ class AdminViewModel : ViewModel() {
     private val _withdrawals = MutableStateFlow<List<WithdrawalRow>>(emptyList())
     val withdrawals: StateFlow<List<WithdrawalRow>> = _withdrawals.asStateFlow()
 
+    private val _cashInPerson = MutableStateFlow<List<CashInPersonRow>>(emptyList())
+    val cashInPerson: StateFlow<List<CashInPersonRow>> = _cashInPerson.asStateFlow()
+
     private val _pendingDeposits = MutableStateFlow(0)
     val pendingDeposits: StateFlow<Int> = _pendingDeposits.asStateFlow()
 
     private val _pendingWithdrawals = MutableStateFlow(0)
     val pendingWithdrawals: StateFlow<Int> = _pendingWithdrawals.asStateFlow()
+
+    private val _pendingCashInPerson = MutableStateFlow(0)
+    val pendingCashInPerson: StateFlow<Int> = _pendingCashInPerson.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -119,16 +130,20 @@ class AdminViewModel : ViewModel() {
             _error.value = null
             try {
                 val res = ApiClient.api.adminLogin(LoginBody(email.trim(), password))
-                val data = res.data
-                if (data?.token.isNullOrBlank()) {
+                if (res.success == false) {
                     _error.value = res.message ?: "Login failed"
                     return@launch
                 }
-                store.saveSession(data!!.token, email.trim())
+                val token = res.data?.token?.trim().orEmpty()
+                if (token.isEmpty()) {
+                    _error.value = res.message ?: "Login failed — no token received"
+                    return@launch
+                }
+                store.saveSession(token, email.trim())
                 registerFcm()
                 onOk()
             } catch (e: Exception) {
-                _error.value = e.message ?: "Network error"
+                _error.value = ApiErrorParser.message(e)
             } finally {
                 _busy.value = false
             }
@@ -171,6 +186,7 @@ class AdminViewModel : ViewModel() {
                 val s = ApiClient.api.notificationSummary().data
                 _pendingDeposits.value = s?.pendingDeposits ?: 0
                 _pendingWithdrawals.value = s?.pendingWithdrawals ?: 0
+                _pendingCashInPerson.value = s?.pendingCashInPerson ?: 0
             } catch (_: Exception) {
             }
         }
@@ -219,6 +235,21 @@ class AdminViewModel : ViewModel() {
         }
     }
 
+    fun loadCashInPerson(status: String? = "pending") {
+        viewModelScope.launch {
+            _busy.value = true
+            _error.value = null
+            try {
+                val res = ApiClient.api.listCashInPerson(status = status)
+                _cashInPerson.value = res.data?.rows ?: emptyList()
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
+
     fun verifyDeposit(id: String, action: String, note: String = "", onDone: () -> Unit) {
         viewModelScope.launch {
             _busy.value = true
@@ -250,6 +281,31 @@ class AdminViewModel : ViewModel() {
             }
         }
     }
+
+    fun verifyCashInPerson(
+        id: String,
+        action: String,
+        amount: Double? = null,
+        note: String = "",
+        onDone: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            _busy.value = true
+            try {
+                ApiClient.api.verifyCashInPerson(
+                    id,
+                    VerifyCashInPersonBody(action = action, amount = amount, note = note)
+                )
+                loadCashInPerson()
+                refreshCounts()
+                onDone()
+            } catch (e: Exception) {
+                _error.value = e.message
+            } finally {
+                _busy.value = false
+            }
+        }
+    }
 }
 
 @Composable
@@ -265,6 +321,7 @@ fun AdminRoot(startSection: String? = null) {
             when (startSection) {
                 "deposits" -> nav.navigate("deposits") { launchSingleTop = true }
                 "withdrawals" -> nav.navigate("withdrawals") { launchSingleTop = true }
+                "cashInPerson" -> nav.navigate("cashInPerson") { launchSingleTop = true }
             }
         }
     }
@@ -289,6 +346,9 @@ fun AdminRoot(startSection: String? = null) {
         composable("withdrawals") {
             WithdrawListScreen(vm, nav)
         }
+        composable("cashInPerson") {
+            CashInPersonListScreen(vm, nav)
+        }
     }
 }
 
@@ -302,7 +362,12 @@ fun LoginScreen(vm: AdminViewModel, onLoggedIn: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("SafeXchange Admin", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Accent)
-            Text("Sign in to review deposits & withdrawals", color = Color(0xFF848E9C))
+            Text("Sign in to review deposits, withdrawals & cash-in-person", color = Color(0xFF848E9C))
+            Text(
+                "Server: ${BuildConfig.API_BASE_URL.trimEnd('/')}",
+                color = Color(0xFF5E6673),
+                style = MaterialTheme.typography.bodySmall,
+            )
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -339,6 +404,7 @@ fun LoginScreen(vm: AdminViewModel, onLoggedIn: () -> Unit) {
 fun HomeScreen(vm: AdminViewModel, nav: NavHostController) {
     val dep by vm.pendingDeposits.collectAsState()
     val wd by vm.pendingWithdrawals.collectAsState()
+    val cip by vm.pendingCashInPerson.collectAsState()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { vm.refreshCounts() }
@@ -386,6 +452,11 @@ fun HomeScreen(vm: AdminViewModel, nav: NavHostController) {
                 subtitle = "$wd pending request(s)",
                 icon = Icons.Default.Payments,
             ) { nav.navigate("withdrawals") }
+            HomeCard(
+                title = "Cash in Person",
+                subtitle = "$cip pending request(s)",
+                icon = Icons.Default.PersonPin,
+            ) { nav.navigate("cashInPerson") }
 
             var pushMsg by remember { mutableStateOf<String?>(null) }
 //            Button(
@@ -609,6 +680,117 @@ fun WithdrawListScreen(vm: AdminViewModel, nav: NavHostController) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CashInPersonListScreen(vm: AdminViewModel, nav: NavHostController) {
+    val rows by vm.cashInPerson.collectAsState()
+    val busy by vm.busy.collectAsState()
+    val error by vm.error.collectAsState()
+    val context = LocalContext.current
+    var rejectId by remember { mutableStateOf<String?>(null) }
+    var approveRow by remember { mutableStateOf<CashInPersonRow?>(null) }
+    var remark by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var showAll by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showAll) {
+        vm.loadCashInPerson(if (showAll) null else "pending")
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Cash in Person") },
+                navigationIcon = {
+                    IconButton(onClick = { nav.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { showAll = !showAll }) {
+                        Text(if (showAll) "Pending" else "All")
+                    }
+                    IconButton(onClick = { vm.loadCashInPerson(if (showAll) null else "pending") }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Panel)
+            )
+        },
+        containerColor = Bg
+    ) { pad ->
+        Box(Modifier.padding(pad).fillMaxSize(), contentAlignment = Alignment.Center) {
+            when {
+                busy && rows.isEmpty() -> CircularProgressIndicator()
+                rows.isEmpty() -> Text("No cash-in-person requests", color = Color(0xFF848E9C))
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(rows, key = { it.rowId() }) { row ->
+                        val reqType = if (row.type == "withdraw") "withdraw" else "deposit"
+                        RequestCard(
+                            title = row.displayUser(),
+                            lines = listOf(
+                                "Type: $reqType",
+                                row.requestedAmount?.let { "Requested: $it ${row.currency ?: "USDT"}" } ?: "",
+                                row.mobile?.let { "Mobile: $it" } ?: "",
+                                row.city?.let { "City: $it" } ?: "",
+                                "Status: ${row.status}",
+                                row.createdAt ?: "",
+                            ).filter { it.isNotBlank() },
+                            status = row.status,
+                            onOpenWeb = {
+                                val url = AdminFirebaseMessagingService.adminWebUrl("cashInPerson")
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            },
+                            onAccept = {
+                                amount = row.requestedAmount?.toString() ?: ""
+                                approveRow = row
+                            },
+                            onReject = { rejectId = row.rowId(); remark = "" },
+                        )
+                    }
+                }
+            }
+            if (!error.isNullOrBlank()) {
+                Text(error!!, color = SellRed, modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp))
+            }
+        }
+    }
+
+    if (approveRow != null) {
+        val row = approveRow!!
+        val isWithdraw = row.type == "withdraw"
+        ApproveCashInPersonDialog(
+            amount = amount,
+            onAmount = { amount = it },
+            isWithdraw = isWithdraw,
+            onDismiss = { approveRow = null },
+            onSubmit = {
+                val id = row.rowId()
+                val parsed = amount.trim().toDoubleOrNull()
+                if (parsed == null || parsed <= 0) return@ApproveCashInPersonDialog
+                vm.verifyCashInPerson(id, "approve", parsed) { approveRow = null }
+            }
+        )
+    }
+
+    if (rejectId != null) {
+        RejectDialog(
+            remark = remark,
+            onRemark = { remark = it },
+            onDismiss = { rejectId = null },
+            onSubmit = {
+                val id = rejectId ?: return@RejectDialog
+                vm.verifyCashInPerson(id, "reject", note = remark.trim()) { rejectId = null }
+            },
+            optionalRemark = true,
+        )
+    }
+}
+
 @Composable
 private fun RequestCard(
     title: String,
@@ -651,13 +833,14 @@ private fun RejectDialog(
     onRemark: (String) -> Unit,
     onDismiss: () -> Unit,
     onSubmit: () -> Unit,
+    optionalRemark: Boolean = false,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Reject request") },
         text = {
             Column {
-                Text("Enter remark for the user")
+                Text(if (optionalRemark) "Enter remark for the user (optional)" else "Enter remark for the user")
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = remark,
@@ -671,9 +854,52 @@ private fun RejectDialog(
         confirmButton = {
             Button(
                 onClick = onSubmit,
-                enabled = remark.trim().isNotEmpty(),
+                enabled = optionalRemark || remark.trim().isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = SellRed)
             ) { Text("Submit reject") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun ApproveCashInPersonDialog(
+    amount: String,
+    onAmount: (String) -> Unit,
+    isWithdraw: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isWithdraw) "Approve cash withdraw" else "Approve cash deposit") },
+        text = {
+            Column {
+                Text(
+                    if (isWithdraw) {
+                        "Enter USDT amount paid out in person."
+                    } else {
+                        "Enter USDT amount received in person."
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = onAmount,
+                    label = { Text("Amount (USDT)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onSubmit,
+                enabled = amount.trim().toDoubleOrNull()?.let { it > 0 } == true,
+                colors = ButtonDefaults.buttonColors(containerColor = BuyGreen)
+            ) { Text(if (isWithdraw) "Approve & debit" else "Approve & credit") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

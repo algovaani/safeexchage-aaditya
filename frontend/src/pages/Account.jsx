@@ -41,13 +41,16 @@ function buildPriceMap(live) {
 
 export default function Account() {
   const { user } = useAuth();
-  const { wallet: liveWallet, walletVersion } = useRealtime();
+  const { wallet: liveWallet, walletVersion, refreshWallet } = useRealtime();
   const { toInr, usdtInrRate } = usePlatformConfig();
   const { pairs } = useTradingPairs();
   const [spotUsdt, setSpotUsdt] = useState(null);
   const [lockedUsdt, setLockedUsdt] = useState(0);
+  const [mainUsdt, setMainUsdt] = useState(0);
+  const [referralUsdt, setReferralUsdt] = useState(0);
   const [bonusUsdt, setBonusUsdt] = useState(0);
   const [withdrawableUsdt, setWithdrawableUsdt] = useState(0);
+  const [tradeableUsdt, setTradeableUsdt] = useState(0);
   const [assetBalances, setAssetBalances] = useState([]);
   const [priceMap, setPriceMap] = useState({});
   const [hideZero, setHideZero] = useState(false);
@@ -74,15 +77,24 @@ export default function Account() {
     if (!wallet) return;
     const balance = Number(wallet?.balance_usdt ?? wallet?.balance ?? 0);
     const locked = Number(wallet?.locked_balance ?? 0);
+    const main = Number(wallet?.main_balance ?? 0);
+    const referral = Number(wallet?.referral_balance ?? 0);
     const bonus = Number(wallet?.bonus_balance ?? 0);
     const withdrawable =
       wallet?.withdrawable_balance != null
         ? Number(wallet.withdrawable_balance)
-        : Math.max(0, balance - locked - bonus);
+        : Number(wallet?.main_available ?? main);
+    const tradeable =
+      wallet?.tradeable_balance != null
+        ? Number(wallet.tradeable_balance)
+        : Number(wallet?.available_balance ?? main + referral + bonus);
     setSpotUsdt(balance);
     setLockedUsdt(locked);
+    setMainUsdt(main);
+    setReferralUsdt(referral);
     setBonusUsdt(bonus);
     setWithdrawableUsdt(withdrawable);
+    setTradeableUsdt(tradeable);
     if (Array.isArray(wallet?.assets)) {
       setAssetBalances(wallet.assets);
     }
@@ -100,12 +112,12 @@ export default function Account() {
 
   const refreshBalance = useCallback(async () => {
     try {
-      const { data } = await api.get('/wallet/balance');
-      applyWallet(parseApiResponse(data));
+      const wallet = await refreshWallet();
+      if (wallet) applyWallet(wallet);
     } catch {
       setLoading(false);
     }
-  }, [applyWallet]);
+  }, [applyWallet, refreshWallet]);
 
   const refreshWithdrawals = useCallback(async () => {
     try {
@@ -312,14 +324,43 @@ export default function Account() {
     }
   }
 
-  const availableUsdt = Math.max(0, Number(spotUsdt ?? 0) - Number(lockedUsdt || 0));
-  const withdrawableBalance = Math.max(0, Number(withdrawableUsdt ?? availableUsdt - bonusUsdt));
+  const withdrawableBalance = Math.max(0, Number(withdrawableUsdt ?? 0));
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-xl font-medium text-text-primary mb-1">Wallet</h1>
         <p className="text-sm text-text-secondary">Manage funds, deposits, and withdrawals</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="ui-card">
+          <p className="stat-card__label">Main Wallet</p>
+          <p className="text-2xl font-medium tabular-nums text-text-primary mt-1">
+            {loading ? '…' : fmtUSD(mainUsdt)} USDT
+          </p>
+          <p className="text-xs text-text-secondary mt-2">
+            Trade · Stake · Withdraw
+          </p>
+          <p className="text-xs text-text-muted mt-1">
+            Withdrawable: {fmtUSD(withdrawableBalance)} USDT
+            {lockedUsdt > 0 ? ` · Locked: ${fmtUSD(lockedUsdt)}` : ''}
+          </p>
+        </div>
+        <div className="ui-card">
+          <p className="stat-card__label">Referral Wallet</p>
+          <p className="text-2xl font-medium tabular-nums text-text-primary mt-1">
+            {loading ? '…' : fmtUSD(referralUsdt)} USDT
+          </p>
+          <p className="text-xs text-text-secondary mt-2">Trade only — profit goes to Main Wallet</p>
+        </div>
+        <div className="ui-card">
+          <p className="stat-card__label">Bonus Wallet</p>
+          <p className="text-2xl font-medium tabular-nums text-text-primary mt-1">
+            {loading ? '…' : fmtUSD(bonusUsdt)} USDT
+          </p>
+          <p className="text-xs text-text-secondary mt-2">Trade only — profit goes to Main Wallet</p>
+        </div>
       </div>
 
       <div className="ui-card flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -331,21 +372,9 @@ export default function Account() {
           <p className="text-sm text-text-muted mt-1">
             ≈ {fmtUSD(portfolioUsdt)} USDT
           </p>
-          {!loading && (lockedUsdt > 0 || bonusUsdt > 0) && (
-            <p className="text-xs text-text-secondary mt-1">
-              {lockedUsdt > 0 && (
-                <>
-                  Available USDT: {fmtINR(toInr(availableUsdt))} · Locked: {fmtINR(toInr(lockedUsdt))}
-                </>
-              )}
-              {bonusUsdt > 0 && (
-                <>
-                  {lockedUsdt > 0 ? ' · ' : ''}
-                  Referral bonus: {fmtINR(toInr(bonusUsdt))} (trading only, not withdrawable)
-                </>
-              )}
-            </p>
-          )}
+          <p className="text-xs text-text-secondary mt-1">
+            Tradeable USDT: {fmtUSD(tradeableUsdt)} (Bonus → Referral → Main)
+          </p>
         </div>
         <div className="flex flex-wrap gap-3 wallet-action-row">
           <button type="button" className="btn-primary" onClick={() => onDeposit('USDT')}>

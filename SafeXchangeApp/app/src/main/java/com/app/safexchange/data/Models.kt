@@ -11,8 +11,8 @@ data class ApiEnvelope<T>(
 data class LoginBody(val email: String, val password: String)
 
 data class LoginData(
-    val token: String,
-    val user: AdminUser?,
+    val token: String? = null,
+    val user: AdminUser? = null,
 )
 
 data class AdminUser(
@@ -75,10 +75,35 @@ data class WithdrawalRow(
         user?.mobile ?: user?.email ?: userLabel ?: user?.name ?: "User"
 }
 
+data class CashInPersonRow(
+    val id: String? = null,
+    @SerializedName("_id") val _id: String? = null,
+    val type: String? = null,
+    val mobile: String? = null,
+    val city: String? = null,
+    val requestedAmount: Double? = null,
+    val creditedAmount: Double? = null,
+    val currency: String? = null,
+    val status: String? = null,
+    val createdAt: String? = null,
+    val user: RequestUser? = null,
+    val userLabel: String? = null,
+) {
+    fun rowId(): String = id ?: _id ?: ""
+    fun displayUser(): String =
+        user?.mobile ?: user?.email ?: userLabel ?: mobile ?: user?.name ?: "User"
+}
+
 data class VerifyBody(
     val action: String,
     val note: String = "",
     @SerializedName("apply_bonus") val applyBonus: Boolean = false,
+)
+
+data class VerifyCashInPersonBody(
+    val action: String,
+    val amount: Double? = null,
+    val note: String = "",
 )
 
 data class DeviceTokenBody(
@@ -90,5 +115,6 @@ data class DeviceTokenBody(
 data class NotificationSummary(
     val pendingDeposits: Int = 0,
     val pendingWithdrawals: Int = 0,
+    val pendingCashInPerson: Int = 0,
     val unread: Int = 0,
 )

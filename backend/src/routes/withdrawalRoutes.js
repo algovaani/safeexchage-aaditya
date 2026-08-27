@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as withdrawal from '../controllers/withdrawalController.js';
 import { authMiddleware } from '../middleware/authMiddleware.js';
 import { validateRequest } from '../middleware/validateRequest.js';
+import { withdrawSubmitRateLimit } from '../middleware/apiRateLimit.js';
 import {
   cryptoWithdrawValidators,
   fiatWithdrawValidators,
@@ -14,6 +15,7 @@ const withdrawalsRouter = Router();
 withdrawalRouter.post(
   '/crypto/submit',
   authMiddleware,
+  withdrawSubmitRateLimit,
   cryptoWithdrawValidators,
   validateRequest,
   withdrawal.submitCrypto
@@ -21,6 +23,7 @@ withdrawalRouter.post(
 withdrawalRouter.post(
   '/fiat/submit',
   authMiddleware,
+  withdrawSubmitRateLimit,
   fiatWithdrawValidators,
   validateRequest,
   withdrawal.submitFiat

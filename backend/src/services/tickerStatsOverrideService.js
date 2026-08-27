@@ -4,7 +4,7 @@ import { getPairSync } from './tradingPairService.js';
 /** @type {Map<string, object>|null} */
 let overrideCache = null;
 let overrideCacheAt = 0;
-const OVERRIDE_CACHE_TTL_MS = 5_000;
+const OVERRIDE_CACHE_TTL_MS = 60_000;
 
 function normalizeSymbol(symbol) {
   return String(symbol || '').trim().toUpperCase();

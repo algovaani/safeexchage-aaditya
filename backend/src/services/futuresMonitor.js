@@ -1,4 +1,5 @@
 import { FuturesPosition } from '../models/FuturesPosition.js';
+import { Wallet } from '../models/Wallet.js';
 import { fetchPriceMap } from './marketDataProvider.js';
 import { getFuturesSettings } from './futuresSettingsService.js';
 import {
@@ -6,9 +7,12 @@ import {
   shouldTriggerTpSl,
   isLiquidated,
 } from './futuresService.js';
+import { unrealizedPnl, maintenanceMargin } from '../utils/futuresMath.js';
+import { ensureWalletBuckets } from './walletAdjustmentService.js';
 import { emitFuturesUpdate } from './socketService.js';
+import { storeMoney } from '../utils/money.js';
 
-const INTERVAL_MS = 5_000;
+const INTERVAL_MS = Number(process.env.FUTURES_MONITOR_MS) || 15_000;
 let timer = null;
 let running = false;
 let ioRef = null;
@@ -29,16 +33,39 @@ async function tick({ prices: injectedPrices } = {}) {
     if (!positions.length) return;
 
     const prices = injectedPrices || (await fetchPriceMap({ force: true })).prices;
+    const walletCache = new Map();
 
     for (const pos of positions) {
       const mark = prices[pos.symbol];
       if (mark == null) continue;
 
-      const liqHit = isLiquidated({
-        side: pos.side,
-        markPrice: mark,
-        liquidationPrice: pos.liquidationPrice,
-      });
+      let liqHit = false;
+      const marginMode = pos.marginMode || 'cross';
+
+      if (marginMode === 'cross') {
+        const userKey = String(pos.userId);
+        let equity = walletCache.get(userKey);
+        if (equity == null) {
+          const wallet = await Wallet.findOne({ userId: pos.userId }).lean();
+          ensureWalletBuckets(wallet);
+          equity = storeMoney(wallet?.balance || 0);
+          walletCache.set(userKey, equity);
+        }
+        const upnl = unrealizedPnl({
+          side: pos.side,
+          quantity: pos.quantity,
+          entryPrice: pos.entryPrice,
+          markPrice: mark,
+        });
+        const maint = maintenanceMargin(pos.quantity, mark, settings.maintenanceMarginRate);
+        liqHit = equity + upnl <= maint;
+      } else {
+        liqHit = isLiquidated({
+          side: pos.side,
+          markPrice: mark,
+          liquidationPrice: pos.liquidationPrice,
+        });
+      }
 
       if (liqHit) {
         try {

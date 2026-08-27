@@ -15,6 +15,8 @@ export async function adjustUserFunds(req, res, next) {
       action,
       amount,
       remark,
+      // Admin fund add → main balance (trade + withdraw)
+      withdrawable: true,
     });
 
     await emitWalletUpdate(req.app.get('io'), req.params.userId, {

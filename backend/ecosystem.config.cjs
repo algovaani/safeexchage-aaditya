@@ -3,24 +3,36 @@
  *   pm2 start ecosystem.config.cjs
  *   pm2 save && pm2 startup
  *
- * Layout:
- *   safex-api    — HTTP + WebSocket (cluster ×2). No TP/SL / futures / staking crons.
- *   safex-worker — Background monitors (+ future Moralis/Tron scanners). Single instance.
+ * Production layout (3 processes by default):
+ *   safex-api    ×1 — HTTP + WebSocket (default; set API_INSTANCES=2 to scale)
+ *   safex-worker ×1 — order monitor, futures, TP/SL, staking (no HTTP)
  *
- * Nginx (required for Socket.IO with cluster): sticky sessions
+ * Why split api + worker?
+ *   - API stays fast under load; heavy crons don't block HTTP.
+ *   - Worker runs spot order fills even when nobody has the chart open.
+ *
+ * Scaling API to 2 instances (optional):
+ *   API_INSTANCES=2 in .env + Nginx sticky sessions (ip_hash) on upstream.
+ *   Without ip_hash, Socket.IO / wallet pushes can land on the wrong worker.
+ *   Redis Socket.IO adapter is NOT configured — prefer 1 instance on a single box.
+ *
  *   upstream safex_api {
  *     ip_hash;
  *     server 127.0.0.1:5001;
  *   }
  */
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
+const apiInstances = Math.max(1, Math.min(Number(process.env.API_INSTANCES) || 1, 4));
+
 module.exports = {
   apps: [
     {
       name: 'safex-api',
       script: 'src/server.js',
       cwd: __dirname,
-      instances: 2,
-      exec_mode: 'cluster',
+      instances: apiInstances,
+      exec_mode: apiInstances > 1 ? 'cluster' : 'fork',
       autorestart: true,
       watch: false,
       max_memory_restart: '768M',

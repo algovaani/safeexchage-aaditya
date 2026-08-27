@@ -4,6 +4,7 @@ import { UserOrder } from '../models/UserOrder.js';
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { ensureWalletBuckets, creditTradeProfit } from './walletAdjustmentService.js';
 
 /**
  * PnL with loss capped at -margin (user cannot lose more than margin).
@@ -83,7 +84,8 @@ export async function settleOrder(orderId, closePrice, { session: externalSessio
     }
 
     wallet.lockedBalance = storeMoney(wallet.lockedBalance - margin);
-    wallet.balance = storeMoney(wallet.balance + returnAmount);
+    ensureWalletBuckets(wallet);
+    creditTradeProfit(wallet, returnAmount);
     await wallet.save({ session });
 
     order.status = 'closed';
@@ -213,7 +215,8 @@ export async function cancelOrder(orderId, { session: externalSession } = {}) {
     }
 
     wallet.lockedBalance = storeMoney(wallet.lockedBalance - margin);
-    wallet.balance = storeMoney(wallet.balance + margin);
+    ensureWalletBuckets(wallet);
+    creditTradeProfit(wallet, margin);
     await wallet.save({ session });
 
     order.status = 'cancelled';

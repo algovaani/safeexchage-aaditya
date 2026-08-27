@@ -7,6 +7,8 @@ import { fetchPriceMap } from '../services/marketDataProvider.js';
 import { calculatePnL } from '../services/settlementService.js';
 import { error, success } from '../utils/response.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { ensureWalletBuckets, tradeableBalance } from '../services/walletBucketService.js';
+import { creditTradeProfit } from '../services/walletAdjustmentService.js';
 
 const MIN_MARGIN = 10;
 
@@ -67,12 +69,12 @@ export async function joinTrade(req, res, next) {
     }
 
     const wallet = await Wallet.findOne({ userId: req.userId }).session(session);
-    if (!wallet || wallet.balance < margin) {
+    ensureWalletBuckets(wallet);
+    if (!wallet || tradeableBalance(wallet) < margin) {
       await session.abortTransaction();
       return error(res, 'Insufficient USDT balance', 400);
     }
 
-    wallet.balance = storeMoney(wallet.balance - margin);
     wallet.lockedBalance = storeMoney((wallet.lockedBalance || 0) + margin);
     await wallet.save({ session });
 

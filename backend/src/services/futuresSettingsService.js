@@ -72,6 +72,6 @@ export function publicFuturesConfig(settings) {
     minQuantity: settings.minQuantity,
     fundingEnabled: settings.fundingEnabled,
     fundingRate: settings.fundingRate,
-    allowedLeverages: settings.allowedLeverages,
+    allowedLeverages: (settings.allowedLeverages || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0),
   };
 }

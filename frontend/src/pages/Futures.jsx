@@ -57,16 +57,61 @@ function pnlClass(v) {
   return n > 0 ? 'fut-pos' : 'fut-neg';
 }
 
-function useDebounced(value, delay = 400) {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
-  }, [value, delay]);
-  return debounced;
+function fmtPct(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '—';
+  return n.toFixed(2);
 }
 
-function computeLocalEstimate({ quantity, price, leverage, side, config }) {
+function snapLeverage(lev, options) {
+  const n = Math.round(Number(lev));
+  const allowed = (options || []).map((x) => Number(x)).filter((x) => Number.isFinite(x));
+  if (!allowed.length) return n;
+  if (allowed.includes(n)) return n;
+  return allowed.reduce((best, x) => (Math.abs(x - n) < Math.abs(best - n) ? x : best));
+}
+
+function maxAffordableQty(available, price, leverage, feeRate) {
+  const bal = Number(available);
+  const px = Number(price);
+  const lev = Math.max(1, Number(leverage) || 1);
+  const fee = Number(feeRate) || 0;
+  if (!(bal > 0) || !(px > 0)) return 0;
+  return bal / (px * (1 / lev + fee));
+}
+
+function patchLastCandle(prev, price) {
+  if (!prev?.length) return prev;
+  const last = prev[prev.length - 1];
+  const close = price;
+  const open = Number(last.open) || close;
+  return [
+    ...prev.slice(0, -1),
+    {
+      ...last,
+      close,
+      high: Math.max(Number(last.high) || close, close),
+      low: Math.min(Number(last.low) || close, close),
+    },
+  ];
+}
+
+function crossLiquidationLocal({ side, price, quantity, walletEquity, maintRate }) {
+  const qty = Number(quantity);
+  const entry = Number(price);
+  const equity = Number(walletEquity);
+  if (!(qty > 0) || !(entry > 0) || !Number.isFinite(equity)) return null;
+  const m = Number(maintRate) || 0.004;
+  let liq;
+  if (side === 'short') {
+    liq = (equity + entry * qty) / (qty * (1 + m));
+  } else {
+    liq = (entry * qty - equity) / (qty * (1 - m));
+  }
+  return Math.max(liq, 0);
+}
+
+function computeLocalEstimate({ quantity, price, leverage, side, config, available, marginMode }) {
   const qty = Number(quantity);
   const px = Number(price);
   const lev = Number(leverage);
@@ -77,16 +122,23 @@ function computeLocalEstimate({ quantity, price, leverage, side, config }) {
   const maintRate = config?.maintenanceMarginRate ?? 0.004;
   const margin = notional / lev;
   const fee = notional * takerFeeRate;
-  const maint = notional * maintRate;
-  const buffer = Math.max(0, margin - maint);
-  const delta = buffer / qty;
-  const liq = side === 'short' ? px + delta : px - delta;
+  const mode = marginMode === 'isolated' ? 'isolated' : 'cross';
+
+  let liq;
+  if (mode === 'cross' && Number(available) > 0) {
+    liq = crossLiquidationLocal({ side, price: px, quantity: qty, walletEquity: available, maintRate });
+  } else {
+    const maint = notional * maintRate;
+    const buffer = Math.max(0, margin - maint);
+    const delta = buffer / qty;
+    liq = side === 'short' ? px + delta : px - delta;
+  }
 
   return {
     requiredMargin: margin,
     estimatedFee: fee,
     totalRequired: margin + fee,
-    liquidationPrice: Math.max(liq, 0),
+    liquidationPrice: Math.max(liq || 0, 0),
     price: px,
   };
 }
@@ -94,7 +146,7 @@ function computeLocalEstimate({ quantity, price, leverage, side, config }) {
 export default function Futures() {
   const toast = useToast();
   const { user, token } = useAuth();
-  const { wallet: rtWallet, walletVersion } = useRealtime();
+  const { wallet: rtWallet, walletVersion, refreshWallet, publishWallet } = useRealtime();
   const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
 
@@ -133,23 +185,27 @@ export default function Futures() {
   const prevPriceRef = useRef(null);
   const configInitRef = useRef(false);
   const tapeSeqRef = useRef(0);
+  const submitLockRef = useRef(false);
 
   const wallet = rtWallet || walletLocal;
   const rawMarkPrice = Number(ticker?.lastPrice ?? depth.mid ?? 0);
-  const markPrice = useDebounced(rawMarkPrice, 350);
+  const markPrice = rawMarkPrice > 0 ? rawMarkPrice : 0;
   const indexPrice = markPrice;
   const priceRef = markPrice || Number(limitPrice) || 1;
   const available = Number(
     wallet?.available_balance ??
       Math.max(0, Number(wallet?.balance_usdt ?? wallet?.balance ?? 0) - Number(wallet?.locked_balance ?? 0))
   );
+  const totalBalance = Number(wallet?.balance_usdt ?? wallet?.balance ?? available);
 
   const base = symbol.replace('USDT', '');
   const pairLabel = `${base}/USDT Perp`;
 
   const leverageOptions = useMemo(() => {
-    if (config?.allowedLeverages?.length) return config.allowedLeverages;
-    return [1, 2, 5, 10, 20, 50, 100, 125];
+    if (config?.allowedLeverages?.length) {
+      return config.allowedLeverages.map((x) => Number(x)).filter((x) => Number.isFinite(x));
+    }
+    return [1, 2, 3, 5, 10, 20, 50, 100, 125];
   }, [config]);
 
   const execPrice = useMemo(() => {
@@ -168,11 +224,25 @@ export default function Futures() {
         leverage,
         side,
         config,
+        available: marginMode === 'cross' ? totalBalance : available,
+        marginMode,
       }),
-    [quantity, execPrice, leverage, side, config]
+    [quantity, execPrice, leverage, side, config, available, totalBalance, marginMode]
   );
 
-  const displayEstimate = localEstimate;
+  const displayPositions = useMemo(() => {
+    const liveMark = rawMarkPrice > 0 ? rawMarkPrice : null;
+    return positions.map((p) => {
+      const mark = liveMark ?? Number(p.markPrice) ?? Number(p.entryPrice);
+      const qty = Number(p.quantity);
+      const entry = Number(p.entryPrice);
+      if (!(qty > 0) || !(entry > 0) || !(mark > 0)) return p;
+      const upnl = p.side === 'short' ? (entry - mark) * qty : (mark - entry) * qty;
+      const margin = Number(p.margin) || 0;
+      const roe = margin > 0 ? (upnl / margin) * 100 : 0;
+      return { ...p, markPrice: mark, unrealizedPnl: upnl, roe };
+    });
+  }, [positions, rawMarkPrice]);
 
   const loadConfig = useCallback(async () => {
     try {
@@ -180,7 +250,7 @@ export default function Futures() {
       const cfg = parseApiResponse(data);
       setConfig(cfg);
       if (!configInitRef.current) {
-        if (cfg?.defaultLeverage) setLeverage(cfg.defaultLeverage);
+        if (cfg?.defaultLeverage) setLeverage(Number(cfg.defaultLeverage));
         if (cfg?.defaultMarginMode) setMarginMode(cfg.defaultMarginMode);
         configInitRef.current = true;
       }
@@ -365,21 +435,28 @@ export default function Futures() {
     }
 
     const onMerged = (payload) => {
-      if (!payload?.candle || payload.symbol !== sym || payload.interval !== chartInterval) return;
-      const c = payload.candle;
-      setCandles((prev) => {
-        if (!prev.length) return [c];
-        const last = prev[prev.length - 1];
-        if (c.openTime === last.openTime) return [...prev.slice(0, -1), c];
-        if (c.openTime > last.openTime) return [...prev.slice(-499), c];
-        const idx = prev.findIndex((x) => x.openTime === c.openTime);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = c;
-          return next;
-        }
-        return prev;
-      });
+      if (!payload?.candle || payload.symbol !== sym) return;
+      if (payload.interval === chartInterval) {
+        const c = payload.candle;
+        setCandles((prev) => {
+          if (!prev.length) return [c];
+          const last = prev[prev.length - 1];
+          if (c.openTime === last.openTime) return [...prev.slice(0, -1), c];
+          if (c.openTime > last.openTime) return [...prev.slice(-499), c];
+          const idx = prev.findIndex((x) => x.openTime === c.openTime);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = c;
+            return next;
+          }
+          return prev;
+        });
+        return;
+      }
+      if (payload.interval === '1s' && chartInterval !== '1s') {
+        const liveClose = Number(payload.candle.close);
+        if (liveClose > 0) setCandles((prev) => patchLastCandle(prev, liveClose));
+      }
     };
 
     const onDepth = (payload) => {
@@ -407,10 +484,25 @@ export default function Futures() {
           setPriceUp(price >= prevPriceRef.current);
         }
         prevPriceRef.current = price;
+        setCandles((prev) => patchLastCandle(prev, price));
       }
-      tapeSeqRef.current += 1;
-      const tradeId = `${payload.time}-${payload.price}-${payload.qty ?? payload.quantity}-${tapeSeqRef.current}`;
-      setTape((prev) => [{ ...payload, _id: tradeId }, ...prev].slice(0, 40));
+
+      // Heartbeat ticks (qty 0) are for last-price only — never show as tape fills
+      if (payload.tickerOnly || payload.pulse) return;
+      const qty = Number(payload.qty ?? payload.quantity ?? 0);
+      if (!(qty > 0)) return;
+
+      const time = Number(payload.time) || Date.now();
+      const dedupeKey = `${time}|${price}|${qty}`;
+      setTape((prev) => {
+        // Same trade often arrives twice (depth room + 1s candle room)
+        if (prev.some((row) => row._dedupe === dedupeKey)) return prev;
+        tapeSeqRef.current += 1;
+        return [
+          { ...payload, qty, _id: `${dedupeKey}-${tapeSeqRef.current}`, _dedupe: dedupeKey },
+          ...prev,
+        ].slice(0, 40);
+      });
     };
 
     socket.on('market:klines:merged', onMerged);
@@ -433,35 +525,36 @@ export default function Futures() {
     if (!user || !token) return undefined;
     const socket = getUserSocket(token);
     const onFuturesUpdate = (payload) => {
-      if (payload?.event === 'position:mark') return;
       if (payload?.positions?.length) {
         setPositions((prev) => {
           const map = new Map(prev.map((p) => [p.id, p]));
-          for (const p of payload.positions) map.set(p.id, { ...map.get(p.id), ...p });
-          const next = [...map.values()].filter((p) => p.status === 'open');
-          if (next.length === prev.length && next.every((p, i) => p.id === prev[i]?.id && p.unrealizedPnl === prev[i]?.unrealizedPnl)) {
-            return prev;
+          for (const p of payload.positions) {
+            if (p.status === 'open') map.set(p.id, { ...map.get(p.id), ...p });
+            else map.delete(p.id);
           }
-          return next;
+          return [...map.values()].filter((p) => p.status === 'open');
         });
       }
       if (payload?.closed) loadPosHistory();
-      if (payload?.event?.includes('close') || payload?.event?.includes('liquidat')) {
-        loadPositions();
+      if (
+        payload?.event === 'position:opened' ||
+        payload?.event?.includes('close') ||
+        payload?.event?.includes('liquidat')
+      ) {
         loadOrders();
-        loadWallet();
+        refreshWallet();
       }
     };
     socket.on('futures:update', onFuturesUpdate);
     return () => {
       socket.off('futures:update', onFuturesUpdate);
     };
-  }, [user, token, loadPosHistory, loadPositions, loadOrders, loadWallet]);
+  }, [user, token, loadPosHistory, loadOrders, refreshWallet]);
 
   function applySizePct(pct) {
     setSizePct(pct);
     if (!(available > 0) || !(execPrice > 0) || !(leverage > 0)) return;
-    const maxQty = (available * leverage) / execPrice;
+    const maxQty = maxAffordableQty(available, execPrice, leverage, config?.takerFeeRate);
     const next = (maxQty * pct) / 100;
     setQuantity(next > 0 ? next.toFixed(6).replace(/\.?0+$/, '') || '0' : '0');
   }
@@ -473,28 +566,42 @@ export default function Futures() {
   async function submitOpen() {
     if (!user) return requireLogin();
     if (!config?.enabled) return toast.error('Futures trading is disabled');
+    if (submitLockRef.current || busy) return;
+
+    submitLockRef.current = true;
     setBusy(true);
+    setConfirmOpen(false);
+
     try {
+      const lev = snapLeverage(leverage, leverageOptions);
       const body = {
         symbol,
         side,
         orderType,
         quantity: Number(quantity),
-        leverage,
+        leverage: lev,
         marginMode,
         takeProfitPrice: takeProfit ? Number(takeProfit) : undefined,
         stopLossPrice: stopLoss ? Number(stopLoss) : undefined,
         limitPrice: orderType === 'limit' ? Number(limitPrice) : undefined,
       };
-      await api.post('/futures/open', body);
-      toast.success('Position opened');
-      setConfirmOpen(false);
-      await loadPositions();
+      const { data } = await api.post('/futures/open', body);
+      const parsed = parseApiResponse(data);
+      if (parsed?.position) {
+        setPositions((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          map.set(parsed.position.id, parsed.position);
+          return [...map.values()].filter((p) => p.status === 'open');
+        });
+      }
+      if (parsed?.wallet) publishWallet(parsed.wallet);
+      else await refreshWallet();
       await loadOrders();
-      await loadWallet();
+      toast.success('Position opened');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Order failed');
     } finally {
+      submitLockRef.current = false;
       setBusy(false);
     }
   }
@@ -508,7 +615,7 @@ export default function Futures() {
       await loadPositions();
       await loadOrders();
       await loadPosHistory();
-      await loadWallet();
+      await refreshWallet();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Close failed');
     } finally {
@@ -523,7 +630,7 @@ export default function Futures() {
       toast.success('Position reversed');
       await loadPositions();
       await loadOrders();
-      await loadWallet();
+      await refreshWallet();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Reverse failed');
     } finally {
@@ -560,7 +667,7 @@ export default function Futures() {
       toast.success(action === 'add' ? 'Margin added' : 'Margin reduced');
       setMarginAmt('');
       await loadPositions();
-      await loadWallet();
+      await refreshWallet();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Margin update failed');
     } finally {
@@ -573,11 +680,7 @@ export default function Futures() {
 
   return (
     <div className="fut-page">
-      {disabled && (
-        <div className="fut-banner fut-banner--warn">
-          Futures trading is currently disabled by the administrator.
-        </div>
-      )}
+       
 
       <header className="fut-header">
         <div className="fut-header__pair">
@@ -712,7 +815,7 @@ export default function Futures() {
         </aside>
 
         <aside className="fut-panel fut-panel--order">
-          <div className="fut-order-head">
+          {/* <div className="fut-order-head">
             <button type="button" className={marginMode === 'cross' ? 'is-active' : ''} onClick={() => setMarginMode('cross')}>
               Cross
             </button>
@@ -720,7 +823,7 @@ export default function Futures() {
               Isolated
             </button>
             <button type="button" className="fut-order-head__lev">{leverage}x</button>
-          </div>
+          </div> */}
 
           <div className="fut-order-type">
             <button type="button" className={orderType === 'limit' ? 'is-active' : ''} onClick={() => setOrderType('limit')}>Limit</button>
@@ -760,13 +863,18 @@ export default function Futures() {
                 min={config?.minLeverage || 1}
                 max={config?.maxLeverage || 125}
                 value={leverage}
-                onChange={(e) => setLeverage(Number(e.target.value))}
+                onChange={(e) => setLeverage(snapLeverage(Number(e.target.value), leverageOptions))}
               />
               <strong>{leverage}x</strong>
             </div>
             <div className="fut-lev-pills">
               {leverageOptions.map((l) => (
-                <button key={l} type="button" className={leverage === l ? 'is-active' : ''} onClick={() => setLeverage(l)}>
+                <button
+                  key={l}
+                  type="button"
+                  className={Number(leverage) === Number(l) ? 'is-active' : ''}
+                  onClick={() => setLeverage(Number(l))}
+                >
                   {l}x
                 </button>
               ))}
@@ -786,9 +894,9 @@ export default function Futures() {
 
           <div className="fut-summary">
             <div><span>Available</span><strong>{fmtUsdt(available)} USDT</strong></div>
-            <div><span>Cost</span><strong>{displayEstimate ? `${fmtUsdt(displayEstimate.requiredMargin)} USDT` : '—'}</strong></div>
-            <div><span>Est. Fee</span><strong>{displayEstimate ? `${fmtUsdt(displayEstimate.estimatedFee)} USDT` : '—'}</strong></div>
-            <div><span>Liq. Price</span><strong>{displayEstimate?.liquidationPrice ? fmtPrice(displayEstimate.liquidationPrice, priceRef) : '—'}</strong></div>
+            <div><span>Cost</span><strong>{localEstimate ? `${fmtUsdt(localEstimate.requiredMargin)} USDT` : '—'}</strong></div>
+            <div><span>Est. Fee</span><strong>{localEstimate ? `${fmtUsdt(localEstimate.estimatedFee)} USDT` : '—'}</strong></div>
+            <div><span>Liq. Price</span><strong>{localEstimate?.liquidationPrice ? fmtPrice(localEstimate.liquidationPrice, priceRef) : '—'}</strong></div>
           </div>
 
           {!confirmOpen ? (
@@ -808,7 +916,7 @@ export default function Futures() {
               <div className="fut-confirm__actions">
                 <button type="button" onClick={() => setConfirmOpen(false)}>Cancel</button>
                 <button type="button" className={side === 'long' ? 'is-long' : 'is-short'} disabled={busy} onClick={submitOpen}>
-                  Confirm Order
+                  {busy ? 'Placing…' : 'Confirm Order'}
                 </button>
               </div>
             </div>
@@ -819,8 +927,8 @@ export default function Futures() {
       <section className="fut-panel fut-panel--bottom">
         <div className="fut-bottom-tabs">
           {[
-            ['positions', `Positions (${positions.length})`],
-            ['orders', 'Order History'],
+            ['positions', `Positions (${displayPositions.length})`],
+            ['orders', 'Orders'],
             ['history', 'Position History'],
           ].map(([id, label]) => (
             <button key={id} type="button" className={bottomTab === id ? 'is-active' : ''} onClick={() => setBottomTab(id)}>
@@ -833,7 +941,7 @@ export default function Futures() {
           <div className="fut-table-wrap">
             {!user ? (
               <p className="fut-empty"><Link to="/login" state={{ from: { pathname: '/futures' } }}>Log in</Link> to view positions.</p>
-            ) : !positions.length ? (
+            ) : !displayPositions.length ? (
               <p className="fut-empty">No open positions.</p>
             ) : (
               <table className="fut-table">
@@ -852,7 +960,7 @@ export default function Futures() {
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((p) => (
+                  {displayPositions.map((p) => (
                     <tr key={p.id}>
                       <td>{p.symbol}</td>
                       <td className={p.side === 'long' ? 'fut-pos' : 'fut-neg'}>{p.side.toUpperCase()}</td>
@@ -862,7 +970,7 @@ export default function Futures() {
                       <td>{fmtPrice(p.liquidationPrice, p.liquidationPrice)}</td>
                       <td>{fmtUsdt(p.margin)}</td>
                       <td className={pnlClass(p.unrealizedPnl)}>
-                        {fmtUsdt(p.unrealizedPnl)} ({fmtUsdt(p.roe)}%)
+                        {fmtUsdt(p.unrealizedPnl)} ({fmtPct(p.roe)}%)
                       </td>
                       <td>
                         {p.takeProfitPrice ? fmtPrice(p.takeProfitPrice, p.entryPrice) : '—'} /{' '}
@@ -903,6 +1011,7 @@ export default function Futures() {
                   <th>Qty</th>
                   <th>Price</th>
                   <th>Fee</th>
+                  <th>Status</th>
                   <th>PnL</th>
                 </tr>
               </thead>
@@ -916,11 +1025,16 @@ export default function Futures() {
                     <td>{fmtQty(o.quantity)}</td>
                     <td>{fmtPrice(o.price, o.price)}</td>
                     <td>{fmtUsdt(o.fee)}</td>
-                    <td className={pnlClass(o.pnl)}>{fmtUsdt(o.pnl)}</td>
+                    <td>{o.status || 'filled'}</td>
+                    <td className={pnlClass(o.pnl)}>
+                      {o.action === 'open' || o.action === 'add_margin' || o.action === 'reduce_margin'
+                        ? '—'
+                        : fmtUsdt(o.pnl)}
+                    </td>
                   </tr>
                 ))}
                 {!orders.length && (
-                  <tr><td colSpan={8} className="fut-empty">No orders yet.</td></tr>
+                  <tr><td colSpan={9} className="fut-empty">No orders yet.</td></tr>
                 )}
               </tbody>
             </table>

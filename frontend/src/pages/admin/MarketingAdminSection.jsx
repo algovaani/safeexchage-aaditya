@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, RefreshCcw } from 'lucide-react';
 import { adminMarketingAPI } from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { BANNER_SIZE_HINT } from '../../components/BannerSlider.jsx';
+import { resolveAssetUrl } from '../../utils/assetUrl.js';
 
 function asArray(v) {
   return Array.isArray(v) ? v : [];
@@ -64,12 +66,13 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
     setBusyId('create');
     try {
       if (mode === 'banners') {
-        if (!String(bannerForm.message).trim()) {
-          toast.warning('Banner message is required.');
+        const msg = String(bannerForm.message || '').trim();
+        if (!msg && !bannerImageFile) {
+          toast.warning('Add a banner image or message.');
           return;
         }
         const fd = new FormData();
-        fd.append('message', bannerForm.message);
+        fd.append('message', msg);
         fd.append('enabled', String(Boolean(bannerForm.enabled)));
         fd.append('sortOrder', String(Number(bannerForm.sortOrder || 0)));
         if (bannerImageFile) fd.append('image', bannerImageFile);
@@ -177,7 +180,7 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
             </h2>
             <p className="text-sm text-text-secondary mt-1">
               {mode === 'banners'
-                ? 'Admin enabled banners are shown on the user Dashboard.'
+                ? 'Enabled banners appear as an auto-sliding carousel on the user Dashboard (10s interval).'
                 : mode === 'notices'
                   ? 'Enabled notices are shown as a session dialog on user first load.'
                   : 'Configure support contacts. Name and phone visibility is set per user from their profile page.'}
@@ -191,14 +194,29 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
         <div className="space-y-4">
           {mode === 'banners' && (
             <div className="ui-card p-4 space-y-3">
+              <div className="rounded-md border border-border bg-bg-secondary px-3 py-2.5 text-sm">
+                <p className="font-medium text-text-primary mb-1">Recommended banner size</p>
+                <ul className="text-text-secondary space-y-0.5 list-disc pl-4">
+                  <li>
+                    Best look: <span className="text-text-primary font-medium">{BANNER_SIZE_HINT.width} × {BANNER_SIZE_HINT.height} px</span>{' '}
+                    ({BANNER_SIZE_HINT.ratio} landscape)
+                  </li>
+                  <li>Min width ~800 px; keep subject in the center (edges may crop on mobile)</li>
+                  <li>
+                    Formats: {BANNER_SIZE_HINT.formats} · Max {BANNER_SIZE_HINT.maxMb} MB
+                  </li>
+                  <li>Multiple enabled banners rotate automatically every 10 seconds (sort order = slide order)</li>
+                </ul>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="ui-label">
-                  Message
+                  Message (optional)
                   <input
                     className="ui-input"
                     value={bannerForm.message}
                     onChange={(e) => setBannerForm((f) => ({ ...f, message: e.target.value }))}
-                    placeholder="Enter banner message"
+                    placeholder="Optional caption on banner"
                   />
                 </label>
                 <label className="ui-label">
@@ -213,11 +231,11 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
               </div>
 
               <label className="ui-label">
-                Banner image (optional)
+                Banner image (optional) — {BANNER_SIZE_HINT.width}×{BANNER_SIZE_HINT.height} px recommended
                 <input
                   className="ui-input"
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={(e) => setBannerImageFile(e.target.files?.[0] || null)}
                 />
                 {bannerImageFile ? (
@@ -354,13 +372,14 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
                   {mode === 'banners' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="ui-label">
-                        Message
+                        Message (optional)
                         <input
                           className="ui-input"
                           value={r.message || ''}
                           onChange={(e) =>
                             setRows((prev) => prev.map((x) => (String(x._id || x.id) === id ? { ...x, message: e.target.value } : x)))
                           }
+                          placeholder="Optional caption"
                         />
                       </label>
                       <label className="ui-label">
@@ -378,11 +397,14 @@ export default function MarketingAdminSection({ mode, refreshKey, onMutate }) {
                       </label>
                       {r.imageUrl ? (
                         <div className="md:col-span-2">
-                          <p className="text-sm text-text-muted mb-2">Current image</p>
+                          <p className="text-sm text-text-muted mb-2">
+                            Current image (ideal {BANNER_SIZE_HINT.width}×{BANNER_SIZE_HINT.height})
+                          </p>
                           <img
-                            src={r.imageUrl}
+                            src={resolveAssetUrl(r.imageUrl)}
                             alt="banner"
                             className="w-full rounded-md object-cover max-h-44"
+                            style={{ aspectRatio: '3 / 1' }}
                             loading="lazy"
                           />
                         </div>

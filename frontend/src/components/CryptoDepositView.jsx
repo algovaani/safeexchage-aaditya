@@ -113,7 +113,7 @@ export default function CryptoDepositView({ coin, pairMeta, className = '', onSu
         txn_hash: form.txn_hash.trim(),
         network: chainMeta?.label || chain,
         currency: chainMeta?.currency || coin,
-        from_address: form.from_address.trim(),
+        ...(form.from_address.trim() ? { from_address: form.from_address.trim() } : {}),
       });
       setSubmitOk(true);
       setForm((f) => ({ ...f, amount: '', txn_hash: '' }));
@@ -255,16 +255,13 @@ export default function CryptoDepositView({ coin, pairMeta, className = '', onSu
           />
         </div>
         <div className="deposit-modal__field">
-          <label>Your wallet address (sender)</label>
+          <label>Your wallet address (sender, optional)</label>
           <input
             className="deposit-modal__input"
             value={form.from_address}
             onChange={(e) => setForm((f) => ({ ...f, from_address: e.target.value }))}
-            placeholder="Address you sent from"
+            placeholder="Address you sent from (optional)"
           />
-          <p className="deposit-modal__hint deposit-modal__hint--left">
-            Save your wallets in Account → Wallet addresses for auto-fill.
-          </p>
         </div>
         {submitErr && <p className="deposit-modal__error">{submitErr}</p>}
         {submitOk && (

@@ -3,77 +3,46 @@ import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { User } from '../models/User.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import {
+  creditBonus,
+  creditMain,
+  creditReferral,
+  debitForTrade,
+  debitMain,
+  ensureWalletBuckets,
+  formatWalletBuckets,
+  migrateAllWalletBuckets,
+  syncTotalBalance,
+  tradeableBalance,
+  withdrawableBalance,
+  withdrawableGteExpr,
+} from './walletBucketService.js';
 
-function walletAvailable(wallet) {
-  return storeMoney((wallet?.balance || 0) - (wallet?.lockedBalance || 0));
-}
+export {
+  tradeableBalance,
+  withdrawableBalance,
+  withdrawableGteExpr,
+  migrateAllWalletBuckets,
+};
 
-/** Tradeable available (includes referral bonus). */
-export function tradeableBalance(wallet) {
-  return storeMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0)));
-}
-
-/** Withdrawable available (excludes referral bonus). */
-export function withdrawableBalance(wallet) {
-  return storeMoney(
-    Math.max(
-      0,
-      (wallet?.balance || 0) - (wallet?.lockedBalance || 0) - (wallet?.bonusBalance || 0)
-    )
-  );
-}
-
-/** Keep bonusBalance from exceeding total balance after losses/debits. */
+/** @deprecated Use wallet bucket service — kept for callers still importing applyBonusClamp */
 export function applyBonusClamp(wallet) {
-  if (!wallet) return wallet;
-  const bal = storeMoney(wallet.balance || 0);
-  const bonus = storeMoney(wallet.bonusBalance || 0);
-  wallet.bonusBalance = storeMoney(Math.max(0, Math.min(bonus, bal)));
+  ensureWalletBuckets(wallet);
   return wallet;
 }
 
 export async function clampBonusBalanceForUser(userId) {
   if (!userId) return;
-  await Wallet.updateOne(
-    {
-      userId,
-      $expr: { $gt: [{ $ifNull: ['$bonusBalance', 0] }, '$balance'] },
-    },
-    [{ $set: { bonusBalance: { $max: [0, '$balance'] } } }]
-  );
-}
-
-/** Mongo $expr: withdrawable >= amount */
-export function withdrawableGteExpr(amount) {
-  return {
-    $gte: [
-      {
-        $subtract: [
-          { $subtract: ['$balance', { $ifNull: ['$lockedBalance', 0] }] },
-          { $ifNull: ['$bonusBalance', 0] },
-        ],
-      },
-      amount,
-    ],
-  };
+  const wallet = await Wallet.findOne({ userId });
+  if (!wallet) return;
+  ensureWalletBuckets(wallet);
+  await wallet.save();
 }
 
 export function formatWalletSnapshot(wallet, assets = []) {
-  const balance = roundMoney(wallet?.balance || 0);
-  const locked = roundMoney(wallet?.lockedBalance || 0);
-  const bonus = roundMoney(wallet?.bonusBalance || 0);
-  const available = roundMoney(Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0)));
-  const withdrawable = roundMoney(
-    Math.max(0, (wallet?.balance || 0) - (wallet?.lockedBalance || 0) - (wallet?.bonusBalance || 0))
-  );
+  const buckets = formatWalletBuckets(wallet);
   return {
-    balance_usdt: balance,
-    balance,
-    locked_balance: locked,
-    bonus_balance: bonus,
-    available_balance: available,
-    withdrawable_balance: withdrawable,
-    currency: wallet?.currency || 'USDT',
+    ...buckets,
     assets,
   };
 }
@@ -102,6 +71,8 @@ export async function adjustUserWalletBalance({
   action,
   amount,
   remark,
+  withdrawable = true,
+  bucket = 'main',
 }) {
   const normalizedAction = action === 'add' ? 'add' : 'deduct';
   const value = storeMoney(amount);
@@ -126,45 +97,55 @@ export async function adjustUserWalletBalance({
     let wallet = await Wallet.findOne({ userId }).session(session);
     if (!wallet) {
       [wallet] = await Wallet.create(
-        [{ userId, balance: 0, lockedBalance: 0, bonusBalance: 0, currency: 'USDT' }],
+        [
+          {
+            userId,
+            balance: 0,
+            mainBalance: 0,
+            referralBalance: 0,
+            bonusBalance: 0,
+            lockedBalance: 0,
+            currency: 'USDT',
+          },
+        ],
         { session }
       );
     }
 
-    if (normalizedAction === 'deduct') {
-      const available = walletAvailable(wallet);
-      if (available + 1e-10 < value) {
-        throw Object.assign(
-          new Error(
-            `Insufficient available USDT balance (available: ${roundMoney(available)}, locked: ${roundMoney(wallet.lockedBalance || 0)})`
-          ),
-          { status: 400 }
-        );
-      }
-    }
+    ensureWalletBuckets(wallet);
 
-    if (normalizedAction === 'add') {
-      wallet.balance = storeMoney(wallet.balance + value);
-    } else {
-      wallet.balance = storeMoney(wallet.balance - value);
-      applyBonusClamp(wallet);
+    if (normalizedAction === 'deduct') {
+      if (bucket === 'referral' || bucket === 'bonus') {
+        const pool = bucket === 'referral' ? wallet.referralBalance : wallet.bonusBalance;
+        if ((pool || 0) + 1e-10 < value) {
+          throw Object.assign(new Error(`Insufficient ${bucket} wallet balance`), { status: 400 });
+        }
+        if (bucket === 'referral') wallet.referralBalance = storeMoney(wallet.referralBalance - value);
+        else wallet.bonusBalance = storeMoney(wallet.bonusBalance - value);
+        syncTotalBalance(wallet);
+      } else {
+        debitMain(wallet, value);
+      }
+    } else if (normalizedAction === 'add') {
+      if (bucket === 'referral') creditReferral(wallet, value);
+      else if (bucket === 'bonus' || !withdrawable) creditBonus(wallet, value);
+      else creditMain(wallet, value);
     }
 
     const txType = normalizedAction === 'add' ? 'admin_credit' : 'admin_debit';
-    const txAmount = normalizedAction === 'add' ? value : value;
 
     const [transaction] = await Transaction.create(
       [
         {
           userId,
           type: txType,
-          amount: roundMoney(txAmount),
+          amount: roundMoney(value),
           balanceAfter: roundMoney(wallet.balance),
           currency: 'USDT',
           status: 'completed',
           method: 'manual',
           reference: `admin_${normalizedAction}:${adminId}`,
-          adminNote: note,
+          adminNote: `${note} [${bucket || 'main'}]`,
         },
       ],
       { session }
@@ -210,3 +191,9 @@ export function formatFundAdjustment(tx) {
     status: tx.status,
   };
 }
+
+export async function releaseAdminCreditsFromBonusBalance() {
+  return migrateAllWalletBuckets();
+}
+
+export { debitForTrade, creditMain, creditReferral, creditBonus, debitMain, ensureWalletBuckets, creditTradeProfit } from './walletBucketService.js';

@@ -6,11 +6,12 @@ import { User } from '../models/User.js';
 import {
   baseAssetFromSymbol,
   creditAsset,
-  debitAsset,
+  debitLockedAsset,
+  reconcileSellAssetLocks,
 } from './assetBalanceService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 import { unitPriceToUsdt } from '../utils/inrTrading.js';
-import { applyBonusClamp } from './walletAdjustmentService.js';
+import { debitForTrade, creditTradeProfit } from './walletAdjustmentService.js';
 
 const FEE_RATE = 0.001;
 
@@ -67,12 +68,32 @@ async function getLiquidityUserId() {
 /**
  * @param {string} symbol
  * @param {number} currentPrice - mark / pulse price used to fill
- * @param {{ fromPrice?: number|null, rangeOnly?: boolean }} [opts]
+ * @param {{ fromPrice?: number|null, rangeOnly?: boolean, priceHigh?: number|null, priceLow?: number|null }} [opts]
  *   With fromPrice (admin pulse): classic wick cross — buy if path low ≤ limit, sell if path high ≥ limit.
+ *   priceHigh/priceLow: candle range for limit matching on normal ticks.
  *   Market orders always try to fill at currentPrice.
  */
 export async function processOrdersForPrice(symbol, currentPrice, opts = {}) {
   return withSymbolOrderLock(symbol, () => processOrdersForPriceUnlocked(symbol, currentPrice, opts));
+}
+
+/** Push wallet + order-table updates after spot fills (best-effort). */
+export async function notifySpotOrderFills(io, symbol, trades, { reason = 'spot_fill' } = {}) {
+  if (!io || !trades?.length) return;
+  const { emitWalletUpdate } = await import('./socketService.js');
+  const userIds = new Set();
+  for (const t of trades) {
+    if (t.buyerUserId) userIds.add(String(t.buyerUserId));
+    if (t.sellerUserId) userIds.add(String(t.sellerUserId));
+  }
+  for (const uid of userIds) {
+    await emitWalletUpdate(io, uid, { reason }).catch(() => {});
+  }
+  io.emit('market:orders:filled', {
+    symbol: String(symbol).toUpperCase(),
+    count: trades.length,
+    at: Date.now(),
+  });
 }
 
 async function processOrdersForPriceUnlocked(symbol, currentPrice, opts = {}) {
@@ -114,8 +135,19 @@ async function processOrdersForPriceUnlocked(symbol, currentPrice, opts = {}) {
         if (fresh.side === 'buy') shouldFill = pathLo <= limitUsdt + 1e-10;
         if (fresh.side === 'sell') shouldFill = pathHi >= limitUsdt - 1e-10;
       } else {
-        if (fresh.side === 'buy' && fillPriceUsdt <= limitUsdt + 1e-10) shouldFill = true;
-        if (fresh.side === 'sell' && fillPriceUsdt >= limitUsdt - 1e-10) shouldFill = true;
+        const hiRaw = opts.priceHigh != null ? Number(opts.priceHigh) : currentPrice;
+        const loRaw = opts.priceLow != null ? Number(opts.priceLow) : currentPrice;
+        const hiUsdt = await unitPriceToUsdt(sym, Math.max(hiRaw, currentPrice));
+        const loUsdt = await unitPriceToUsdt(sym, Math.min(loRaw, currentPrice));
+        // Marketable limit: current mark crossed the limit (standard exchange behaviour)
+        if (fresh.side === 'buy') {
+          shouldFill =
+            fillPriceUsdt <= limitUsdt + 1e-10 || loUsdt <= limitUsdt + 1e-10;
+        }
+        if (fresh.side === 'sell') {
+          shouldFill =
+            fillPriceUsdt >= limitUsdt - 1e-10 || hiUsdt >= limitUsdt - 1e-10;
+        }
       }
     }
 
@@ -213,8 +245,9 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
   try {
     if (order.side === 'buy') {
       const cost = storeMoney(notional + fee);
-      const available = wallet.balance - (wallet.lockedBalance || 0);
-      if (available + 1e-10 < cost) {
+      try {
+        debitForTrade(wallet, cost);
+      } catch {
         await Order.findByIdAndUpdate(orderId, {
           status: 'rejected',
           filledQuantity: order.filledQuantity || 0,
@@ -223,16 +256,17 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
         await markSpotOrderTransaction(userId, orderId, 'rejected', 'Insufficient USDT balance');
         return null;
       }
-      wallet.balance = storeMoney(wallet.balance - cost);
-      applyBonusClamp(wallet);
       await wallet.save();
       await creditAsset(userId, baseAsset, qty);
     } else {
-      await debitAsset(userId, baseAsset, qty);
-      wallet.balance = storeMoney(wallet.balance + notional - fee);
+      await debitLockedAsset(userId, baseAsset, qty);
+      creditTradeProfit(wallet, storeMoney(notional - fee));
       await wallet.save();
     }
   } catch (err) {
+    if (order.side === 'sell') {
+      await reconcileSellAssetLocks(userId, baseAsset).catch(() => {});
+    }
     await Order.findByIdAndUpdate(orderId, {
       status: 'rejected',
       filledQuantity: order.filledQuantity || 0,

@@ -13,6 +13,9 @@ const cashInPersonRequestSchema = new mongoose.Schema(
     city: { type: String, required: true, trim: true, maxlength: 120 },
     /** Amount user expects to deposit/withdraw in person (USDT). */
     requestedAmount: { type: Number, default: null, min: 0 },
+    /** Funds locked on wallet when withdraw request is submitted. */
+    fundsLocked: { type: Boolean, default: false },
+    fundsLockedAmount: { type: Number, default: 0, min: 0 },
     /** Amount settled on wallet when admin approves. */
     creditedAmount: { type: Number, default: null, min: 0 },
     currency: { type: String, default: 'USDT' },

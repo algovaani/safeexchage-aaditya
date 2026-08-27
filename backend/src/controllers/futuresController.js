@@ -13,6 +13,7 @@ import {
   adjustPositionMargin,
   reversePosition,
 } from '../services/futuresService.js';
+import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
 import { success, error } from '../utils/response.js';
 
 function uid(req) {
@@ -71,8 +72,10 @@ export async function postEstimate(req, res) {
 export async function postOpen(req, res) {
   try {
     const io = req.app.get('io');
-    const position = await openPosition(uid(req), req.body, { io });
-    return success(res, { position }, 'Position opened');
+    const userId = uid(req);
+    const position = await openPosition(userId, req.body, { io });
+    const wallet = await fetchWalletSnapshotForUser(userId);
+    return success(res, { position, wallet }, 'Position opened');
   } catch (err) {
     return error(res, err.message, err.status || 500);
   }

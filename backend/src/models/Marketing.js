@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const marketingBannerSchema = new mongoose.Schema(
   {
-    message: { type: String, required: true, trim: true },
+    message: { type: String, default: '', trim: true },
     imageUrl: { type: String, default: '', trim: true },
     enabled: { type: Boolean, default: false, index: true },
     sortOrder: { type: Number, default: 0 },

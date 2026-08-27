@@ -270,33 +270,13 @@ export async function listAllTransactions(_req, res, next) {
 
 export async function approveTransaction(req, res, next) {
   try {
-    const { id } = req.params;
-    const { decision } = req.body;
-    const tx = await Transaction.findById(id);
-    if (!tx) return error(res, 'Transaction not found', 404);
-    if (tx.status !== 'pending') return error(res, 'Transaction already processed', 400);
-
-    if (decision === 'approve' && tx.type === 'deposit') {
-      await Wallet.findOneAndUpdate(
-        { userId: tx.userId },
-        { $inc: { balance: tx.amount } },
-        { upsert: true }
-      );
-      tx.status = 'completed';
-    } else if (decision === 'approve' && tx.type === 'withdrawal') {
-      const w = await Wallet.findOne({ userId: tx.userId });
-      if (!w || w.balance < tx.amount) return error(res, 'Insufficient balance', 400);
-      w.balance -= tx.amount;
-      await w.save();
-      tx.status = 'completed';
-    } else if (decision === 'reject') {
-      tx.status = 'rejected';
-    } else {
-      return error(res, 'Invalid decision', 400);
-    }
-
-    await tx.save();
-    return success(res, tx, 'Transaction updated');
+    // Legacy endpoint allowed minting balance from fake pending deposit txs
+    // and approving withdrawals without locked-fund accounting. Disabled.
+    return error(
+      res,
+      'Legacy transaction approve is disabled. Use Admin → Deposits / Withdrawals verification instead.',
+      410
+    );
   } catch (e) {
     return next(e);
   }
@@ -530,12 +510,12 @@ export async function pulsePrice(req, res, next) {
         responsePayload.filledOrders = trades.length;
 
         if (io) {
-          for (const interval of intervals) {
-            try {
-              ensureMarketStream(io, symbol, interval);
-            } catch {
-              /* ignore */
-            }
+          // Only ensure the live 1s stream for order/depth continuity — do NOT
+          // spin up every chart interval (that leaked idle REST pollers).
+          try {
+            ensureMarketStream(io, symbol, '1s');
+          } catch {
+            /* ignore */
           }
           if (trades.length) {
             const { emitWalletUpdate } = await import('../services/socketService.js');

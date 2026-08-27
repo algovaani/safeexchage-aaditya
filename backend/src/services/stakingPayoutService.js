@@ -4,6 +4,7 @@ import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
 import { StakingPlan } from '../models/StakingPlan.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
+import { creditMain, ensureWalletBuckets } from './walletBucketService.js';
 import {
   calculateDailyReward,
   calculateMonthlyReward,
@@ -19,7 +20,8 @@ export async function creditDailyReward(stake, plan, session) {
   const wallet = await Wallet.findOne({ userId: stake.userId }).session(session);
   if (!wallet) throw new Error('Wallet not found');
 
-  wallet.balance = storeMoney(wallet.balance + daily);
+  ensureWalletBuckets(wallet);
+  creditMain(wallet, daily);
   stake.rewardEarned = storeMoney((stake.rewardEarned || 0) + daily);
   stake.lastDailyPayoutAt = startOfDay();
 
@@ -52,7 +54,8 @@ export async function creditMonthlyReward(stake, plan, session) {
   const wallet = await Wallet.findOne({ userId: stake.userId }).session(session);
   if (!wallet) throw new Error('Wallet not found');
 
-  wallet.balance = storeMoney(wallet.balance + monthly);
+  ensureWalletBuckets(wallet);
+  creditMain(wallet, monthly);
   stake.rewardEarned = storeMoney((stake.rewardEarned || 0) + monthly);
   stake.lastDailyPayoutAt = startOfDay();
 
@@ -103,7 +106,8 @@ export async function releaseMaturityPayout(stake, { session, markWithdrawn = tr
   const returnAmount = storeMoney(stake.amount + remainingReward);
 
   wallet.lockedBalance = storeMoney(wallet.lockedBalance - stake.amount);
-  wallet.balance = storeMoney(wallet.balance + returnAmount);
+  ensureWalletBuckets(wallet);
+  creditMain(wallet, returnAmount);
 
   stake.rewardEarned = storeMoney(alreadyPaid + remainingReward);
   stake.payoutReleased = true;
@@ -155,7 +159,8 @@ export async function refundRejectedStake(stake, session) {
   const wallet = await Wallet.findOne({ userId: stake.userId }).session(session);
   if (!wallet) throw new Error('Wallet not found');
 
-  wallet.balance = storeMoney(wallet.balance + stake.amount);
+  ensureWalletBuckets(wallet);
+  creditMain(wallet, stake.amount);
   wallet.lockedBalance = storeMoney(Math.max(0, (wallet.lockedBalance || 0) - stake.amount));
   stake.status = 'rejected';
 

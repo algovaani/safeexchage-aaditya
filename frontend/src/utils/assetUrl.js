@@ -1,8 +1,24 @@
 /** Resolve stored upload paths (uploads/...) to a browser-loadable URL. */
 export function resolveAssetUrl(pathOrUrl) {
   if (!pathOrUrl) return '';
-  const raw = String(pathOrUrl).trim();
-  if (/^https?:\/\//i.test(raw) || raw.startsWith('blob:') || raw.startsWith('data:')) {
+  let raw = String(pathOrUrl).trim();
+  if (raw.startsWith('blob:') || raw.startsWith('data:')) {
+    return raw;
+  }
+
+  // Detect if url has hardcoded localhost / 127.0.0.1 origin (e.g. http://127.0.0.1:5001/storage/...)
+  const isLocalhostUrl = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(raw);
+  if (isLocalhostUrl) {
+    const isCurrentHostLocal =
+      typeof window !== 'undefined' &&
+      /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+    if (!isCurrentHostLocal) {
+      // Strip localhost origin to force relative path resolution against live origin
+      raw = raw.replace(/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?/i, '/');
+    }
+  }
+
+  if (/^https?:\/\//i.test(raw)) {
     return raw;
   }
 
@@ -18,3 +34,4 @@ export function resolveAssetUrl(pathOrUrl) {
 
   return `/${normalized}`;
 }
+

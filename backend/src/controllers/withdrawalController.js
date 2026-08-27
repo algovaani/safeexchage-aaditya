@@ -5,8 +5,11 @@ import {
   releaseWithdrawalFunds,
   reserveWithdrawalFunds,
 } from '../services/withdrawalService.js';
+import { assertUserMayWithdraw } from '../services/withdrawEligibilityService.js';
 import { createPendingWithdrawalTransaction } from '../services/transactionService.js';
 import { notifyWithdrawalRequest, resolveNotificationsForRef } from '../services/adminNotificationService.js';
+import { emitWalletUpdate } from '../services/socketService.js';
+import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
 import { roundMoney } from '../utils/money.js';
 import { error, success } from '../utils/response.js';
 
@@ -17,6 +20,8 @@ async function createWithdrawalRequest(req, res, next, payload) {
   }
 
   try {
+    // KYC + real deposit + pending caps + withdrawable balance
+    await assertUserMayWithdraw(req.userId, parsedAmount);
     await reserveWithdrawalFunds(req.userId, parsedAmount);
 
     let withdrawal;
@@ -34,13 +39,23 @@ async function createWithdrawalRequest(req, res, next, payload) {
     }
 
     void notifyWithdrawalRequest(req.app.get('io'), withdrawal);
+    void emitWalletUpdate(req.app.get('io'), req.userId, { reason: 'withdrawal_pending' }).catch(
+      () => {}
+    );
+
+    const wallet = await fetchWalletSnapshotForUser(req.userId).catch(() => null);
 
     const message =
       payload.type === 'fiat'
         ? 'Fiat withdrawal submitted for verification'
         : 'Crypto withdrawal submitted for verification';
 
-    return success(res, formatWithdrawal(req, withdrawal), message, 201);
+    return success(
+      res,
+      { ...formatWithdrawal(req, withdrawal), wallet },
+      message,
+      201
+    );
   } catch (e) {
     if (e.status) return error(res, e.message, e.status);
     return next(e);
@@ -110,7 +125,11 @@ export async function cancel(req, res, next) {
 
     const updated = await cancelWithdrawal(withdrawal);
     void resolveNotificationsForRef(req.app.get('io'), 'withdrawal', withdrawal._id);
-    return success(res, formatWithdrawal(req, updated), 'Withdrawal cancelled');
+    void emitWalletUpdate(req.app.get('io'), req.userId, { reason: 'withdrawal_cancelled' }).catch(
+      () => {}
+    );
+    const wallet = await fetchWalletSnapshotForUser(req.userId).catch(() => null);
+    return success(res, { ...formatWithdrawal(req, updated), wallet }, 'Withdrawal cancelled');
   } catch (e) {
     if (e.status) return error(res, e.message, e.status);
     return next(e);

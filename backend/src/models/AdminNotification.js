@@ -2,19 +2,19 @@ import mongoose from 'mongoose';
 
 const adminNotificationSchema = new mongoose.Schema(
   {
-    /** deposit_request | withdrawal_request */
+    /** deposit_request | withdrawal_request | cash_in_person_request */
     type: {
       type: String,
-      enum: ['deposit_request', 'withdrawal_request'],
+      enum: ['deposit_request', 'withdrawal_request', 'cash_in_person_request'],
       required: true,
       index: true,
     },
     title: { type: String, required: true, maxlength: 200 },
     message: { type: String, required: true, maxlength: 1000 },
-    /** deposit | withdrawal */
+    /** deposit | withdrawal | cash_in_person */
     refType: {
       type: String,
-      enum: ['deposit', 'withdrawal'],
+      enum: ['deposit', 'withdrawal', 'cash_in_person'],
       required: true,
       index: true,
     },

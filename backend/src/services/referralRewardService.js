@@ -1,6 +1,7 @@
 import { Transaction } from '../models/Transaction.js';
 import { Wallet } from '../models/Wallet.js';
-import { roundMoney } from '../utils/money.js';
+import { roundMoney, storeMoney } from '../utils/money.js';
+import { creditReferral, ensureWalletBuckets } from './walletBucketService.js';
 import { getPlatformSettings } from './platformSettingsService.js';
 
 export async function getReferralRewardAmount() {
@@ -14,11 +15,20 @@ export async function creditReferrerForSignup({ referrerId, referredUserId, refe
   const amount = await getReferralRewardAmount();
   if (!(amount > 0)) return null;
 
-  const wallet = await Wallet.findOneAndUpdate(
-    { userId: referrerId },
-    { $inc: { balance: amount, bonusBalance: amount }, $setOnInsert: { currency: 'USDT' } },
-    { upsert: true, new: true }
-  );
+  let wallet = await Wallet.findOne({ userId: referrerId });
+  if (!wallet) {
+    wallet = await Wallet.create({
+      userId: referrerId,
+      currency: 'USDT',
+      balance: 0,
+      mainBalance: 0,
+      referralBalance: 0,
+      bonusBalance: 0,
+      lockedBalance: 0,
+    });
+  }
+  creditReferral(wallet, amount);
+  await wallet.save();
 
   const label = String(referredLabel || referredUserId || '').trim() || 'new user';
 

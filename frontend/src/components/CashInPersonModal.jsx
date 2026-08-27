@@ -142,7 +142,7 @@ export default function CashInPersonModal({ userMobile, platformInfo, onClose, o
               <div className="cash-in-person-modal__rate-box">
                 <div>
                   <strong>{rateLabel}:</strong>{' '}
-                  {hasRate ? `${fmtINR(rate)} ` : 'Not set by admin yet'}
+                  {hasRate ? `${fmtINR(rate)} ` : 'Loading...'}
                 </div>
                 {hasRate && Number.isFinite(amount) && amount > 0 && (
                   <div className="cash-in-person-modal__calc">
@@ -196,7 +196,7 @@ export default function CashInPersonModal({ userMobile, platformInfo, onClose, o
                 )}
               </div>
               {err && <p className="deposit-modal__error">{err}</p>}
-              <div className="deposit-modal__footer">
+              {hasRate && <div className="deposit-modal__footer">
                 <button type="button" className="deposit-modal__footer-cancel" onClick={onClose}>
                   Cancel
                 </button>
@@ -212,6 +212,9 @@ export default function CashInPersonModal({ userMobile, platformInfo, onClose, o
                   )}
                 </button>
               </div>
+
+
+              }
             </form>
           )}
         </div>
