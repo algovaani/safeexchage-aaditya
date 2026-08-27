@@ -4,6 +4,7 @@
  */
 import WebSocket from 'ws';
 import { recordPriceTick } from './coingeckoService.js';
+import { onBinanceTrade } from './priceEngine.js';
 import { ensureTradingPairCache, getActivePairsSync } from './tradingPairService.js';
 
 const WS_HOSTS = [
@@ -70,6 +71,7 @@ function emitTrade(symbol, price, time) {
   if (!sym || !(p > 0)) return;
   liveBySymbol.set(sym, { price: p, time: time || Date.now() });
   recordPriceTick(sym.toUpperCase(), p);
+  onBinanceTrade(sym.toUpperCase(), p);
   const payload = { symbol: sym.toUpperCase(), price: p, time: time || Date.now() };
   for (const fn of tradeHandlers) {
     try {

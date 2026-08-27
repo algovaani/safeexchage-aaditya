@@ -15,7 +15,7 @@ import { repairMisCreditedNativeDeposits } from '../services/depositService.js';
 import { backfillReferralBonusBalances } from '../services/referralRewardService.js';
 import { migrateAllWalletBuckets } from '../services/walletBucketService.js';
 import { reconcileAllSellAssetLocks } from '../services/sellLockRepairService.js';
-import { startBinanceWsPriceFeed } from '../services/binanceWsService.js';
+import { isRedisEnabled } from '../config/redis.js';
 
 /**
  * @param {{ io?: import('socket.io').Server | null }} [opts]
@@ -82,10 +82,13 @@ export async function startBackgroundJobs({ io = null } = {}) {
       console.warn('[orders] Sell lock reconcile skipped:', err.message);
     }
 
-    try {
-      await startBinanceWsPriceFeed();
-    } catch (err) {
-      console.warn('[binance-ws] Feed start skipped:', err.message);
+    if (!isRedisEnabled()) {
+      try {
+        const { startBinanceWsPriceFeed } = await import('../services/binanceWsService.js');
+        await startBinanceWsPriceFeed();
+      } catch (err) {
+        console.warn('[binance-ws] Feed start skipped:', err.message);
+      }
     }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);

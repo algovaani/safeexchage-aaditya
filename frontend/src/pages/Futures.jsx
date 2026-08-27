@@ -474,7 +474,7 @@ export default function Futures() {
 
     const onTrade = (payload) => {
       if (!payload || payload.symbol !== sym) return;
-      const price = Number(payload.price);
+      const price = Number(payload.effectivePrice ?? payload.price);
       if (Number.isFinite(price)) {
         setTicker((prev) => {
           if (prev?.lastPrice === price) return prev;

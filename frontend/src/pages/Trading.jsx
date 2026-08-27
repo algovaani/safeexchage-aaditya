@@ -657,7 +657,7 @@ export default function Trading() {
 
     const onPulse = (payload) => {
       if (!payload || payload.symbol !== sym) return;
-      const price = Number(payload.price);
+      const price = Number(payload.effectivePrice ?? payload.price);
       if (!(price > 0)) return;
       const from = Number(payload.fromPrice) || price;
       const hi = Math.max(from, price);

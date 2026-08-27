@@ -30,7 +30,7 @@ import transactionRoutes from './routes/transactionRoutes.js';
 import cashInPersonRoutes from './routes/cashInPersonRoutes.js';
 import futuresRoutes from './routes/futuresRoutes.js';
 import { handleMarketSubscribe, handleMarketUnsubscribe, handleMarketDisconnect } from './services/marketStreamService.js';
-import { startBinanceWsPriceFeed } from './services/binanceWsService.js';
+import { bootstrapMarketData } from './services/marketBootstrap.js';
 import { attachUserSockets } from './services/socketService.js';
 import { seedTradingPairsIfEmpty, refreshTradingPairCache, ensureCommodityPairs } from './services/tradingPairService.js';
 import { getCorsAllowedOrigins, corsPreflightMiddleware, logCorsConfig } from './config/cors.js';
@@ -38,6 +38,9 @@ import { installGracefulShutdown, installProcessHandlers } from './config/proces
 import { isDbConnected } from './config/db.js';
 import { getProcessRole, shouldRunHttp, shouldRunBackgroundJobs } from './config/processRole.js';
 import { startBackgroundJobs, stopBackgroundJobs } from './jobs/backgroundJobs.js';
+import { shutdownRedis } from './config/redis.js';
+import { stopMarketLeaderElection } from './services/marketLeader.js';
+import { stopMarketRedisBridge } from './services/marketRedisBridge.js';
 import { migrateAllWalletBuckets } from './services/walletBucketService.js';
 import { reconcileAllSellAssetLocks } from './services/sellLockRepairService.js';
 import {
@@ -199,11 +202,6 @@ async function warmApiCaches() {
     } catch (err) {
       console.warn('[orders] Sell lock reconcile skipped:', err.message);
     }
-    try {
-      await startBinanceWsPriceFeed();
-    } catch (err) {
-      console.warn('[binance-ws] Feed start skipped:', err.message);
-    }
   } catch (err) {
     console.warn('[pairs] Cache init failed:', err.message);
   }
@@ -219,6 +217,7 @@ async function main() {
   try {
     await connectDb(uri, { attempts: connectAttempts });
     console.log(`MongoDB connected (role=${ROLE})`);
+    await bootstrapMarketData({ io });
     if (shouldRunBackgroundJobs()) {
       await startBackgroundJobs({ io });
     } else {
@@ -272,6 +271,9 @@ async function main() {
 
   installGracefulShutdown(server, {
     onShutdown: async () => {
+      await stopMarketRedisBridge();
+      await stopMarketLeaderElection();
+      await shutdownRedis();
       if (shouldRunBackgroundJobs()) {
         await stopBackgroundJobs();
       } else {

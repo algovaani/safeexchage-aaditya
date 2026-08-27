@@ -1,5 +1,16 @@
-import { persistCandleExpand, getMergedCandleAt } from './marketDataService.js';
+import { persistCompletedCandle, persistMarketKlines } from './marketDataService.js';
 import { processOrdersForPrice, notifySpotOrderFills } from './orderEngine.js';
+import { resolveEffectivePrice } from './priceEngine.js';
+import { updateLiveCandle, clearLiveCandles, getLiveCandle, seedLiveCandle } from './candleEngine.js';
+import { getLivePrice, getLiveCandle as getRedisCandle } from './liveStateStore.js';
+import { isRedisReady } from '../config/redis.js';
+import { isMarketLeader } from './marketLeader.js';
+import {
+  publishMarketTick,
+  publishMarketCandle,
+  publishMarketTrade,
+  setMarketTickHandler,
+} from './marketRedisBridge.js';
 import {
   fetchKlines,
   fetchTicker,
@@ -8,10 +19,9 @@ import {
   intervalToMs,
   recordPriceTick,
   clearRecentTicks,
-  bucketTicksToIntervalCandles,
   syntheticOrderBook,
 } from './marketDataProvider.js';
-import { getActivePulsePrice, getPulseDepthOverlay } from './pricePulseService.js';
+import { getPulseDepthOverlay } from './pricePulseService.js';
 import { getPairSync } from './tradingPairService.js';
 import { getCachedDexPrice } from './dexscreenerService.js';
 import { getWsLivePrice, onBinanceWsTrade } from './binanceWsService.js';
@@ -25,8 +35,8 @@ const DEPTH_POLL_MS = Number(process.env.MARKET_DEPTH_POLL_MS) || 5000;
 /** How often to fetch agg trades relative to depth polls (1 = every depth tick). */
 const AGG_TRADE_EVERY_N = Math.max(1, Number(process.env.MARKET_AGG_TRADE_EVERY_N) || 3);
 const IDLE_PRUNE_MS = Number(process.env.MARKET_STREAM_IDLE_PRUNE_MS) || 15_000;
-/** Persist/order-match throttle — avoid Mongo + order scan every tick. */
-const PERSIST_THROTTLE_MS = Number(process.env.MARKET_PERSIST_THROTTLE_MS) || 2000;
+/** Persist/order-match throttle — avoid order scan every tick (no Mongo on live path). */
+const ORDER_MATCH_THROTTLE_MS = Number(process.env.MARKET_ORDER_MATCH_MS) || 1500;
 
 const activeStreams = new Map();
 /** @type {Map<string, number>} */
@@ -180,90 +190,141 @@ export function resetPulseStreamState(symbol) {
   const sym = String(symbol || '').toUpperCase();
   clearRecentTicks(sym);
   aggState.delete(sym);
+  clearLiveCandles(sym);
   clearLastCandleCache(sym);
 }
 
 export { emitCandle };
 
-const emitMergedThrottled = throttleByKey(
-  async (io, _room, symbol, interval, candle) => {
-    await persistCandleExpand(symbol, interval, candle, 'binance');
-    const merged =
-      (await getMergedCandleAt(symbol, interval, candle.openTime, candle.close)) ||
-      candle;
-    if (
-      Number(merged.high) !== Number(candle.high) ||
-      Number(merged.low) !== Number(candle.low) ||
-      Number(merged.close) !== Number(candle.close)
-    ) {
-      emitCandle(io, symbol, interval, merged);
-    }
-    const trades = await processOrdersForPrice(symbol, merged.close, {
-      priceHigh: merged.high,
-      priceLow: merged.low,
+function getActiveIntervalsForSymbol(sym) {
+  const intervals = [];
+  for (const streamKey of activeStreams.keys()) {
+    if (!streamKey.startsWith(`${sym}|`)) continue;
+    intervals.push(streamKey.slice(sym.length + 1));
+  }
+  return intervals;
+}
+
+function persistCompletedAsync(symbol, interval, candle, source = 'binance') {
+  persistCompletedCandle(symbol, interval, candle, source).catch((err) => {
+    logStreamErr('persist', symbol, err);
+  });
+}
+
+const orderMatchThrottled = throttleByKey(
+  async (sym, price, high, low, io) => {
+    const trades = await processOrdersForPrice(sym, price, {
+      priceHigh: high ?? price,
+      priceLow: low ?? price,
     });
-    if (trades.length) {
-      await notifySpotOrderFills(io, symbol, trades);
+    if (trades.length && io) {
+      await notifySpotOrderFills(io, sym, trades);
     }
   },
-  PERSIST_THROTTLE_MS
+  ORDER_MATCH_THROTTLE_MS
 );
 
-function pushLiveTick(io, sym, price, { pulse = false, fromPrice = null } = {}) {
+/**
+ * Core live path: Price Engine → Candle Engine (RAM) → Socket.IO → Redis pub.
+ * MongoDB touched only when a candle bucket closes.
+ */
+function processPriceTick(
+  io,
+  sym,
+  rawPrice,
+  {
+    volume = 0,
+    pulseFill = false,
+    precomputedState = null,
+    fromRedis = false,
+    publishRedis = false,
+    matchOrders = true,
+  } = {}
+) {
+  const state = precomputedState || resolveEffectivePrice(sym, rawPrice);
+  const price = state.effectivePrice;
   if (!(price > 0)) return;
-  const bucket = Math.floor(Date.now() / 1000) * 1000;
 
-  if (pulse) {
-    const base = fromPrice > 0 ? fromPrice : price;
-    emitCandle(io, sym, '1s', {
-      openTime: bucket,
-      open: base,
-      high: Math.max(base, price),
-      low: Math.min(base, price),
-      close: price,
-      volume: 0,
-      isFinal: false,
-      pulse: true,
+  const intervals = getActiveIntervalsForSymbol(sym);
+  if (!intervals.includes('1s')) intervals.push('1s');
+
+  let lastCandle = null;
+  for (const interval of intervals) {
+    const { candle, completed } = updateLiveCandle(sym, interval, price, {
+      volume,
+      pulse: state.source === 'pulse',
     });
-    io.to(depthRoom(sym)).emit('market:trade', {
-      symbol: sym,
-      price,
-      qty: 0,
-      time: Date.now(),
-      tickerOnly: true,
-      pulse: true,
-    });
-    return;
+    if (candle) {
+      emitCandle(io, sym, interval, candle);
+      lastCandle = candle;
+      if (publishRedis && isRedisReady()) {
+        publishMarketCandle({ symbol: sym, interval, candle });
+      }
+    }
+    if (completed) {
+      persistCompletedAsync(sym, interval, completed, 'binance');
+    }
   }
 
-  let st = aggState.get(sym);
-  if (!st || st.openTime !== bucket) {
-    st = {
-      openTime: bucket,
-      open: price,
-      high: price,
-      low: price,
-      close: price,
-      volume: 0,
-      isFinal: false,
-    };
-    aggState.set(sym, st);
-  } else {
-    st.high = Math.max(st.high, price);
-    st.low = Math.min(st.low, price);
-    st.close = price;
+  if (matchOrders && isMarketLeader()) {
+    orderMatchThrottled(sym, price, lastCandle?.high, lastCandle?.low, io);
   }
 
-  const candle = { ...st };
-  emitCandle(io, sym, '1s', candle);
-  emitMergedThrottled(sym, io, roomName(sym, '1s'), sym, '1s', candle);
+  if (pulseFill && state.source === 'pulse' && matchOrders) {
+    processOrdersForPrice(sym, price, {
+      fromPrice: state.fromPrice ?? rawPrice,
+      rangeOnly: true,
+    })
+      .then((trades) => {
+        if (trades.length) return notifySpotOrderFills(io, sym, trades, { reason: 'pulse_fill' });
+        return null;
+      })
+      .catch((err) => logStreamErr('pulse-fill', sym, err));
+  }
 
-  io.to(depthRoom(sym)).emit('market:trade', {
+  const tradePayload = {
     symbol: sym,
     price,
-    qty: 0,
+    effectivePrice: price,
+    binancePrice: state.binancePrice,
+    qty: volume,
     time: Date.now(),
-    tickerOnly: true,
+    tickerOnly: !(volume > 0),
+    pulse: state.source === 'pulse',
+  };
+
+  io.to(depthRoom(sym)).emit('market:trade', tradePayload);
+  io.to(roomName(sym, '1s')).emit('market:trade', tradePayload);
+
+  if (publishRedis && isRedisReady() && !fromRedis) {
+    publishMarketTick({ symbol: sym, rawPrice, state, volume, pulseFill });
+    publishMarketTrade(tradePayload);
+  }
+}
+
+function pushLiveTick(io, sym, rawPrice, opts = {}) {
+  const publishRedis = isRedisReady() && isMarketLeader();
+  processPriceTick(io, sym, rawPrice, { ...opts, publishRedis, matchOrders: isMarketLeader() });
+}
+
+/** Wire Redis pub/sub → local Socket.IO (all API instances). */
+export function initMarketStreamRedis(io) {
+  setMarketTickHandler((msg) => {
+    if (!io || !msg) return;
+    if (msg.type === 'candle' && msg.candle) {
+      emitCandle(io, msg.symbol, msg.interval, msg.candle);
+      return;
+    }
+    if (msg.symbol != null && msg.rawPrice != null) {
+      processPriceTick(io, msg.symbol, msg.rawPrice, {
+        volume: msg.volume || 0,
+        pulseFill: Boolean(msg.pulseFill),
+        precomputedState: msg.state,
+        fromRedis: true,
+        publishRedis: false,
+        matchOrders: false,
+      });
+    }
   });
 }
 
@@ -286,10 +347,10 @@ function startBinanceTickStream({ symbol, io }) {
     if (stopped || dexLike) return;
     if (String(payload.symbol).toUpperCase() !== sym) return;
     if (!roomHasSubscribers(io, room) && !roomHasSubscribers(io, depthRoom(sym))) return;
-    const pulsed = getActivePulsePrice(sym);
-    if (pulsed != null) return;
+    if (isRedisReady() && !isMarketLeader()) return;
     recordPriceTick(sym, payload.price);
-    pushLiveTick(io, sym, payload.price);
+    const publishRedis = isRedisReady() && isMarketLeader();
+    processPriceTick(io, sym, payload.price, { publishRedis, matchOrders: isMarketLeader() });
   };
   const offWs = onBinanceWsTrade(onWsTrade);
 
@@ -304,56 +365,32 @@ function startBinanceTickStream({ symbol, io }) {
         wsLive?.price > 0 && Date.now() - wsLive.time < 10_000
           ? wsLive.price
           : Number(ticker.price);
-      const pulsed = getActivePulsePrice(sym);
-      const price = pulsed != null ? pulsed : livePrice;
-      if (!(price > 0)) return;
+      if (!(livePrice > 0)) return;
 
-      if (livePrice > 0) recordPriceTick(sym, livePrice);
+      recordPriceTick(sym, livePrice);
 
-      const bucket = Math.floor(Date.now() / 1000) * 1000;
-
-      // During pulse: socket flash + fill orders at pulse price
-      if (pulsed != null) {
-        const base = livePrice > 0 ? livePrice : pulsed;
-        emitCandle(io, sym, '1s', {
-          openTime: bucket,
-          open: base,
-          high: Math.max(base, pulsed),
-          low: Math.min(base, pulsed),
-          close: pulsed,
-          volume: 0,
-          isFinal: false,
-          pulse: true,
+      const state = resolveEffectivePrice(sym, livePrice);
+      if (state.source === 'pulse') {
+        processPriceTick(io, sym, livePrice, {
+          pulseFill: true,
+          publishRedis: isRedisReady() && isMarketLeader(),
+          matchOrders: isMarketLeader(),
         });
-        io.to(depthRoom(sym)).emit('market:trade', {
-          symbol: sym,
-          price: pulsed,
-          qty: 0,
-          time: Date.now(),
-          tickerOnly: true,
-          pulse: true,
-        });
-        try {
-          if (livePrice > 0) {
-            const liveTrades = await processOrdersForPrice(sym, livePrice);
-            if (liveTrades.length) {
-              await notifySpotOrderFills(io, sym, liveTrades, { reason: 'spot_fill' });
-            }
-          }
-          const trades = await processOrdersForPrice(sym, pulsed, {
-            fromPrice: base,
-            rangeOnly: true,
-          });
-          if (trades.length) {
-            await notifySpotOrderFills(io, sym, trades, { reason: 'pulse_fill' });
-          }
-        } catch (err) {
-          logStreamErr('pulse-fill', sym, err);
+        if (livePrice > 0) {
+          processOrdersForPrice(sym, livePrice)
+            .then((trades) => {
+              if (trades.length) return notifySpotOrderFills(io, sym, trades, { reason: 'spot_fill' });
+              return null;
+            })
+            .catch((err) => logStreamErr('pulse-fill', sym, err));
         }
         return;
       }
 
-      pushLiveTick(io, sym, price);
+      processPriceTick(io, sym, livePrice, {
+        publishRedis: isRedisReady() && isMarketLeader(),
+        matchOrders: isMarketLeader(),
+      });
     } catch (err) {
       logStreamErr('tick', sym, err);
     } finally {
@@ -437,27 +474,18 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
   let stopped = false;
   let historyBusy = false;
   let liveBusy = false;
-  let lastPersistAt = 0;
   const intervalMs = intervalToMs(interval);
   const dexLike = isExternalDexPair(sym);
   const liveMs = dexLike ? DEX_LIVE_BAR_POLL_MS : LIVE_BAR_POLL_MS;
 
-  const pushCandle = async (candle, { persist = true } = {}) => {
+  const source = dexLike ? 'dexscreener' : 'binance';
+
+  const pushCandle = async (candle, { persistHistory = false } = {}) => {
     if (!candle) return;
+    seedLiveCandle(sym, interval, candle);
     emitCandle(io, sym, interval, candle);
-    if (!persist) return;
-    const now = Date.now();
-    if (now - lastPersistAt < PERSIST_THROTTLE_MS) return;
-    lastPersistAt = now;
-    await persistCandleExpand(sym, interval, candle, dexLike ? 'dexscreener' : 'binance');
-    const merged =
-      (await getMergedCandleAt(sym, interval, candle.openTime, candle.close)) || candle;
-    if (
-      Number(merged.high) !== Number(candle.high) ||
-      Number(merged.low) !== Number(candle.low) ||
-      Number(merged.close) !== Number(candle.close)
-    ) {
-      emitCandle(io, sym, interval, merged);
+    if (persistHistory && candle.isFinal !== false) {
+      persistCompletedAsync(sym, interval, { ...candle, isFinal: true }, source);
     }
   };
 
@@ -466,9 +494,15 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
     if (!roomHasSubscribers(io, candleRoom)) return;
     historyBusy = true;
     try {
-      const candles = await fetchKlines(sym, interval, { limit: 3 });
-      const latest = candles[candles.length - 1];
-      await pushCandle(latest, { persist: true });
+      const candles = await fetchKlines(sym, interval, { limit: 5 });
+      if (candles?.length) {
+        const finalized = candles.filter((c) => c.isFinal !== false);
+        if (finalized.length) {
+          await persistMarketKlines(sym, interval, finalized, source);
+        }
+        const latest = candles[candles.length - 1];
+        await pushCandle(latest, { persistHistory: false });
+      }
     } catch (err) {
       logStreamErr(`kline:${interval}`, sym, err);
     } finally {
@@ -483,33 +517,16 @@ function startBinanceKlineStreamInternal({ symbol, interval, io }) {
     try {
       const ticker = await safeFetchTicker(sym);
       const livePrice = Number(ticker.price);
-      const pulsed = getActivePulsePrice(sym);
-      if (!(livePrice > 0) && pulsed == null) return;
+      const state = resolveEffectivePrice(sym, livePrice);
+      if (!(state.effectivePrice > 0)) return;
 
-      // Keep tick history on live mid only
       if (livePrice > 0) recordPriceTick(sym, livePrice);
 
-      if (pulsed != null) {
-        const openTime = Math.floor(Date.now() / intervalMs) * intervalMs;
-        const base = livePrice > 0 ? livePrice : pulsed;
-        emitCandle(io, sym, interval, {
-          openTime,
-          open: base,
-          high: Math.max(base, pulsed),
-          low: Math.min(base, pulsed),
-          close: pulsed,
-          volume: 0,
-          isFinal: false,
-          pulse: true,
-        });
-        return;
-      }
-
-      const live = bucketTicksToIntervalCandles(sym, intervalMs, 2);
-      const latest = live[live.length - 1];
-      if (latest) {
-        await pushCandle({ ...latest, isFinal: false });
-      }
+      const { candle, completed } = updateLiveCandle(sym, interval, state.effectivePrice, {
+        pulse: state.source === 'pulse',
+      });
+      if (candle) emitCandle(io, sym, interval, candle);
+      if (completed) persistCompletedAsync(sym, interval, completed, source);
     } catch (err) {
       logStreamErr(`live:${interval}`, sym, err);
     } finally {
@@ -573,9 +590,15 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
   socket.join(depthRoom(sym));
   ensureMarketStream(io, sym, intv);
 
-  const cachedCandle = lastCandleByKey.get(`${sym}|${intv}`);
+  const cachedCandle =
+    lastCandleByKey.get(`${sym}|${intv}`) ||
+    getLiveCandle(sym, intv) ||
+    (isRedisReady() ? await getRedisCandle(sym, intv) : null);
   if (cachedCandle) {
-    socket.emit('market:klines:merged', cachedCandle);
+    const payload = cachedCandle.symbol
+      ? cachedCandle
+      : { symbol: sym, interval: intv, candle: cachedCandle };
+    socket.emit('market:klines:merged', payload);
   }
 
   const cachedDepth = lastDepthBySymbol.get(sym);
@@ -602,15 +625,19 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
 
   try {
     const ticker = await safeFetchTicker(sym);
-    const pulsed = getActivePulsePrice(sym);
-    const price = pulsed != null ? pulsed : ticker.price;
-    if (price > 0) {
+    const state =
+      (isRedisReady() ? await getLivePrice(sym) : null) ||
+      resolveEffectivePrice(sym, Number(ticker.price));
+    if (state.effectivePrice > 0) {
       socket.emit('market:trade', {
         symbol: sym,
-        price,
+        price: state.effectivePrice,
+        effectivePrice: state.effectivePrice,
+        binancePrice: state.binancePrice,
         qty: 0,
         time: Date.now(),
         tickerOnly: true,
+        pulse: state.source === 'pulse',
       });
     }
   } catch {
@@ -665,6 +692,7 @@ export function broadcastPulseToSockets(io, { symbol, intervalCandles, depth, tr
   if (Array.isArray(intervalCandles)) {
     for (const row of intervalCandles) {
       if (!row?.interval || !row?.candle) continue;
+      seedLiveCandle(sym, row.interval, row.candle);
       emitCandle(io, sym, row.interval, row.candle);
       // Also broadcast globally so Trade tab gets spike even if room subscribe raced
       io.emit('market:klines:merged', {
@@ -681,7 +709,13 @@ export function broadcastPulseToSockets(io, { symbol, intervalCandles, depth, tr
   }
 
   if (trade) {
-    io.to(depthRoom(sym)).emit('market:trade', { symbol: sym, ...trade });
+    io.to(depthRoom(sym)).emit('market:trade', {
+      symbol: sym,
+      price: trade.price,
+      effectivePrice: trade.price,
+      binancePrice: trade.fromPrice,
+      ...trade,
+    });
   }
 }
 

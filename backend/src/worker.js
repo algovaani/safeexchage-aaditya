@@ -9,6 +9,10 @@ import { connectDb, isDbConnected } from './config/db.js';
 import { installProcessHandlers } from './config/processStability.js';
 import { getProcessRole, shouldRunBackgroundJobs } from './config/processRole.js';
 import { startBackgroundJobs, stopBackgroundJobs } from './jobs/backgroundJobs.js';
+import { bootstrapMarketData } from './services/marketBootstrap.js';
+import { shutdownRedis } from './config/redis.js';
+import { stopMarketLeaderElection } from './services/marketLeader.js';
+import { stopMarketRedisBridge } from './services/marketRedisBridge.js';
 
 installProcessHandlers();
 
@@ -29,6 +33,7 @@ async function main() {
   await connectDb(uri, { attempts: connectAttempts });
   console.log(`[worker] MongoDB connected (role=${getProcessRole()})`);
 
+  await bootstrapMarketData({ io: null });
   await startBackgroundJobs({ io: null });
   console.log('[worker] Background jobs running — no HTTP server');
 
@@ -43,6 +48,9 @@ async function main() {
     console.info(`[worker] ${signal} — shutting down`);
     try {
       await stopBackgroundJobs();
+      await stopMarketRedisBridge();
+      await stopMarketLeaderElection();
+      await shutdownRedis();
       await mongoose.disconnect().catch(() => {});
     } catch (err) {
       console.error('[worker] shutdown failed:', err.message);

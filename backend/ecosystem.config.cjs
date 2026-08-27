@@ -11,15 +11,10 @@
  *   - API stays fast under load; heavy crons don't block HTTP.
  *   - Worker runs spot order fills even when nobody has the chart open.
  *
- * Scaling API to 2 instances (optional):
- *   API_INSTANCES=2 in .env + Nginx sticky sessions (ip_hash) on upstream.
- *   Without ip_hash, Socket.IO / wallet pushes can land on the wrong worker.
- *   Redis Socket.IO adapter is NOT configured — prefer 1 instance on a single box.
- *
- *   upstream safex_api {
- *     ip_hash;
- *     server 127.0.0.1:5001;
- *   }
+ * Scaling API to 2+ instances:
+ *   Set REDIS_URL in .env — enables Socket.IO Redis adapter + shared live market state.
+ *   Worker (safex-worker) is preferred market leader for Binance WS ingest.
+ *   API_INSTANCES=2 without Redis still needs Nginx ip_hash sticky sessions.
  */
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 

@@ -17,6 +17,7 @@ function toCandleDoc(c) {
 /**
  * Upsert live market candle.
  * Expands high/low within a sane band; self-heals bars polluted by extreme pulses.
+ * @deprecated Live path — use candleEngine + persistCompletedCandle instead.
  */
 export async function persistCandleExpand(symbol, interval, candle, source = 'binance') {
   const sym = String(symbol || '').toUpperCase();
@@ -86,6 +87,39 @@ export async function persistCandleExpand(symbol, interval, candle, source = 'bi
         close: closeIn,
         volume: Math.max(Number(existing?.volume) || 0, Number(candle.volume) || 0),
         isFinal: candle.isFinal !== false,
+        source,
+      },
+    },
+    { upsert: true, new: true }
+  ).lean();
+}
+
+/**
+ * Persist a finalized candle only (bucket closed). Called async from candleEngine — not on every tick.
+ */
+export async function persistCompletedCandle(symbol, interval, candle, source = 'binance') {
+  const sym = String(symbol || '').toUpperCase();
+  if (!sym || !interval || !candle?.openTime) return null;
+
+  const open = Number(candle.open);
+  const high = Number(candle.high);
+  const low = Number(candle.low);
+  const close = Number(candle.close);
+  if (![open, high, low, close].every(Number.isFinite)) return null;
+
+  const hi = Math.max(open, high, close);
+  const lo = Math.min(open, low, close);
+
+  return MarketData.findOneAndUpdate(
+    { symbol: sym, interval, openTime: candle.openTime },
+    {
+      $set: {
+        open,
+        high: hi,
+        low: lo,
+        close,
+        volume: Number(candle.volume) || 0,
+        isFinal: true,
         source,
       },
     },
