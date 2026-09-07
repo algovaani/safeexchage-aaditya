@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef, lazy, Suspense } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, parseApiResponse, dashboardAPI, getApiErrorMessage } from '../api/client.js';
 import { emitToast } from '../utils/toastBus.js';
-import { acquireMarketSocket, releaseMarketSocket } from '../services/appSocket.js';
+import { acquireMarketSocket, releaseMarketSocket, getUserSocket } from '../services/appSocket.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
@@ -12,6 +12,7 @@ import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { DEPTH_POLL_MS, TRADE_MARKET_POLL_MS, CLOCK_TICK_MS } from '../config/marketPoll.js';
 import { formatLiveClock, formatMarketTime } from '../utils/timeFormat.js';
 import { notifyWalletUpdated } from '../utils/walletEvents.js';
+import { maxBuyQuantity, formatSpotQty } from '../utils/spotOrderMath.js';
 import {
   readSwrSync,
   writeSwrSync,
@@ -170,7 +171,7 @@ function useDebounced(value, delay = 400) {
 
 export default function Trading() {
   const toast = useToast();
-  const { user, loading: authLoading } = useAuth();
+  const { user, token, loading: authLoading } = useAuth();
   const { toInr, usdtInrRate } = usePlatformConfig();
   const { pairs: tradingPairs, symbols: watchlistSymbols } = useTradingPairs();
   const navigate = useNavigate();
@@ -229,6 +230,7 @@ export default function Trading() {
   const [sellQty, setSellQty] = useState('0.01');
 
   const [orderBusySide, setOrderBusySide] = useState(null);
+  const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [mobileView, setMobileView] = useState('chart');
   const [mobileOrderSide, setMobileOrderSide] = useState('buy');
 
@@ -956,6 +958,70 @@ export default function Trading() {
   }, [fetchTableData, ordersRefreshTick]);
 
   useEffect(() => {
+    if (!user || !token) return undefined;
+    const socket = getUserSocket(token);
+
+    const applyOrderUpdate = (payload) => {
+      const order = payload?.order ?? payload;
+      if (!order?.side) {
+        setOrdersRefreshTick((n) => n + 1);
+        return;
+      }
+      const side = order.side;
+      const setter = side === 'buy' ? setBuyTable : setSellTable;
+      const terminal = ['filled', 'cancelled', 'rejected'].includes(order.status);
+      const isPendingView = orderStatusTab === 'pending';
+
+      if (terminal && isPendingView) {
+        setter((t) => ({
+          ...t,
+          rows: t.rows.filter(
+            (r) => String(r.id) !== String(order.id) && r._tempId !== order.id
+          ),
+          loading: false,
+        }));
+        if (order.status === 'filled') {
+          setOrdersRefreshTick((n) => n + 1);
+        }
+        return;
+      }
+
+      if (!terminal && isPendingView) {
+        setter((t) => ({
+          ...t,
+          rows: [
+            { ...order, _optimistic: false },
+            ...t.rows.filter(
+              (r) => String(r.id) !== String(order.id) && r._tempId !== order.id
+            ),
+          ],
+          loading: false,
+        }));
+        return;
+      }
+
+      if (terminal && !isPendingView) {
+        setter((t) => ({
+          ...t,
+          rows: [
+            { ...order, _optimistic: false },
+            ...t.rows.filter((r) => String(r.id) !== String(order.id)),
+          ],
+          loading: false,
+        }));
+      }
+    };
+
+    socket.on('orders:update', applyOrderUpdate);
+    const onLocal = () => setOrdersRefreshTick((n) => n + 1);
+    window.addEventListener('orders:updated', onLocal);
+    return () => {
+      socket.off('orders:update', applyOrderUpdate);
+      window.removeEventListener('orders:updated', onLocal);
+    };
+  }, [user, token, orderStatusTab]);
+
+  useEffect(() => {
     setBuyTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
     setSellTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
   }, [debouncedTableSearch, orderStatusTab, tablePageSize]);
@@ -970,6 +1036,66 @@ export default function Trading() {
 
   function requireLogin() {
     navigate('/login', { state: loginReturn });
+  }
+
+  function upsertOptimisticOrder(side, row) {
+    const setter = side === 'buy' ? setBuyTable : setSellTable;
+    setter((t) => ({
+      ...t,
+      rows: [
+        row,
+        ...t.rows.filter((r) => r.id !== row.id && r._tempId !== row._tempId),
+      ],
+      total: orderStatusTab === 'pending' ? Math.max(t.total, t.rows.length) + 1 : t.total,
+      loading: false,
+    }));
+  }
+
+  function mergeOrderResult(side, tempId, result) {
+    const setter = side === 'buy' ? setBuyTable : setSellTable;
+    setter((t) => {
+      const rows = t.rows.map((r) =>
+        r._tempId === tempId || r.id === tempId ? { ...result, _optimistic: false } : r
+      );
+      const has = rows.some((r) => String(r.id) === String(result.id));
+      return {
+        ...t,
+        rows: has ? rows : [result, ...rows.filter((r) => r._tempId !== tempId)],
+        loading: false,
+      };
+    });
+  }
+
+  function canCancelOrder(order) {
+    if (!order || order._optimistic) return false;
+    const id = order.id || order._id;
+    if (!id || String(id).startsWith('opt-')) return false;
+    return ['open', 'partially_filled'].includes(String(order.status || '').toLowerCase());
+  }
+
+  async function cancelOpenOrder(order, side) {
+    const orderId = order.id || order._id;
+    if (!orderId || cancellingOrderId) return;
+    setCancellingOrderId(String(orderId));
+    const setter = side === 'buy' ? setBuyTable : setSellTable;
+    setter((t) => ({
+      ...t,
+      rows: t.rows.filter((r) => String(r.id || r._id) !== String(orderId)),
+      total: Math.max(0, t.total - 1),
+    }));
+    try {
+      const { data } = await api.post(`/orders/${orderId}/cancel`);
+      const result = parseApiResponse(data);
+      emitToast({ type: 'success', message: data?.message || 'Order cancelled' });
+      if (result?.wallet) notifyWalletUpdated(result.wallet);
+      else void refreshWallet();
+      window.dispatchEvent(new CustomEvent('orders:updated'));
+    } catch (err) {
+      emitToast({ type: 'error', message: getApiErrorMessage(err) });
+      setOrdersRefreshTick((n) => n + 1);
+    } finally {
+      setCancellingOrderId(null);
+    }
   }
 
   async function place(side, orderType) {
@@ -997,6 +1123,21 @@ export default function Trading() {
       stopLoss: null,
       takeProfit: null,
     };
+    const tempId = `opt-${Date.now()}`;
+    if (orderStatusTab === 'pending') {
+      upsertOptimisticOrder(side, {
+        _tempId: tempId,
+        id: tempId,
+        symbol,
+        side,
+        orderType,
+        quantity: qty,
+        price: payload.price,
+        status: 'open',
+        createdAt: new Date().toISOString(),
+        _optimistic: true,
+      });
+    }
     setOrderBusySide(side);
     try {
       const { data } = await api.post('/orders', payload);
@@ -1008,15 +1149,25 @@ export default function Trading() {
       } else {
         emitToast({ type: 'success', message: data?.message || 'Order placed' });
       }
+      if (result) {
+        mergeOrderResult(side, tempId, result);
+        if (result.status === 'filled' && orderStatusTab === 'pending') {
+          const setter = side === 'buy' ? setBuyTable : setSellTable;
+          setter((t) => ({
+            ...t,
+            rows: t.rows.filter((r) => r._tempId !== tempId && String(r.id) !== String(result.id)),
+          }));
+        }
+      }
       if (result?.wallet) {
         notifyWalletUpdated(result.wallet);
       } else {
-        await refreshWallet();
+        void refreshWallet();
       }
-      await fetchTableData();
       window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch (err) {
       emitToast({ type: 'error', message: getApiErrorMessage(err) });
+      setOrdersRefreshTick((n) => n + 1);
     } finally {
       setOrderBusySide(null);
     }
@@ -1046,21 +1197,51 @@ export default function Trading() {
     }
   }
 
-  function fillBuyMax() {
+  async function fillBuyMax() {
     const price = buyType === 'market' ? Number(ticker?.lastPrice) : parseFloat(buyPrice);
-    if (!(usdtBalance > 0)) return;
+    if (!(usdtBalance > 0)) {
+      toast.warning('No USDT balance available.');
+      return;
+    }
     if (!(price > 0)) {
       toast.warning('Set a price first (or wait for market price).');
       return;
     }
-    // Leave room for 0.1% fee
-    const maxQty = (usdtBalance * 0.999) / price;
-    if (maxQty > 0) setBuyQty(maxQty.toFixed(8).replace(/\.?0+$/, '') || '0');
+    try {
+      const { data } = await api.get('/orders/max-buy', {
+        params: {
+          symbol,
+          orderType: buyType,
+          ...(buyType === 'limit' ? { price } : {}),
+        },
+      });
+      const payload = parseApiResponse(data);
+      const qty = Number(payload?.quantity);
+      if (qty > 0) {
+        setBuyQty(formatSpotQty(qty));
+        return;
+      }
+    } catch {
+      /* fall back to client-side estimate */
+    }
+    const maxQty = maxBuyQuantity(usdtBalance, price, {
+      isInrPair,
+      usdtInrRate,
+      marketBuffer: buyType === 'market' ? 1.002 : 1,
+    });
+    if (maxQty > 0) {
+      setBuyQty(formatSpotQty(maxQty));
+      return;
+    }
+    toast.warning('Not enough balance for a trade at this price.');
   }
 
   function fillSellMax() {
-    if (!(baseBalance > 0)) return;
-    setSellQty(baseBalance.toFixed(8).replace(/\.?0+$/, '') || '0');
+    if (!(baseBalance > 0)) {
+      toast.warning(`No ${base} balance available.`);
+      return;
+    }
+    setSellQty(formatSpotQty(Math.floor(baseBalance * 1e8) / 1e8));
   }
 
   useEffect(() => {
@@ -1218,6 +1399,7 @@ export default function Trading() {
                     <th>Total</th>
                     <th>Date &amp; Time</th>
                     <th>Status</th>
+                    {orderStatusTab === 'pending' ? <th>Action</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -1242,11 +1424,27 @@ export default function Trading() {
                       <td>
                         <span className="ex-status-badge">{o.status}</span>
                       </td>
+                      {orderStatusTab === 'pending' ? (
+                        <td>
+                          {canCancelOrder(o) ? (
+                            <button
+                              type="button"
+                              className="ex-order-cancel-btn"
+                              disabled={cancellingOrderId === String(o.id || o._id)}
+                              onClick={() => cancelOpenOrder(o, side)}
+                            >
+                              {cancellingOrderId === String(o.id || o._id) ? 'Cancelling…' : 'Cancel'}
+                            </button>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                   {!table.rows.length && (
                     <tr>
-                      <td colSpan={6} className="ex-empty-row">
+                      <td colSpan={orderStatusTab === 'pending' ? 7 : 6} className="ex-empty-row">
                         {emptyLabel}
                       </td>
                     </tr>

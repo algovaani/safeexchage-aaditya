@@ -3,8 +3,8 @@ import { Trade } from '../models/Trade.js';
 import { Wallet } from '../models/Wallet.js';
 import { AssetBalance } from '../models/AssetBalance.js';
 import { error, success } from '../utils/response.js';
-import { fetchTicker, fetchLivePriceForMatching } from '../services/marketDataProvider.js';
-import { processOrdersForPrice, notifySpotOrderFills } from '../services/orderEngine.js';
+import { resolveMarketPriceFast } from '../services/marketDataProvider.js';
+import { processSingleOrderForPrice, notifySpotOrderFills } from '../services/orderEngine.js';
 import {
   baseAssetFromSymbol,
   listUserAssets,
@@ -14,9 +14,10 @@ import {
 } from '../services/assetBalanceService.js';
 import { formatWalletSnapshot, tradeableBalance } from '../services/walletAdjustmentService.js';
 import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
-import { emitWalletUpdate } from '../services/socketService.js';
-import { roundMoney } from '../utils/money.js';
+import { emitWalletPush, emitOrderUpdate } from '../services/socketService.js';
+import { roundMoney, storeMoney } from '../utils/money.js';
 import { unitPriceToUsdt } from '../utils/inrTrading.js';
+import { SPOT_FEE_RATE, orderCostUsdt, maxBuyQuantity as calcMaxBuyQty } from '../utils/spotOrderMath.js';
 import { Transaction } from '../models/Transaction.js';
 import {
   paginatedPayload,
@@ -24,25 +25,24 @@ import {
   searchRegex,
 } from '../utils/datatable.js';
 
-const FEE_RATE = 0.001;
+const FEE_RATE = SPOT_FEE_RATE;
 
-async function assertBuyAffordable(userId, { symbol, orderType, quantity, price }) {
+async function assertBuyAffordable(userId, { symbol, orderType, quantity, price, marketPrice }) {
   const wallet = await Wallet.findOne({ userId });
-  const available = tradeableBalance(wallet);
+  const available = storeMoney(tradeableBalance(wallet));
 
   let unitPrice = price;
   if (orderType === 'market') {
-    const ticker = await fetchTicker(symbol, { skipPulse: true });
-    unitPrice = Number(ticker.price);
+    unitPrice = marketPrice ?? (await resolveMarketPriceFast(symbol, { skipPulse: true }));
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
       throw Object.assign(new Error('Market price unavailable'), { status: 503 });
     }
   }
 
-  unitPrice = await unitPriceToUsdt(symbol, unitPrice);
+  const unitPriceUsdt = storeMoney(await unitPriceToUsdt(symbol, unitPrice));
+  const cost = orderCostUsdt(unitPriceUsdt, quantity, { feeRate: FEE_RATE });
 
-  const cost = unitPrice * quantity * (1 + FEE_RATE);
-  if (!wallet || available < cost) {
+  if (!wallet || available + 1e-10 < cost) {
     const msg = wallet
       ? `Insufficient USDT balance (need ${roundMoney(cost)} USDT, available ${roundMoney(available)} USDT)`
       : 'Insufficient USDT balance';
@@ -52,6 +52,7 @@ async function assertBuyAffordable(userId, { symbol, orderType, quantity, price 
 
 async function assertSellAffordable(userId, { symbol, quantity }) {
   const baseAsset = baseAssetFromSymbol(symbol);
+  void reconcileSellAssetLocks(userId, baseAsset).catch(() => {});
   const row = await AssetBalance.findOne({ userId, asset: baseAsset }).lean();
   const balance = row?.balance || 0;
   const locked = row?.lockedBalance || 0;
@@ -122,10 +123,30 @@ async function buildTradeSideFilter(userId, query) {
 
 function formatOrder(order) {
   return {
-    id: order._id,
+    id: order._id ?? order.id,
     ...order,
     avgFillPrice: order.avgFillPrice ?? null,
   };
+}
+
+async function logPendingSpotTransaction(userId, order, estPrice) {
+  if (!(Number.isFinite(estPrice) && estPrice > 0)) return;
+  const sym = order.symbol;
+  const unitUsdt = await unitPriceToUsdt(sym, estPrice);
+  const notional = unitUsdt * order.quantity;
+  const estAmount =
+    order.side === 'buy' ? notional * (1 + FEE_RATE) : notional * (1 - FEE_RATE);
+  await Transaction.create({
+    userId,
+    type: order.side === 'buy' ? 'spot_buy' : 'spot_sell',
+    amount: roundMoney(estAmount),
+    currency: 'USDT',
+    status: 'pending',
+    method: 'gateway',
+    reference: `${sym} ${order.side} ${order.quantity} (${order.orderType})`,
+    adminNote: `${sym} ${order.side.toUpperCase()} ${order.quantity} (${order.orderType})`,
+    spotOrderId: order._id ?? order.id,
+  });
 }
 
 function formatUserTrade(trade, userId, orderById = new Map()) {
@@ -163,18 +184,31 @@ export async function createOrder(req, res, next) {
   try {
     const { symbol, side, orderType, quantity, price, stopLoss, takeProfit } = req.body;
     const sym = symbol.toUpperCase();
+    const io = req.app.get('io');
 
     if (orderType === 'limit' && (price == null || price <= 0)) {
       return error(res, 'Limit orders require price', 400);
     }
 
+    let marketPrice = null;
+    if (orderType === 'market') {
+      marketPrice = await resolveMarketPriceFast(sym, { skipPulse: true });
+      if (!Number.isFinite(marketPrice) || marketPrice <= 0) {
+        return error(res, 'Market price unavailable', 503);
+      }
+    }
+
     if (side === 'buy') {
-      await assertBuyAffordable(req.userId, { symbol: sym, orderType, quantity, price });
+      await assertBuyAffordable(req.userId, {
+        symbol: sym,
+        orderType,
+        quantity,
+        price,
+        marketPrice,
+      });
     } else {
-      const baseAsset = baseAssetFromSymbol(sym);
-      await reconcileSellAssetLocks(req.userId, baseAsset);
       await assertSellAffordable(req.userId, { symbol: sym, quantity });
-      await lockAsset(req.userId, baseAsset, quantity);
+      await lockAsset(req.userId, baseAssetFromSymbol(sym), quantity);
     }
 
     const order = await Order.create({
@@ -188,53 +222,44 @@ export async function createOrder(req, res, next) {
       takeProfit: takeProfit ?? null,
     });
 
-    let estPrice = price;
-    if (orderType === 'market' || estPrice == null) {
-      try {
-        const ticker = await fetchTicker(sym);
-        estPrice = Number(ticker.price);
-      } catch {
-        estPrice = 0;
-      }
-    }
-    if (Number.isFinite(estPrice) && estPrice > 0) {
-      const unitUsdt = await unitPriceToUsdt(sym, estPrice);
-      const notional = unitUsdt * quantity;
-      const estAmount = side === 'buy' ? notional * (1 + FEE_RATE) : notional * (1 - FEE_RATE);
-      await Transaction.create({
-        userId: req.userId,
-        type: side === 'buy' ? 'spot_buy' : 'spot_sell',
-        amount: roundMoney(estAmount),
-        currency: 'USDT',
-        status: 'pending',
-        method: 'gateway',
-        reference: `${sym} ${side} ${quantity} (${orderType})`,
-        adminNote: `${sym} ${side.toUpperCase()} ${quantity} (${orderType})`,
-        spotOrderId: order._id,
-      });
-    }
+    const created = order.toObject();
+    emitOrderUpdate(io, req.userId, formatOrder(created));
 
     let trades = [];
     try {
-      const marketPrice = await fetchLivePriceForMatching(sym);
-      trades = await processOrdersForPrice(sym, marketPrice);
+      const fillPrice = orderType === 'market' ? marketPrice : await resolveMarketPriceFast(sym, { skipPulse: true });
+      if (fillPrice > 0) {
+        trades = await processSingleOrderForPrice(order._id, sym, fillPrice);
+      }
     } catch (fillErr) {
       console.warn('order fill on create:', fillErr.message);
     }
 
-    const updated = await Order.findById(order._id).lean();
-    const finalOrder = updated || order.toObject();
-
-    const [walletSnapshot] = await Promise.all([
+    const [updated, walletSnapshot] = await Promise.all([
+      Order.findById(order._id).lean(),
       fetchWalletSnapshotForUser(req.userId),
-      trades.length
-        ? notifySpotOrderFills(req.app.get('io'), sym, trades)
-        : Promise.resolve(),
     ]);
+    const finalOrder = updated || created;
 
-    void emitWalletUpdate(req.app.get('io'), req.userId, {
-      reason: finalOrder.status === 'filled' ? 'spot_order_filled' : 'spot_order_placed',
-    }).catch(() => {});
+    if (finalOrder.status !== 'filled' && orderType === 'limit') {
+      const est =
+        orderType === 'limit' && price != null
+          ? Number(price)
+          : await resolveMarketPriceFast(sym, { skipPulse: true }).catch(() => 0);
+      void logPendingSpotTransaction(req.userId, finalOrder, est).catch(() => {});
+    }
+
+    if (trades.length) {
+      void notifySpotOrderFills(io, sym, trades);
+    }
+
+    emitOrderUpdate(io, req.userId, formatOrder(finalOrder));
+    emitWalletPush(
+      io,
+      req.userId,
+      walletSnapshot,
+      finalOrder.status === 'filled' ? 'spot_order_filled' : 'spot_order_placed'
+    );
 
     const message =
       finalOrder.status === 'filled'
@@ -267,6 +292,91 @@ export async function createOrder(req, res, next) {
       );
       return error(res, e.message, e.status);
     }
+    return next(e);
+  }
+}
+
+/** Exact max buy qty for current wallet (used by "click to fill" on trade UI). */
+export async function getMaxBuyQuantity(req, res, next) {
+  try {
+    const sym = String(req.query.symbol || '').toUpperCase();
+    if (!sym) return error(res, 'Symbol is required', 400);
+
+    const orderType = String(req.query.orderType || 'market').toLowerCase() === 'limit' ? 'limit' : 'market';
+    const priceParam = req.query.price != null && req.query.price !== '' ? Number(req.query.price) : null;
+
+    const wallet = await Wallet.findOne({ userId: req.userId });
+    const available = storeMoney(tradeableBalance(wallet));
+
+    let unitPrice = priceParam;
+    if (orderType === 'market') {
+      unitPrice = await resolveMarketPriceFast(sym, { skipPulse: true });
+    }
+    if (!(Number.isFinite(unitPrice) && unitPrice > 0)) {
+      return error(res, 'Price unavailable', 400);
+    }
+
+    const unitPriceUsdt = storeMoney(await unitPriceToUsdt(sym, unitPrice));
+    const quantity = calcMaxBuyQty(available, unitPriceUsdt, { feeRate: FEE_RATE });
+
+    return success(
+      res,
+      {
+        symbol: sym,
+        orderType,
+        quantity,
+        tradeable_balance: roundMoney(available),
+        unit_price_usdt: roundMoney(unitPriceUsdt),
+      },
+      'Max buy quantity'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+export async function cancelOrder(req, res, next) {
+  try {
+    const orderId = req.params.id;
+    const io = req.app.get('io');
+
+    const existing = await Order.findOne({ _id: orderId, userId: req.userId }).lean();
+    if (!existing) return error(res, 'Order not found', 404);
+    if (!['open', 'partially_filled'].includes(existing.status)) {
+      return error(res, 'Only open orders can be cancelled', 400);
+    }
+
+    const remaining = storeMoney(existing.quantity - (existing.filledQuantity || 0));
+
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        userId: req.userId,
+        status: { $in: ['open', 'partially_filled'] },
+      },
+      { status: 'cancelled' },
+      { new: true }
+    ).lean();
+
+    if (!updated) return error(res, 'Order cannot be cancelled', 400);
+
+    if (updated.side === 'sell' && remaining > 0) {
+      await unlockAsset(req.userId, baseAssetFromSymbol(updated.symbol), remaining);
+    }
+
+    void Transaction.findOneAndUpdate(
+      { userId: req.userId, spotOrderId: orderId, status: 'pending' },
+      { status: 'cancelled', adminNote: 'Order cancelled by user' }
+    ).catch(() => {});
+
+    const walletSnapshot = await fetchWalletSnapshotForUser(req.userId);
+    const formatted = formatOrder(updated);
+
+    emitOrderUpdate(io, req.userId, formatted);
+    emitWalletPush(io, req.userId, walletSnapshot, 'spot_order_cancelled');
+
+    return success(res, { ...formatted, wallet: walletSnapshot }, 'Order cancelled');
+  } catch (e) {
     return next(e);
   }
 }

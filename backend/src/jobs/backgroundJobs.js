@@ -15,6 +15,7 @@ import { repairMisCreditedNativeDeposits } from '../services/depositService.js';
 import { backfillReferralBonusBalances } from '../services/referralRewardService.js';
 import { migrateAllWalletBuckets } from '../services/walletBucketService.js';
 import { reconcileAllSellAssetLocks } from '../services/sellLockRepairService.js';
+import { preloadLiquidityUser } from '../services/orderEngine.js';
 import { isRedisEnabled } from '../config/redis.js';
 
 /**
@@ -80,6 +81,12 @@ export async function startBackgroundJobs({ io = null } = {}) {
       }
     } catch (err) {
       console.warn('[orders] Sell lock reconcile skipped:', err.message);
+    }
+
+    try {
+      await preloadLiquidityUser();
+    } catch {
+      /* ignore */
     }
 
     if (!isRedisEnabled()) {

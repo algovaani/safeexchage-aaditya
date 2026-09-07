@@ -36,6 +36,7 @@ import {
   syntheticOrderBook,
 } from './coingeckoService.js';
 import { applyWsPriceToRow, getWsLivePrice } from './binanceWsService.js';
+import { getEffectivePrice } from './priceEngine.js';
 
 /**
  * Binance REST hosts, tried in order. `api.binance.com` is geo-blocked in some
@@ -426,23 +427,28 @@ export async function fetchAllPairPrices({ force = false } = {}) {
   }
 }
 
+/** Hot path for order placement — WS/engine first, REST only as fallback. */
+export async function resolveMarketPriceFast(symbol, { skipPulse = true, force = false } = {}) {
+  const sym = normalizeSymbol(symbol);
+  if (!force) {
+    const eff = getEffectivePrice(sym);
+    if (eff > 0) return eff;
+    const ws = getWsLivePrice(sym);
+    if (ws?.price > 0 && Date.now() - ws.time < 10_000) return ws.price;
+    const tick = getLatestPriceTick(sym);
+    const tickFreshMs = Number(process.env.ORDER_MATCH_TICK_MAX_MS) || 8_000;
+    if (tick?.price > 0 && Date.now() - tick.time < tickFreshMs) return tick.price;
+  }
+  const row = await fetchTicker(sym, { skipPulse, force });
+  const price = Number(row?.price ?? row?.lastPrice);
+  return Number.isFinite(price) && price > 0 ? price : 0;
+}
+
 export async function fetchLivePriceForMatching(symbol) {
   const sym = normalizeSymbol(symbol);
-  const ws = getWsLivePrice(sym);
-  if (ws?.price > 0 && Date.now() - ws.time < 5_000) {
-    return ws.price;
-  }
-  const tick = getLatestPriceTick(sym);
-  const tickFreshMs = Number(process.env.ORDER_MATCH_TICK_MAX_MS) || 8_000;
-  if (tick && Date.now() - tick.time < tickFreshMs && tick.price > 0) {
-    return tick.price;
-  }
-  const row = await fetchTicker(sym, { skipPulse: true, force: true });
-  const price = Number(row?.price ?? row?.lastPrice);
-  if (!(price > 0)) {
-    throw new Error(`Live price unavailable for ${sym}`);
-  }
-  return price;
+  const price = await resolveMarketPriceFast(sym, { skipPulse: true });
+  if (price > 0) return price;
+  throw new Error(`Live price unavailable for ${sym}`);
 }
 
 export async function fetchTicker(symbol, opts = {}) {

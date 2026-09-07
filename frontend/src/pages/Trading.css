@@ -1180,6 +1180,27 @@
   color: var(--ex-sell, #f6465d);
 }
 
+.ex-order-cancel-btn {
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid var(--ex-sell, #f6465d);
+  background: transparent;
+  color: var(--ex-sell, #f6465d);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ex-order-cancel-btn:hover:not(:disabled) {
+  background: var(--ex-sell-soft, rgba(246, 70, 93, 0.12));
+}
+
+.ex-order-cancel-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .ex-note {
   margin: 0.5rem 0.65rem;
   padding: 0.5rem 0.75rem;

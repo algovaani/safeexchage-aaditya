@@ -3,11 +3,12 @@ import { FuturesPosition } from '../models/FuturesPosition.js';
 import { FuturesOrder } from '../models/FuturesOrder.js';
 import { Wallet } from '../models/Wallet.js';
 import { Transaction } from '../models/Transaction.js';
-import { fetchTicker } from './marketDataProvider.js';
+import { resolveMarketPriceFast } from './marketDataProvider.js';
 import { getFuturesSettings } from './futuresSettingsService.js';
-import { emitWalletUpdate, emitFuturesUpdate } from './socketService.js';
+import { emitWalletPush, emitWalletUpdate, emitFuturesUpdate } from './socketService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
-import { debitForTrade, creditTradeProfit, tradeableBalance, ensureWalletBuckets } from './walletAdjustmentService.js';
+import { debitForTrade, creditTradeProfit, tradeableBalance, ensureWalletBuckets, formatWalletSnapshot } from './walletAdjustmentService.js';
+import { listUserAssets } from './assetBalanceService.js';
 import {
   initialMargin,
   tradingFee,
@@ -26,8 +27,7 @@ function httpError(message, status = 400) {
 }
 
 async function resolveMarkPrice(symbol) {
-  const ticker = await fetchTicker(symbol, { force: true });
-  const mark = Number(ticker?.lastPrice ?? ticker?.price);
+  const mark = await resolveMarketPriceFast(symbol, { skipPulse: false });
   if (!Number.isFinite(mark) || mark <= 0) throw httpError('Market price unavailable', 503);
   return mark;
 }
@@ -350,7 +350,7 @@ export async function openPosition(userId, body, { io } = {}) {
     position.unrealizedPnl = 0;
     await position.save({ session });
 
-    await createOrder(session, {
+    const futuresOrder = await createOrder(session, {
       userId,
       positionId: position._id,
       symbol,
@@ -394,11 +394,32 @@ export async function openPosition(userId, body, { io } = {}) {
     const view = positionView(position.toObject(), execPrice, settings, {
       walletEquity: marginMode === 'cross' ? equityAfter : null,
     });
+    const assets = await listUserAssets(userId);
+    const walletSnapshot = formatWalletSnapshot(wallet, assets);
+    const orderView = {
+      id: String(futuresOrder._id),
+      symbol,
+      side,
+      orderType,
+      action: 'open',
+      quantity: roundMoney(qty),
+      price: roundMoney(execPrice),
+      leverage,
+      marginMode,
+      fee: roundMoney(openFee),
+      pnl: 0,
+      status: 'filled',
+      createdAt: futuresOrder.createdAt,
+    };
     if (io) {
-      await emitWalletUpdate(io, userId, { reason: 'futures_open' });
-      emitFuturesUpdate(io, userId, { positions: [view], event: 'position:opened' });
+      emitWalletPush(io, userId, walletSnapshot, 'futures_open');
+      emitFuturesUpdate(io, userId, {
+        positions: [view],
+        orders: [orderView],
+        event: 'position:opened',
+      });
     }
-    return view;
+    return { position: view, wallet: walletSnapshot, order: orderView };
   } catch (err) {
     await session.abortTransaction();
     throw err;

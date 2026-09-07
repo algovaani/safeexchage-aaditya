@@ -9,6 +9,8 @@ const r = Router();
 r.use(requireAuth);
 
 r.post('/', validateBody(orderSchema), o.createOrder);
+r.post('/:id/cancel', o.cancelOrder);
+r.get('/max-buy', o.getMaxBuyQuantity);
 r.get('/open', o.listOpenOrders);
 r.get('/trades', o.listTrades);
 r.get('/', o.listOrders);

@@ -46,19 +46,34 @@ export function attachUserSockets(io) {
   });
 }
 
+/** Push order row updates instantly (pending → filled). */
+export function emitOrderUpdate(io, userId, order) {
+  if (!io || !userId || !order) return;
+  io.to(userRoom(userId)).emit('orders:update', {
+    order,
+    at: Date.now(),
+  });
+}
+
+/** Push wallet without another DB round-trip. */
+export function emitWalletPush(io, userId, wallet, reason = null) {
+  if (!io || !userId || !wallet) return;
+  io.to(userRoom(userId)).emit('wallet:update', {
+    wallet,
+    reason,
+    at: Date.now(),
+  });
+}
+
 /**
  * Pushes the user's latest wallet balance to all of their connected sockets.
  * Always reads a fresh snapshot from DB so clients never get stale data.
  */
-export async function emitWalletUpdate(io, userId, { reason = null } = {}) {
+export async function emitWalletUpdate(io, userId, { reason = null, wallet: existingWallet = null } = {}) {
   if (!io || !userId) return;
   try {
-    const wallet = await fetchWalletSnapshotForUser(userId);
-    io.to(userRoom(userId)).emit('wallet:update', {
-      wallet,
-      reason,
-      at: Date.now(),
-    });
+    const wallet = existingWallet || (await fetchWalletSnapshotForUser(userId));
+    emitWalletPush(io, userId, wallet, reason);
   } catch {
     /* realtime is best-effort — never block the request flow */
   }

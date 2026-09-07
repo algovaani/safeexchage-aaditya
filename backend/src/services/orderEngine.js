@@ -77,6 +77,18 @@ export async function processOrdersForPrice(symbol, currentPrice, opts = {}) {
   return withSymbolOrderLock(symbol, () => processOrdersForPriceUnlocked(symbol, currentPrice, opts));
 }
 
+/** Fast path: fill only the order just created (avoids scanning all open orders). */
+export async function processSingleOrderForPrice(orderId, symbol, currentPrice, opts = {}) {
+  return withSymbolOrderLock(symbol, () =>
+    processSingleOrderForPriceUnlocked(orderId, symbol, currentPrice, opts)
+  );
+}
+
+/** Pre-warm liquidity user at startup (avoids first-order delay). */
+export function preloadLiquidityUser() {
+  return getLiquidityUserId().catch(() => null);
+}
+
 /** Push wallet + order-table updates after spot fills (best-effort). */
 export async function notifySpotOrderFills(io, symbol, trades, { reason = 'spot_fill' } = {}) {
   if (!io || !trades?.length) return;
@@ -94,6 +106,71 @@ export async function notifySpotOrderFills(io, symbol, trades, { reason = 'spot_
     count: trades.length,
     at: Date.now(),
   });
+}
+
+async function orderShouldFill(order, sym, fillPriceUsdt, currentPrice, opts, wickMode, pathLo, pathHi) {
+  if (order.orderType === 'market') return true;
+  if (order.orderType !== 'limit' || order.price == null) return false;
+
+  const limitUsdt = await unitPriceToUsdt(sym, order.price);
+  if (!(limitUsdt > 0)) return false;
+
+  if (wickMode) {
+    if (order.side === 'buy') return pathLo <= limitUsdt + 1e-10;
+    if (order.side === 'sell') return pathHi >= limitUsdt - 1e-10;
+    return false;
+  }
+
+  const hiRaw = opts.priceHigh != null ? Number(opts.priceHigh) : currentPrice;
+  const loRaw = opts.priceLow != null ? Number(opts.priceLow) : currentPrice;
+  const hiUsdt = await unitPriceToUsdt(sym, Math.max(hiRaw, currentPrice));
+  const loUsdt = await unitPriceToUsdt(sym, Math.min(loRaw, currentPrice));
+
+  if (order.side === 'buy') {
+    return fillPriceUsdt <= limitUsdt + 1e-10 || loUsdt <= limitUsdt + 1e-10;
+  }
+  if (order.side === 'sell') {
+    return fillPriceUsdt >= limitUsdt - 1e-10 || hiUsdt >= limitUsdt - 1e-10;
+  }
+  return false;
+}
+
+async function processSingleOrderForPriceUnlocked(orderId, symbol, currentPrice, opts = {}) {
+  const sym = symbol.toUpperCase();
+  const order = await Order.findById(orderId).lean();
+  if (!order || String(order.symbol).toUpperCase() !== sym) return [];
+  if (!['open', 'partially_filled'].includes(order.status)) return [];
+
+  const fillPriceUsdt = await unitPriceToUsdt(sym, currentPrice);
+  if (!(fillPriceUsdt > 0)) return [];
+
+  const fromRaw = opts.fromPrice != null ? Number(opts.fromPrice) : null;
+  const fromUsdt =
+    fromRaw != null && Number.isFinite(fromRaw) && fromRaw > 0
+      ? await unitPriceToUsdt(sym, fromRaw)
+      : null;
+  const wickMode = Boolean(opts.rangeOnly && fromUsdt != null);
+  const pathLo = fromUsdt != null ? Math.min(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
+  const pathHi = fromUsdt != null ? Math.max(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
+
+  const shouldFill = await orderShouldFill(
+    order,
+    sym,
+    fillPriceUsdt,
+    currentPrice,
+    opts,
+    wickMode,
+    pathLo,
+    pathHi
+  );
+  if (!shouldFill) return [];
+
+  const remaining = order.quantity - (order.filledQuantity || 0);
+  if (remaining <= 0) return [];
+
+  const liquidityId = await getLiquidityUserId();
+  const t = await executeInternalFill(order, fillPriceUsdt, remaining, sym, liquidityId);
+  return t ? [t] : [];
 }
 
 async function processOrdersForPriceUnlocked(symbol, currentPrice, opts = {}) {
@@ -118,45 +195,24 @@ async function processOrdersForPriceUnlocked(symbol, currentPrice, opts = {}) {
   const trades = [];
 
   for (const order of openOrders) {
-    const fresh = await Order.findById(order._id).lean();
-    if (!fresh || !['open', 'partially_filled'].includes(fresh.status)) continue;
+    if (!['open', 'partially_filled'].includes(order.status)) continue;
 
-    let shouldFill = false;
-    const fillPrice = fillPriceUsdt;
-
-    if (fresh.orderType === 'market') {
-      // Instant fill at pulse/mark — including during admin pulse
-      shouldFill = true;
-    } else if (fresh.orderType === 'limit' && fresh.price != null) {
-      const limitUsdt = await unitPriceToUsdt(sym, fresh.price);
-      if (!(limitUsdt > 0)) continue;
-      if (wickMode) {
-        // Candle/wick match: path traded through the limit
-        if (fresh.side === 'buy') shouldFill = pathLo <= limitUsdt + 1e-10;
-        if (fresh.side === 'sell') shouldFill = pathHi >= limitUsdt - 1e-10;
-      } else {
-        const hiRaw = opts.priceHigh != null ? Number(opts.priceHigh) : currentPrice;
-        const loRaw = opts.priceLow != null ? Number(opts.priceLow) : currentPrice;
-        const hiUsdt = await unitPriceToUsdt(sym, Math.max(hiRaw, currentPrice));
-        const loUsdt = await unitPriceToUsdt(sym, Math.min(loRaw, currentPrice));
-        // Marketable limit: current mark crossed the limit (standard exchange behaviour)
-        if (fresh.side === 'buy') {
-          shouldFill =
-            fillPriceUsdt <= limitUsdt + 1e-10 || loUsdt <= limitUsdt + 1e-10;
-        }
-        if (fresh.side === 'sell') {
-          shouldFill =
-            fillPriceUsdt >= limitUsdt - 1e-10 || hiUsdt >= limitUsdt - 1e-10;
-        }
-      }
-    }
-
+    const shouldFill = await orderShouldFill(
+      order,
+      sym,
+      fillPriceUsdt,
+      currentPrice,
+      opts,
+      wickMode,
+      pathLo,
+      pathHi
+    );
     if (!shouldFill) continue;
 
-    const remaining = fresh.quantity - (fresh.filledQuantity || 0);
+    const remaining = order.quantity - (order.filledQuantity || 0);
     if (remaining <= 0) continue;
 
-    const t = await executeInternalFill(fresh, fillPrice, remaining, sym, liquidityId);
+    const t = await executeInternalFill(order, fillPriceUsdt, remaining, sym, liquidityId);
     if (t) trades.push(t);
   }
 
@@ -293,14 +349,14 @@ async function executeInternalFill(order, price, qty, symbol, liquidityId) {
     fee,
   });
 
-  await logSpotTransaction(userId, order.side, {
+  void logSpotTransaction(userId, order.side, {
     symbol,
     quantity: qty,
     price,
     fee,
     orderId,
     tradeId: trade._id,
-  });
+  }).catch(() => {});
 
   return trade;
 }

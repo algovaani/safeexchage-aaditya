@@ -6,7 +6,7 @@ import { fetchTicker, fetchLivePriceForMatching } from './marketDataProvider.js'
 import { processOrdersForPrice, notifySpotOrderFills } from './orderEngine.js';
 import { getActivePulse } from './pricePulseService.js';
 
-const INTERVAL_MS = Number(process.env.SPOT_ORDER_MONITOR_MS) || 3000;
+const INTERVAL_MS = Number(process.env.SPOT_ORDER_MONITOR_MS) || 1000;
 let timer = null;
 let running = false;
 let ioRef = null;

@@ -535,14 +535,21 @@ export default function Futures() {
           return [...map.values()].filter((p) => p.status === 'open');
         });
       }
+      if (payload?.orders?.length) {
+        setOrders((prev) => {
+          const map = new Map(prev.map((o) => [o.id, o]));
+          for (const o of payload.orders) map.set(o.id, o);
+          return [...map.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        });
+      }
       if (payload?.closed) loadPosHistory();
       if (
         payload?.event === 'position:opened' ||
         payload?.event?.includes('close') ||
         payload?.event?.includes('liquidat')
       ) {
-        loadOrders();
-        refreshWallet();
+        void loadOrders();
+        void refreshWallet();
       }
     };
     socket.on('futures:update', onFuturesUpdate);
@@ -594,9 +601,12 @@ export default function Futures() {
           return [...map.values()].filter((p) => p.status === 'open');
         });
       }
+      if (parsed?.order) {
+        setOrders((prev) => [parsed.order, ...prev.filter((o) => o.id !== parsed.order.id)]);
+      }
       if (parsed?.wallet) publishWallet(parsed.wallet);
-      else await refreshWallet();
-      await loadOrders();
+      else void refreshWallet();
+      void loadOrders();
       toast.success('Position opened');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Order failed');
