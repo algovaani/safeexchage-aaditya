@@ -1098,17 +1098,64 @@ export default function Trading() {
     }
   }
 
+  async function resolveSubmitQuantity(side, orderType, requestedQty, priceRaw) {
+    if (!(requestedQty > 0)) return 0;
+    if (side === 'buy') {
+      try {
+        const { data } = await api.get('/orders/max-buy', {
+          params: {
+            symbol,
+            orderType,
+            ...(orderType === 'limit' ? { price: parseFloat(priceRaw) } : {}),
+          },
+        });
+        const payload = parseApiResponse(data);
+        const maxQty = Number(payload?.quantity);
+        if (!(maxQty > 0)) return 0;
+        return Math.min(requestedQty, maxQty);
+      } catch {
+        const price =
+          orderType === 'market' ? Number(ticker?.lastPrice) : parseFloat(priceRaw);
+        const maxLocal = maxBuyQuantity(usdtBalance, price, { isInrPair, usdtInrRate, marketBuffer: 1 });
+        if (!(maxLocal > 0)) return 0;
+        return Math.min(requestedQty, maxLocal);
+      }
+    }
+    if (side === 'sell') {
+      const maxSell = Math.floor(baseBalance * 1e8) / 1e8;
+      if (!(maxSell > 0)) return 0;
+      return Math.min(requestedQty, maxSell);
+    }
+    return requestedQty;
+  }
+
   async function place(side, orderType) {
     if (!user) {
       requireLogin();
       return;
     }
     if (orderBusySide === side) return;
-    const qty = parseFloat(side === 'buy' ? buyQty : sellQty);
     const priceRaw = side === 'buy' ? buyPrice : sellPrice;
+    let qty = parseFloat(side === 'buy' ? buyQty : sellQty);
     if (!(qty > 0)) {
       toast.warning('Enter a valid quantity greater than zero.');
       return;
+    }
+    const originalQty = qty;
+    qty = await resolveSubmitQuantity(side, orderType, qty, priceRaw);
+    if (!(qty > 0)) {
+      toast.warning(
+        side === 'buy'
+          ? 'Not enough USDT balance at the current price.'
+          : `Insufficient ${base} balance.`
+      );
+      return;
+    }
+    if (qty + 1e-12 < originalQty) {
+      const qtyStr = formatSpotQty(qty);
+      if (side === 'buy') setBuyQty(qtyStr);
+      else setSellQty(qtyStr);
+      toast.info(`Price moved — quantity adjusted to ${qtyStr} to match your balance.`);
     }
     if (side === 'sell' && qty > baseBalance + 1e-12) {
       toast.warning(`Insufficient ${base} balance. You have ${baseBalance.toFixed(8)} ${base}.`);
@@ -1144,6 +1191,8 @@ export default function Trading() {
       const result = parseApiResponse(data);
       if (result?.status === 'rejected') {
         emitToast({ type: 'error', message: data?.message || 'Order rejected (insufficient balance)' });
+      } else if (result?.quantity_adjusted) {
+        emitToast({ type: 'info', message: data?.message || 'Quantity adjusted to match your balance.' });
       } else if (result?.status === 'filled') {
         emitToast({ type: 'success', message: data?.message || 'Order filled' });
       } else {
