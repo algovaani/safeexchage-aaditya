@@ -34,7 +34,10 @@ export function ToastProvider({ children }) {
     const id = ++idRef.current;
     const duration = options.duration ?? (type === 'error' ? 7000 : 5000);
 
-    setToasts((prev) => [...prev.slice(-4), { id, type, message: text, title: options.title || TITLES[type] }]);
+    setToasts((prev) => {
+      const kept = options.replace ? [] : prev.slice(-4);
+      return [...kept, { id, type, message: text, title: options.title || TITLES[type] }];
+    });
 
     if (duration > 0) {
       window.setTimeout(() => dismiss(id), duration);

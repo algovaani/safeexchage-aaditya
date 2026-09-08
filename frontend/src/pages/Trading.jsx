@@ -1073,6 +1073,10 @@ export default function Trading() {
     return ['open', 'partially_filled'].includes(String(order.status || '').toLowerCase());
   }
 
+  function emitTradeToast(type, message) {
+    emitToast({ type, message, options: { replace: true } });
+  }
+
   async function cancelOpenOrder(order, side) {
     const orderId = order.id || order._id;
     if (!orderId || cancellingOrderId) return;
@@ -1084,14 +1088,14 @@ export default function Trading() {
       total: Math.max(0, t.total - 1),
     }));
     try {
-      const { data } = await api.post(`/orders/${orderId}/cancel`);
+      const { data } = await api.post(`/orders/${orderId}/cancel`, null, { silentToast: true });
       const result = parseApiResponse(data);
-      emitToast({ type: 'success', message: data?.message || 'Order cancelled' });
+      emitTradeToast('success', data?.message || 'Order cancelled');
       if (result?.wallet) notifyWalletUpdated(result.wallet);
       else void refreshWallet();
       window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch (err) {
-      emitToast({ type: 'error', message: getApiErrorMessage(err) });
+      emitTradeToast('error', getApiErrorMessage(err));
       setOrdersRefreshTick((n) => n + 1);
     } finally {
       setCancellingOrderId(null);
@@ -1155,7 +1159,6 @@ export default function Trading() {
       const qtyStr = formatSpotQty(qty);
       if (side === 'buy') setBuyQty(qtyStr);
       else setSellQty(qtyStr);
-      toast.info(`Price moved — quantity adjusted to ${qtyStr} to match your balance.`);
     }
     if (side === 'sell' && qty > baseBalance + 1e-12) {
       toast.warning(`Insufficient ${base} balance. You have ${baseBalance.toFixed(8)} ${base}.`);
@@ -1187,16 +1190,15 @@ export default function Trading() {
     }
     setOrderBusySide(side);
     try {
-      const { data } = await api.post('/orders', payload);
+      const { data } = await api.post('/orders', payload, { silentToast: true });
       const result = parseApiResponse(data);
       if (result?.status === 'rejected') {
-        emitToast({ type: 'error', message: data?.message || 'Order rejected (insufficient balance)' });
-      } else if (result?.quantity_adjusted) {
-        emitToast({ type: 'info', message: data?.message || 'Quantity adjusted to match your balance.' });
-      } else if (result?.status === 'filled') {
-        emitToast({ type: 'success', message: data?.message || 'Order filled' });
+        emitTradeToast('error', data?.message || 'Order rejected (insufficient balance)');
       } else {
-        emitToast({ type: 'success', message: data?.message || 'Order placed' });
+        emitTradeToast(
+          'success',
+          data?.message || (result?.status === 'filled' ? 'Order filled' : 'Order placed')
+        );
       }
       if (result) {
         mergeOrderResult(side, tempId, result);
@@ -1215,7 +1217,7 @@ export default function Trading() {
       }
       window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch (err) {
-      emitToast({ type: 'error', message: getApiErrorMessage(err) });
+      emitTradeToast('error', getApiErrorMessage(err));
       setOrdersRefreshTick((n) => n + 1);
     } finally {
       setOrderBusySide(null);

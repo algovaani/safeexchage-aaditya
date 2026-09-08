@@ -592,7 +592,7 @@ export default function Futures() {
         stopLossPrice: stopLoss ? Number(stopLoss) : undefined,
         limitPrice: orderType === 'limit' ? Number(limitPrice) : undefined,
       };
-      const { data } = await api.post('/futures/open', body);
+      const { data } = await api.post('/futures/open', body, { silentToast: true });
       const parsed = parseApiResponse(data);
       if (parsed?.position) {
         setPositions((prev) => {
@@ -607,9 +607,9 @@ export default function Futures() {
       if (parsed?.wallet) publishWallet(parsed.wallet);
       else void refreshWallet();
       void loadOrders();
-      toast.success('Position opened');
+      toast.success('Position opened', { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Order failed');
+      toast.error(err.response?.data?.message || 'Order failed', { replace: true });
     } finally {
       submitLockRef.current = false;
       setBusy(false);
@@ -619,15 +619,15 @@ export default function Futures() {
   async function closePosition(id, qty) {
     setBusy(true);
     try {
-      await api.post(`/futures/positions/${id}/close`, qty ? { quantity: Number(qty) } : {});
-      toast.success('Position closed');
+      await api.post(`/futures/positions/${id}/close`, qty ? { quantity: Number(qty) } : {}, { silentToast: true });
+      toast.success('Position closed', { replace: true });
       setPartialQty('');
       await loadPositions();
       await loadOrders();
       await loadPosHistory();
       await refreshWallet();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Close failed');
+      toast.error(err.response?.data?.message || 'Close failed', { replace: true });
     } finally {
       setBusy(false);
     }
@@ -636,13 +636,13 @@ export default function Futures() {
   async function reversePosition(id) {
     setBusy(true);
     try {
-      await api.post(`/futures/positions/${id}/reverse`);
-      toast.success('Position reversed');
+      await api.post(`/futures/positions/${id}/reverse`, null, { silentToast: true });
+      toast.success('Position reversed', { replace: true });
       await loadPositions();
       await loadOrders();
       await refreshWallet();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Reverse failed');
+      toast.error(err.response?.data?.message || 'Reverse failed', { replace: true });
     } finally {
       setBusy(false);
     }

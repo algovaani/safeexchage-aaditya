@@ -167,8 +167,9 @@ api.interceptors.response.use(
       !isAuthAttempt(requestUrl) &&
       response.data?.success !== false
     ) {
+      const bizStatus = response.data?.data?.status;
       emitToast({
-        type: 'success',
+        type: bizStatus === 'rejected' ? 'error' : 'success',
         message: getSuccessMessage(response),
       });
     }
