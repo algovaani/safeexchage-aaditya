@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  ArrowDownLeft,
+  ArrowUpRight,
   Banknote,
   Building2,
   Check,
+  Clock,
   Copy,
   CreditCard,
   FileCheck,
+  History,
   Loader2,
   QrCode,
+  RefreshCw,
   ShieldCheck,
   Smartphone,
   UploadCloud,
@@ -16,8 +22,11 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { cashInPersonAPI, depositAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useDialog } from '../context/DialogContext.jsx';
 import { resolveAssetUrl } from '../utils/assetUrl.js';
 import { fmtINR } from '../utils/format.js';
+import { notifyWalletUpdated } from '../utils/walletEvents.js';
+import StatusBadge from './ui/StatusBadge.jsx';
 import './DepositModal.css';
 
 const SAVED_BANK_KEY = 'safex_user_bank';
@@ -31,10 +40,23 @@ function getSavedLocalBank() {
   }
 }
 
-export default function CashInPersonModal({ user, userMobile, platformInfo, onClose, onSuccess }) {
+export default function CashInPersonModal({
+  user,
+  userMobile,
+  platformInfo,
+  onClose,
+  onSuccess,
+  initialTab = 'transfer',
+}) {
   const toast = useToast();
+  const dialog = useDialog();
   const fileInputRef = useRef(null);
   const localBank = useMemo(() => getSavedLocalBank(), []);
+
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const [form, setForm] = useState({
     type: 'deposit',
@@ -56,6 +78,22 @@ export default function CashInPersonModal({ user, userMobile, platformInfo, onCl
   const [err, setErr] = useState('');
   const [done, setDone] = useState(false);
   const [adminBank, setAdminBank] = useState(platformInfo?.bank || null);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const rows = await cashInPersonAPI.getHistory();
+      setHistoryList(Array.isArray(rows) ? rows : []);
+    } catch {
+      setHistoryList([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
 
   useEffect(() => {
     if (user?.mobile || userMobile) {
@@ -188,7 +226,10 @@ export default function CashInPersonModal({ user, userMobile, platformInfo, onCl
           })
         );
 
-        await cashInPersonAPI.submit(body);
+        let res;
+        if (isWithdraw) {
+          res = await cashInPersonAPI.submit(body);
+        }
       } else {
         // Deposit with multipart FormData
         const fd = new FormData();
@@ -203,21 +244,51 @@ export default function CashInPersonModal({ user, userMobile, platformInfo, onCl
           fd.append('payment_proof', proof);
         }
 
-        await cashInPersonAPI.submit(fd);
+        res = await cashInPersonAPI.submit(fd);
       }
 
       setDone(true);
+      if (res?.wallet) {
+        notifyWalletUpdated(res.wallet);
+      }
+      onSuccess?.();
+      void fetchHistory();
+
       toast.success(
         isWithdraw
-          ? 'Withdraw request sent — our team will process your payout.'
+          ? `Withdraw request sent — ${amount} USDT deducted from your main wallet.`
           : 'Deposit request sent — admin will verify your screenshot and credit your wallet.'
       );
-      onSuccess?.();
-      setTimeout(onClose, 2000);
     } catch (ex) {
       setErr(ex.message || 'Failed to submit request');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handleCancelRequest(row) {
+    const ok = await dialog.confirm({
+      title: 'Cancel Withdraw Request?',
+      message: `Cancel withdrawal of ${row.requestedAmount || row.creditedAmount} USDT? The full amount will be instantly refunded to your Main Wallet.`,
+      confirmLabel: 'Cancel Request',
+      cancelLabel: 'Keep Pending',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    setCancellingId(row.id);
+    try {
+      const res = await cashInPersonAPI.cancel(row.id);
+      toast.success('Withdraw request cancelled — funds restored to your main wallet');
+      if (res?.wallet) {
+        notifyWalletUpdated(res.wallet);
+      }
+      onSuccess?.();
+      await fetchHistory();
+    } catch (err) {
+      toast.error(err.message || 'Failed to cancel request');
+    } finally {
+      setCancellingId(null);
     }
   }
 
@@ -251,18 +322,259 @@ export default function CashInPersonModal({ user, userMobile, platformInfo, onCl
           </button>
         </header>
 
+        {/* Modal Navigation Tabs: Transfer vs History */}
+        <div className="cip-modal-nav">
+          <button
+            type="button"
+            className={`cip-nav-btn ${activeTab === 'transfer' ? 'is-active' : ''}`}
+            onClick={() => {
+              setDone(false);
+              setActiveTab('transfer');
+            }}
+          >
+            <Banknote size={15} />
+            <span>Transfer</span>
+          </button>
+          <button
+            type="button"
+            className={`cip-nav-btn ${activeTab === 'history' ? 'is-active' : ''}`}
+            onClick={() => {
+              setDone(false);
+              setActiveTab('history');
+              fetchHistory();
+            }}
+          >
+            <Clock size={15} />
+            <span>History</span>
+            {historyList.length > 0 && (
+              <span className="cip-nav-badge">{historyList.length}</span>
+            )}
+          </button>
+        </div>
+
         <div className="deposit-modal__body">
           {done ? (
-            <div className="cash-in-person-modal__success-box">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-3">
+            <div className="cash-in-person-modal__success-box space-y-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-2">
                 <FileCheck size={26} />
               </div>
               <p className="deposit-modal__success font-bold text-base">Request Submitted Successfully</p>
               <p className="cash-in-person-modal__success-sub">
                 {isWithdraw
-                  ? 'Your withdraw request and bank details have been saved. Admin will process the payout to your bank account.'
+                  ? 'Your withdraw request has been sent and amount was instantly deducted from your Main Wallet. Admin will verify bank details and transfer cash/INR.'
                   : 'Your deposit proof and UTR have been sent to admin for approval. Funds will be credited to your wallet shortly.'}
               </p>
+              <div className="flex items-center justify-center gap-3 pt-3">
+                <button
+                  type="button"
+                  className="deposit-modal__footer-cancel"
+                  onClick={() => {
+                    setDone(false);
+                    setActiveTab('history');
+                    fetchHistory();
+                  }}
+                >
+                  View in History
+                </button>
+                <button
+                  type="button"
+                  className="deposit-modal__submit"
+                  onClick={onClose}
+                  style={{ maxWidth: 140 }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : activeTab === 'history' ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <History size={16} className="text-amber-400" />
+                  <span className="text-xs font-bold text-slate-200">
+                    Requests History ({historyList.length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1.5 p-1 bg-transparent border-0 cursor-pointer"
+                  onClick={fetchHistory}
+                  disabled={historyLoading}
+                  title="Refresh requests"
+                >
+                  <RefreshCw size={13} className={historyLoading ? 'animate-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {historyLoading && !historyList.length ? (
+                <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <Loader2 size={24} className="animate-spin text-amber-400" />
+                  <p className="text-xs">Loading cash in person history…</p>
+                </div>
+              ) : !historyList.length ? (
+                <div className="py-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-slate-800/80 text-slate-500 flex items-center justify-center mx-auto">
+                    <Banknote size={24} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-300">No requests found</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      You haven't submitted any Cash in Person deposit or withdraw requests yet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="deposit-modal__submit mt-2"
+                    onClick={() => setActiveTab('transfer')}
+                    style={{ maxWidth: 180, margin: '0 auto' }}
+                  >
+                    Submit a Request
+                  </button>
+                </div>
+              ) : (
+                <div className="cip-history-container">
+                  {historyList.map((item) => {
+                    const isW = item.type === 'withdraw';
+                    const itemAmt = Number(item.requestedAmount || item.creditedAmount || 0);
+                    const itemRate = Number(
+                      isW
+                        ? platformInfo?.cashInPerson?.withdrawRate
+                        : platformInfo?.cashInPerson?.depositRate
+                    );
+                    const itemInr = itemAmt > 0 && itemRate > 0 ? itemAmt * itemRate : 0;
+                    const isPending = item.status === 'pending';
+
+                    return (
+                      <div key={item.id} className="cip-history-card">
+                        <div className="cip-history-header">
+                          <span
+                            className={`cip-history-type ${
+                              isW ? 'cip-history-type--withdraw' : 'cip-history-type--deposit'
+                            }`}
+                          >
+                            {isW ? (
+                              <>
+                                <ArrowUpRight size={14} />
+                                <span>Withdraw</span>
+                              </>
+                            ) : (
+                              <>
+                                <ArrowDownLeft size={14} />
+                                <span>Deposit</span>
+                              </>
+                            )}
+                          </span>
+                          <StatusBadge status={item.status} />
+                        </div>
+
+                        <div className="flex items-baseline justify-between">
+                          <div>
+                            <span className="text-lg font-bold text-white tabular-nums">
+                              {itemAmt > 0 ? `${itemAmt.toLocaleString()} USDT` : '—'}
+                            </span>
+                            {itemInr > 0 && (
+                              <span className="text-xs text-amber-300 ml-2">
+                                ≈ {fmtINR(itemInr)}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-400">
+                            {item.submittedAt || item.createdAt
+                              ? new Date(item.submittedAt || item.createdAt).toLocaleDateString(undefined, {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—'}
+                          </span>
+                        </div>
+
+                        <div className="cip-history-meta">
+                          <div className="cip-history-meta-item">
+                            <span>Location</span>
+                            <strong>{item.city || '—'}</strong>
+                          </div>
+                          <div className="cip-history-meta-item">
+                            <span>Contact</span>
+                            <strong>{item.mobile || '—'}</strong>
+                          </div>
+                          {isW ? (
+                            <>
+                              <div className="cip-history-meta-item">
+                                <span>Bank</span>
+                                <strong>{item.bankName || '—'}</strong>
+                              </div>
+                              <div className="cip-history-meta-item">
+                                <span>A/C No</span>
+                                <strong className="font-mono">{item.accountNumber || '—'}</strong>
+                              </div>
+                              <div className="cip-history-meta-item">
+                                <span>IFSC</span>
+                                <strong className="font-mono uppercase">{item.ifsc || '—'}</strong>
+                              </div>
+                              <div className="cip-history-meta-item">
+                                <span>A/C Holder</span>
+                                <strong>{item.accountHolder || '—'}</strong>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="cip-history-meta-item">
+                                <span>UTR / Ref</span>
+                                <strong className="font-mono">{item.utrNumber || '—'}</strong>
+                              </div>
+                              {item.paymentProof && (
+                                <div className="cip-history-meta-item">
+                                  <span>Receipt</span>
+                                  <a
+                                    href={resolveAssetUrl(item.paymentProof)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-amber-400 hover:underline flex items-center gap-1 font-semibold"
+                                  >
+                                    View Receipt
+                                  </a>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {item.adminNote && (
+                          <div className="p-2 rounded bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200">
+                            <strong>Admin note:</strong> {item.adminNote}
+                          </div>
+                        )}
+
+                        {isPending && isW && (
+                          <div className="cip-history-footer">
+                            <span className="text-[11px] text-amber-400/90 flex items-center gap-1">
+                              ⚡ Deducted from Main Wallet
+                            </span>
+                            <button
+                              type="button"
+                              className="cip-cancel-btn"
+                              disabled={cancellingId === item.id}
+                              onClick={() => handleCancelRequest(item)}
+                            >
+                              {cancellingId === item.id ? (
+                                <>
+                                  <Loader2 size={12} className="animate-spin" /> Cancelling…
+                                </>
+                              ) : (
+                                'Cancel Request'
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : (
             <form className="deposit-modal__form space-y-4" onSubmit={submit}>
@@ -540,6 +852,17 @@ export default function CashInPersonModal({ user, userMobile, platformInfo, onCl
                     <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
                       <ShieldCheck size={11} /> Auto Saved
                     </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-200">
+                    <AlertCircle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-amber-300">Instant Main Wallet Debit</p>
+                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                        The withdraw amount will be <strong>instantly cut from your Main Wallet</strong> when you submit.
+                        Admin will verify your bank details and execute the cash/bank payout.
+                      </p>
+                    </div>
                   </div>
 
                   <p className="text-[11px] text-slate-400">

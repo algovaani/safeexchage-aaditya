@@ -19,5 +19,6 @@ r.post(
   cashInPerson.submitRequest
 );
 r.get('/history', authMiddleware, cashInPerson.myRequests);
+r.post('/:id/cancel', authMiddleware, cashInPerson.cancelRequest);
 
 export default r;

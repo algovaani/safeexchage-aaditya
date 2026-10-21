@@ -138,7 +138,12 @@ export async function verifyRequest(req, res, next) {
     }
 
     if (action === 'reject') {
-      const updated = await rejectCashInPersonRequest(request, req.userId, note || '');
+      const updated = await rejectCashInPersonRequest(
+        request,
+        req.userId,
+        note || '',
+        req.app.get('io')
+      );
       void resolveNotificationsForRef(req.app.get('io'), 'cash_in_person', updated._id);
       await updated.populate('userId', 'email mobile name');
       return success(res, enrichRow(updated.toObject()), 'Request rejected');

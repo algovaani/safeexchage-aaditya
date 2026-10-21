@@ -267,6 +267,7 @@ export const cashInPersonAPI = {
     );
   },
   getHistory: () => unwrap(api.get('/cash-in-person/history')),
+  cancel: (id) => unwrap(api.post(`/cash-in-person/${id}/cancel`)),
 };
 
 export const depositAPI = {

@@ -13,6 +13,7 @@ export {
   dashboardAPI,
   walletAPI,
   marketingAPI,
+  cashInPersonAPI,
   adminMarketingAPI,
   adminSettingsAPI,
 } from '../services/api.js';

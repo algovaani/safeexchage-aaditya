@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, authAPI, depositAPI, parseApiResponse, withdrawalAPI } from '../api/client.js';
+import { api, authAPI, cashInPersonAPI, depositAPI, parseApiResponse, withdrawalAPI } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useRealtime } from '../context/RealtimeContext.jsx';
 import DepositModal from '../components/DepositModal.jsx';
@@ -14,6 +14,7 @@ import { usePlatformConfig } from '../context/PlatformConfigContext.jsx';
 import { useTradingPairs } from '../context/TradingPairsContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useDialog } from '../context/DialogContext.jsx';
+import { notifyWalletUpdated } from '../utils/walletEvents.js';
 
 function fmtQty(value) {
   const n = Number(value);
@@ -60,6 +61,9 @@ export default function Account() {
   const [depositCoin, setDepositCoin] = useState(null);
   const [withdrawCoin, setWithdrawCoin] = useState(null);
   const [cashInPersonOpen, setCashInPersonOpen] = useState(false);
+  const [cashInPersonInitialTab, setCashInPersonInitialTab] = useState('transfer');
+  const [cashInPersonList, setCashInPersonList] = useState([]);
+  const [cipCancelBusyId, setCipCancelBusyId] = useState(null);
   const [platformInfo, setPlatformInfo] = useState(null);
   const [walletForm, setWalletForm] = useState({
     bnbWalletAddress: '',
@@ -128,11 +132,50 @@ export default function Account() {
     }
   }, []);
 
+  const refreshCashInPerson = useCallback(async () => {
+    try {
+      const rows = await cashInPersonAPI.getHistory();
+      setCashInPersonList(Array.isArray(rows) ? rows : []);
+    } catch {
+      setCashInPersonList([]);
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     // Balance and prices must not share one Promise.all — slow/hung prices
     // previously blocked Total Balance from ever rendering.
-    await Promise.all([refreshBalance(), refreshPrices(), refreshWithdrawals()]);
-  }, [refreshBalance, refreshPrices, refreshWithdrawals]);
+    await Promise.all([
+      refreshBalance(),
+      refreshPrices(),
+      refreshWithdrawals(),
+      refreshCashInPerson(),
+    ]);
+  }, [refreshBalance, refreshPrices, refreshWithdrawals, refreshCashInPerson]);
+
+  async function cancelCashInPersonRequest(row) {
+    const ok = await dialog.confirm({
+      title: 'Cancel Withdraw Request?',
+      message: `Cancel withdrawal of ${row.requestedAmount || row.creditedAmount} USDT? Funds will be restored to your Main Wallet immediately.`,
+      confirmLabel: 'Cancel Request',
+      cancelLabel: 'Keep Pending',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    setCipCancelBusyId(row.id);
+    try {
+      const res = await cashInPersonAPI.cancel(row.id);
+      toast.success('Withdraw request cancelled — funds restored to your main wallet');
+      if (res?.wallet) {
+        notifyWalletUpdated(res.wallet);
+      }
+      await refresh();
+    } catch (ex) {
+      toast.error(ex.message || 'Failed to cancel request');
+    } finally {
+      setCipCancelBusyId(null);
+    }
+  }
 
   async function cancelPendingWithdrawal(row) {
     const ok = await dialog.confirm({
@@ -383,7 +426,14 @@ export default function Account() {
           <button type="button" className="btn-outline-accent" onClick={() => onWithdraw('USDT')}>
             Withdraw
           </button>
-          <button type="button" className="btn-cash-in-person" onClick={() => setCashInPersonOpen(true)}>
+          <button
+            type="button"
+            className="btn-cash-in-person"
+            onClick={() => {
+              setCashInPersonInitialTab('transfer');
+              setCashInPersonOpen(true);
+            }}
+          >
             Cash in Person
           </button>
         </div>
@@ -446,6 +496,135 @@ export default function Account() {
           </div>
         </div>
       )}
+
+      {/* Cash in Person (INR) Section */}
+      <div className="ui-card p-0 overflow-hidden">
+        <div className="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <h2 className="text-sm font-medium text-text-primary">
+                Cash in Person (INR) Requests
+              </h2>
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Direct Bank &amp; Cash transfers history (Deposits and Withdrawals)
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-xs px-3 py-1.5"
+              onClick={() => {
+                setCashInPersonInitialTab('history');
+                setCashInPersonOpen(true);
+              }}
+            >
+              View all ({cashInPersonList.length})
+            </button>
+            <button
+              type="button"
+              className="btn-primary text-xs px-3 py-1.5"
+              onClick={() => {
+                setCashInPersonInitialTab('transfer');
+                setCashInPersonOpen(true);
+              }}
+            >
+              New Transfer
+            </button>
+          </div>
+        </div>
+
+        {cashInPersonList.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Amount</th>
+                  <th>Estimated INR</th>
+                  <th>Details</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cashInPersonList.slice(0, 5).map((row) => {
+                  const isW = row.type === 'withdraw';
+                  const amt = Number(row.requestedAmount || row.creditedAmount || 0);
+                  const rate = Number(
+                    isW
+                      ? platformInfo?.cashInPerson?.withdrawRate
+                      : platformInfo?.cashInPerson?.depositRate
+                  );
+                  const inr = amt > 0 && rate > 0 ? amt * rate : 0;
+                  return (
+                    <tr key={row.id}>
+                      <td>
+                        <span
+                          className={`inline-flex items-center gap-1 font-semibold text-xs uppercase ${
+                            isW ? 'text-amber-400' : 'text-emerald-400'
+                          }`}
+                        >
+                          {isW ? 'Withdraw' : 'Deposit'}
+                        </span>
+                      </td>
+                      <td className="tabular-nums font-medium text-text-primary">
+                        {amt > 0 ? `${amt.toLocaleString()} USDT` : '—'}
+                      </td>
+                      <td className="tabular-nums text-text-secondary">
+                        {inr > 0 ? fmtINR(inr) : '—'}
+                      </td>
+                      <td className="text-xs text-text-secondary max-w-[220px] truncate">
+                        {isW
+                          ? `${row.bankName || 'Bank'} · ${row.accountNumber || row.city}`
+                          : `${row.city} · ${row.utrNumber ? `UTR: ${row.utrNumber}` : 'Cash'}`}
+                      </td>
+                      <td>
+                        <StatusBadge status={row.status} />
+                      </td>
+                      <td className="text-xs text-text-secondary tabular-nums">
+                        {row.submittedAt || row.createdAt
+                          ? new Date(row.submittedAt || row.createdAt).toLocaleString()
+                          : '—'}
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          {row.status === 'pending' && isW ? (
+                            <button
+                              type="button"
+                              className="text-xs text-loss hover:underline bg-transparent border-0 cursor-pointer p-0 disabled:opacity-50"
+                              disabled={cipCancelBusyId === row.id}
+                              onClick={() => cancelCashInPersonRequest(row)}
+                            >
+                              {cipCancelBusyId === row.id ? 'Cancelling…' : 'Cancel'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="text-xs text-accent hover:underline bg-transparent border-0 cursor-pointer p-0"
+                            onClick={() => {
+                              setCashInPersonInitialTab('history');
+                              setCashInPersonOpen(true);
+                            }}
+                          >
+                            Details
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-5 py-8 text-center text-xs text-text-secondary">
+            No Cash in Person requests yet. Click “New Transfer” to make a deposit or withdrawal.
+          </div>
+        )}
+      </div>
 
       <div className="ui-card p-0 overflow-hidden">
         <div className="p-5 border-b border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -635,6 +814,7 @@ export default function Account() {
           user={user}
           userMobile={user?.mobile || ''}
           platformInfo={platformInfo}
+          initialTab={cashInPersonInitialTab}
           onClose={() => setCashInPersonOpen(false)}
           onSuccess={refresh}
         />

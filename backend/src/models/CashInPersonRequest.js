@@ -16,6 +16,9 @@ const cashInPersonRequestSchema = new mongoose.Schema(
     /** Funds locked on wallet when withdraw request is submitted. */
     fundsLocked: { type: Boolean, default: false },
     fundsLockedAmount: { type: Number, default: 0, min: 0 },
+    /** Instant debit from main wallet on submit. */
+    debitedFromMain: { type: Boolean, default: false },
+    debitedAmount: { type: Number, default: 0, min: 0 },
     /** Amount settled on wallet when admin approves. */
     creditedAmount: { type: Number, default: null, min: 0 },
     currency: { type: String, default: 'USDT' },
@@ -29,7 +32,7 @@ const cashInPersonRequestSchema = new mongoose.Schema(
     accountHolder: { type: String, default: '', trim: true },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'cancelled'],
       default: 'pending',
       index: true,
     },
