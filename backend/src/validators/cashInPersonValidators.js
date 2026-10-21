@@ -21,6 +21,15 @@ export const submitCashInPersonValidators = [
     if (n > MAX) throw new Error(`Maximum withdrawal is ${MAX} USDT`);
     return true;
   }),
+  body('utrNumber').optional({ values: 'falsy' }).trim().isLength({ max: 120 }),
+  body('utr_number').optional({ values: 'falsy' }).trim().isLength({ max: 120 }),
+  body('bankName').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('bank_name').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('accountNumber').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
+  body('account_number').optional({ values: 'falsy' }).trim().isLength({ max: 64 }),
+  body('ifsc').optional({ values: 'falsy' }).trim().isLength({ max: 32 }),
+  body('accountHolder').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('account_holder').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
 ];
 
 export const adminCashInPersonListValidators = [

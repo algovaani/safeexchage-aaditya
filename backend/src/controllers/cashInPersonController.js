@@ -1,3 +1,4 @@
+import { User } from '../models/User.js';
 import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { notifyCashInPersonRequest } from '../services/adminNotificationService.js';
 import { assertUserMayWithdraw } from '../services/withdrawEligibilityService.js';
@@ -9,8 +10,30 @@ import { error, success } from '../utils/response.js';
 
 export async function submitRequest(req, res, next) {
   try {
-    const { mobile, city, amount, type } = req.body;
+    const {
+      mobile,
+      city,
+      amount,
+      type,
+      utrNumber,
+      utr_number,
+      bankName,
+      bank_name,
+      accountNumber,
+      account_number,
+      ifsc,
+      accountHolder,
+      account_holder,
+    } = req.body;
     const requestType = type === 'withdraw' ? 'withdraw' : 'deposit';
+
+    const finalUtr = String(utrNumber || utr_number || '').trim();
+    const finalProof = req.proofPath || String(req.body.paymentProof || req.body.payment_proof || '').trim();
+    const finalBankName = String(bankName || bank_name || '').trim();
+    const finalAccountNumber = String(accountNumber || account_number || '').trim();
+    const finalIfsc = String(ifsc || '').trim().toUpperCase();
+    const finalAccountHolder = String(accountHolder || account_holder || '').trim();
+
     const existing = await CashInPersonRequest.findOne({
       userId: req.userId,
       status: 'pending',
@@ -51,12 +74,30 @@ export async function submitRequest(req, res, next) {
         requestedAmount,
         fundsLocked,
         fundsLockedAmount,
+        utrNumber: finalUtr,
+        paymentProof: finalProof,
+        bankName: finalBankName,
+        accountNumber: finalAccountNumber,
+        ifsc: finalIfsc,
+        accountHolder: finalAccountHolder,
       });
     } catch (createErr) {
       if (fundsLocked) {
         await releaseWithdrawalFunds(req.userId, fundsLockedAmount).catch(() => {});
       }
       throw createErr;
+    }
+
+    // If withdraw request includes bank details, save them in the User document so they are remembered
+    if (requestType === 'withdraw' && (finalBankName || finalAccountNumber || finalIfsc || finalAccountHolder)) {
+      await User.findByIdAndUpdate(req.userId, {
+        $set: {
+          ...(finalBankName && { bankName: finalBankName }),
+          ...(finalAccountNumber && { accountNumber: finalAccountNumber }),
+          ...(finalIfsc && { ifsc: finalIfsc }),
+          ...(finalAccountHolder && { accountHolder: finalAccountHolder }),
+        },
+      }).catch(() => {});
     }
 
     if (fundsLocked) {

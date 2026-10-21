@@ -632,6 +632,7 @@ export default function Account() {
 
       {cashInPersonOpen && (
         <CashInPersonModal
+          user={user}
           userMobile={user?.mobile || ''}
           platformInfo={platformInfo}
           onClose={() => setCashInPersonOpen(false)}

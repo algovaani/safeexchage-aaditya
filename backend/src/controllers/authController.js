@@ -46,6 +46,10 @@ function publicUser(user) {
     ethWalletAddress: user.ethWalletAddress || '',
     trcWalletAddress: user.trcWalletAddress || '',
     usdtWalletAddress: user.usdtWalletAddress || '',
+    bankName: user.bankName || '',
+    accountNumber: user.accountNumber || '',
+    ifsc: user.ifsc || '',
+    accountHolder: user.accountHolder || '',
     createdAt: user.createdAt,
   };
 }

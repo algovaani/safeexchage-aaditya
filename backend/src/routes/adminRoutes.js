@@ -56,6 +56,7 @@ import {
 } from '../validators/userWalletValidators.js';
 import { marketingBannerImageUploadSingle } from '../middleware/marketingBannerUpload.js';
 import { marketingNoticeImageUploadSingle } from '../middleware/marketingNoticeUpload.js';
+import { settingsQrUploadSingle } from '../middleware/settingsQrUpload.js';
 import {
   adminUserIdParamValidators,
   adminUserDepositsValidators,
@@ -176,6 +177,8 @@ r.post(
 );
 r.get('/settings', settingsAdmin.getSettings);
 r.put('/settings', platformSettingsValidators, validateRequest, settingsAdmin.updateSettings);
+r.post('/settings/upload-qr', settingsQrUploadSingle, settingsAdmin.uploadBankQr);
+r.delete('/settings/qr', settingsAdmin.removeBankQr);
 r.get(
   '/treasury-withdrawals',
   treasuryListValidators,

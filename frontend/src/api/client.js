@@ -14,4 +14,5 @@ export {
   walletAPI,
   marketingAPI,
   adminMarketingAPI,
+  adminSettingsAPI,
 } from '../services/api.js';

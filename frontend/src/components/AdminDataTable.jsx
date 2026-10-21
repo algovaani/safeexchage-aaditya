@@ -35,6 +35,7 @@ export default function AdminDataTable({
   title,
   endpoint,
   columns,
+  data: clientData,
   filters = [],
   exportFilename = 'export.csv',
   refreshKey = 0,
@@ -54,13 +55,15 @@ export default function AdminDataTable({
   const [filterValues, setFilterValues] = useState({});
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDir, setSortDir] = useState('desc');
-  const [rows, setRows] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [serverRows, setServerRows] = useState([]);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [internalSelected, setInternalSelected] = useState([]);
+
+  const isClientSide = Array.isArray(clientData);
 
   const selectedIds = controlledSelectedIds ?? internalSelected;
   const setSelectedIds = onSelectionChange ?? setInternalSelected;
@@ -82,30 +85,44 @@ export default function AdminDataTable({
   }, [page, pageSize, debouncedSearch, filterValues, sortBy, sortDir]);
 
   const fetchRows = useCallback(async () => {
+    if (isClientSide || !endpoint) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       const { data } = await api.get(endpoint, { params: queryParams });
       const payload = parsePaginatedResponse(data);
-      setRows(payload.rows);
-      setTotal(payload.total);
-      setTotalPages(payload.totalPages);
+      setServerRows(payload.rows);
+      setServerTotal(payload.total);
+      setServerTotalPages(payload.totalPages);
       onRowsChange?.(payload.rows);
     } catch (err) {
       const message = err.message || 'Failed to load data';
       setError(message);
       toast.error(message);
-      setRows([]);
-      setTotal(0);
-      setTotalPages(1);
+      setServerRows([]);
+      setServerTotal(0);
+      setServerTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, [endpoint, queryParams]);
+  }, [endpoint, queryParams, isClientSide]);
 
   useEffect(() => {
     fetchRows();
   }, [fetchRows, refreshKey]);
+
+  // Client side slice calculation
+  const rows = useMemo(() => {
+    if (!isClientSide) return serverRows;
+    const startIdx = (page - 1) * pageSize;
+    return clientData.slice(startIdx, startIdx + pageSize);
+  }, [isClientSide, clientData, serverRows, page, pageSize]);
+
+  const total = isClientSide ? clientData.length : serverTotal;
+  const totalPages = isClientSide ? Math.ceil(clientData.length / pageSize) || 1 : serverTotalPages;
 
   useEffect(() => {
     setPage(1);
@@ -144,6 +161,7 @@ export default function AdminDataTable({
   }
 
   async function handleExport() {
+    if (!endpoint) return;
     setExporting(true);
     try {
       const exportParams = { ...queryParams, export: 'csv' };

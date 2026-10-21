@@ -9,8 +9,12 @@ import WalletManagementSection from './admin/WalletManagementSection.jsx';
 import FuturesAdminSection from './admin/FuturesAdminSection.jsx';
 import AdminPricesSection from './admin/AdminPricesSection.jsx';
 import AdminLogsSection from './admin/AdminLogsSection.jsx';
+import AdvanceDashboardSection from './admin/AdvanceDashboardSection.jsx';
 import DepositApproveModal from '../components/admin/DepositApproveModal.jsx';
 import MarketingAdminSection from './admin/MarketingAdminSection.jsx';
+import AdminSettingsSection from './admin/AdminSettingsSection.jsx';
+import CashInPersonDetailModal from '../components/admin/CashInPersonDetailModal.jsx';
+import { resolveAssetUrl } from '../utils/assetUrl.js';
 import { formatMarketTime } from '../utils/timeFormat.js';
 import { formatLoginId } from '../utils/format.js';
 import { useDialog } from '../context/DialogContext.jsx';
@@ -90,6 +94,7 @@ function CopyAddressCell({ value }) {
 
 const SECTION_TITLES = {
   overview: 'Overview',
+  advanceDashboard: 'Advance Dashboard',
   users: 'Users',
   kyc: 'KYC Review',
   deposits: 'Deposits',
@@ -729,6 +734,8 @@ export default function Admin() {
   const [depositActionId, setDepositActionId] = useState(null);
   const [depositBulkBusy, setDepositBulkBusy] = useState(false);
   const [depositApproveRow, setDepositApproveRow] = useState(null);
+  const [cashInPersonDetailRow, setCashInPersonDetailRow] = useState(null);
+  const [cashInPersonActionBusy, setCashInPersonActionBusy] = useState(false);
   const depositActionLockRef = useRef(false);
   const [settingsForm, setSettingsForm] = useState({
     bnbWalletAddress: '',
@@ -1208,6 +1215,36 @@ export default function Admin() {
     }
     bumpTables();
     await refresh();
+  }
+
+  async function handleModalApproveCashInPerson(row, amount) {
+    const id = row.id || row._id;
+    setCashInPersonActionBusy(true);
+    try {
+      await api.patch(`/admin/cash-in-person/${id}/verify`, { action: 'approve', amount });
+      setCashInPersonDetailRow(null);
+      bumpTables();
+      await refresh();
+    } catch {
+      /* handled */
+    } finally {
+      setCashInPersonActionBusy(false);
+    }
+  }
+
+  async function handleModalRejectCashInPerson(row, note) {
+    const id = row.id || row._id;
+    setCashInPersonActionBusy(true);
+    try {
+      await api.patch(`/admin/cash-in-person/${id}/verify`, { action: 'reject', note });
+      setCashInPersonDetailRow(null);
+      bumpTables();
+      await refresh();
+    } catch {
+      /* handled */
+    } finally {
+      setCashInPersonActionBusy(false);
+    }
   }
 
   function closeTreasuryDrawer() {
@@ -1737,6 +1774,59 @@ export default function Admin() {
           row.creditedAmount != null ? `${Number(row.creditedAmount).toFixed(2)} USDT` : '—',
       },
       {
+        key: 'paymentDetails',
+        label: 'UTR / Bank Details',
+        render: (row) => {
+          if (row.type === 'deposit') {
+            return row.utrNumber ? (
+              <div className="flex items-center gap-1">
+                <span className="font-mono text-xs font-bold text-accent select-all">
+                  {row.utrNumber}
+                </span>
+              </div>
+            ) : (
+              <span className="text-text-muted text-xs">—</span>
+            );
+          }
+          // Withdraw: user bank account
+          return row.accountNumber ? (
+            <div className="text-xs leading-snug">
+              <span className="font-semibold text-text-primary block">{row.bankName || 'Bank'}</span>
+              <span className="font-mono text-[11px] text-text-muted block">A/C: {row.accountNumber}</span>
+              <span className="font-mono text-[11px] text-accent block">IFSC: {row.ifsc || '—'}</span>
+            </div>
+          ) : (
+            <span className="text-text-muted text-xs">—</span>
+          );
+        },
+      },
+      {
+        key: 'paymentProof',
+        label: 'Screenshot / Proof',
+        render: (row) => {
+          if (!row.paymentProof) return <span className="text-text-muted text-xs">—</span>;
+          const url = resolveAssetUrl(row.paymentProof);
+          return (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 p-1 rounded hover:bg-white/10 transition text-xs text-accent font-semibold"
+              onClick={() => setCashInPersonDetailRow(row)}
+              title="Click to view receipt"
+            >
+              <img
+                src={url}
+                alt="Receipt"
+                className="w-7 h-7 object-cover rounded border border-border"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <span className="underline">View</span>
+            </button>
+          );
+        },
+      },
+      {
         key: 'date',
         label: 'Submitted',
         render: (row) => formatAdminDate(row.createdAt || row.submittedAt),
@@ -1745,19 +1835,36 @@ export default function Admin() {
       {
         key: 'actions',
         label: 'Action',
-        render: (row) =>
-          row.status === 'pending' ? (
-            <div className="admin-actions">
-              <button type="button" className="admin-btn admin-btn--primary admin-btn--sm" onClick={() => verifyCashInPerson(row, 'approve')}>
-                Approve
-              </button>
-              <button type="button" className="admin-btn admin-btn--danger admin-btn--sm" onClick={() => verifyCashInPerson(row, 'reject')}>
-                Reject
-              </button>
-            </div>
-          ) : (
-            <span className="text-xs text-text-muted">{row.reviewedAt ? new Date(row.reviewedAt).toLocaleDateString() : '—'}</span>
-          ),
+        render: (row) => (
+          <div className="admin-actions">
+            <button
+              type="button"
+              className="admin-btn admin-btn--ghost admin-btn--sm"
+              onClick={() => setCashInPersonDetailRow(row)}
+              title="View full request details, UTR & Bank info"
+            >
+              Details
+            </button>
+            {row.status === 'pending' && (
+              <>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--primary admin-btn--sm"
+                  onClick={() => verifyCashInPerson(row, 'approve')}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn--danger admin-btn--sm"
+                  onClick={() => verifyCashInPerson(row, 'reject')}
+                >
+                  Reject
+                </button>
+              </>
+            )}
+          </div>
+        ),
       },
     ],
     []
@@ -1792,6 +1899,24 @@ export default function Admin() {
 
       {activeTab === 'overview' && (
         <div className="admin-overview">
+          <div
+            className="admin-advance-banner cursor-pointer hover:border-primary flex flex-wrap items-center justify-between p-4 mb-4 bg-gradient-to-r from-indigo-900/50 via-purple-900/40 to-slate-900 border border-indigo-500/30 rounded-xl shadow-lg text-white"
+            onClick={() => navigate('/admin/panel?section=advanceDashboard')}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🚀</span>
+              <div>
+                <h3 className="text-base font-bold text-white mb-0.5">Advance System Analytics & PnL</h3>
+                <p className="text-xs text-gray-300">
+                  Track full system Profit/Loss, Trades breakdown (who traded, asset symbol, leverage), and Fund Add/Withdraw history by Today, Weekly, Monthly, or Custom Date.
+                </p>
+              </div>
+            </div>
+            <button type="button" className="admin-btn admin-btn--primary text-xs font-semibold px-3 py-1.5 mt-2 sm:mt-0">
+              Open Advance Dashboard →
+            </button>
+          </div>
+
           <div className="admin-stats">
             <div className="admin-stat">
               <p className="admin-stat__label">Users</p>
@@ -2008,165 +2133,7 @@ export default function Admin() {
 
       {activeTab === 'wallets' && <WalletManagementSection />}
 
-      {activeTab === 'settings' && (
-        <div className="admin-card">
-          <h2>Platform wallet settings</h2>
-          <p style={{ color: 'var(--adm-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
-            Users send crypto to the deposit address, then admin credits the wallet manually
-            (Add fund). On-chain auto-detect (Moralis / Tatum) is disabled.
-          </p>
-          <form className="admin-form-grid" onSubmit={saveSettings}>
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <label>USDT price in INR (1 USDT = ? INR)</label>
-              <input
-                type="number"
-                min="1"
-                max="500"
-                step="0.01"
-                value={settingsForm.usdtInrRate}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, usdtInrRate: e.target.value }))}
-                placeholder="e.g. 83.5"
-                required
-              />
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
-                Wallet balances, dashboard, markets, and trade page show INR using this rate.
-              </p>
-            </div>
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <label>Referral reward (USDT per signup)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={settingsForm.referralRewardUsdt}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, referralRewardUsdt: e.target.value }))}
-                placeholder="e.g. 10 — credited to referrer when someone uses their code"
-              />
-              <p style={{ margin: '0.35rem 0 0', fontSize: '0.75rem', color: 'var(--adm-muted)' }}>
-                When a new user registers with a referral code, this amount is added to the referrer&apos;s wallet and a transaction is created. Set 0 to disable.
-              </p>
-            </div>
-            <div className="admin-field">
-              <label>Cash in person deposit rate (INR per 1 USDT)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={settingsForm.cashInPersonDepositRate}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, cashInPersonDepositRate: e.target.value }))}
-                placeholder="e.g. 100"
-              />
-            </div>
-            <div className="admin-field">
-              <label>Cash in person withdraw rate (INR per 1 USDT)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={settingsForm.cashInPersonWithdrawRate}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, cashInPersonWithdrawRate: e.target.value }))}
-                placeholder="e.g. 98"
-              />
-            </div>
-            <div className="admin-field">
-              <label>
-                BNB wallet address (BEP20){' '}
-                {settingsForm.bnbWalletAddress?.trim().startsWith('0x') && (
-                  <span className="admin-settings-badge">Configured</span>
-                )}
-              </label>
-              <input value={settingsForm.bnbWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, bnbWalletAddress: e.target.value }))} placeholder="0x…" />
-            </div>
-            <div className="admin-field">
-              <label>
-                ETH wallet address (ERC20){' '}
-                {settingsForm.ethWalletAddress?.trim().startsWith('0x') && (
-                  <span className="admin-settings-badge">Configured</span>
-                )}
-              </label>
-              <input value={settingsForm.ethWalletAddress} onChange={(e) => setSettingsForm((f) => ({ ...f, ethWalletAddress: e.target.value }))} placeholder="0x…" />
-            </div>
-            <div className="admin-field">
-              <label>
-                TRC wallet address (TRON){' '}
-                {settingsForm.trcWalletAddress?.trim().startsWith('T') && (
-                  <span className="admin-settings-badge">Configured</span>
-                )}
-              </label>
-              <input
-                value={settingsForm.trcWalletAddress}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, trcWalletAddress: e.target.value }))}
-                placeholder="T… (TRON address — not 0x)"
-              />
-            </div>
-            <div className="admin-field">
-              <label>
-                BNB private key {settingsMeta.hasBnbPrivateKey && <span className="admin-settings-badge">Configured</span>}
-              </label>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                className="admin-secret-input"
-                value={settingsForm.bnbPrivateKey}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, bnbPrivateKey: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="admin-field">
-              <label>
-                ETH private key {settingsMeta.hasEthPrivateKey && <span className="admin-settings-badge">Configured</span>}
-              </label>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                className="admin-secret-input"
-                value={settingsForm.ethPrivateKey}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, ethPrivateKey: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="admin-field">
-              <label>
-                TRC private key {settingsMeta.hasTrcPrivateKey && <span className="admin-settings-badge">Configured</span>}
-              </label>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                className="admin-secret-input"
-                value={settingsForm.trcPrivateKey}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, trcPrivateKey: e.target.value }))}
-                placeholder="Optional"
-              />
-            </div>
-            <div className="admin-field">
-              <label>
-                EVM mnemonic / derivation secret{' '}
-                {settingsMeta.hasEvmMnemonic && <span className="admin-settings-badge">Configured</span>}
-              </label>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                className="admin-secret-input"
-                value={settingsForm.evmMnemonic}
-                onChange={(e) => setSettingsForm((f) => ({ ...f, evmMnemonic: e.target.value }))}
-                placeholder="12-word BIP-39 phrase or passphrase (min 4 chars)"
-              />
-              <p className="admin-field-hint" style={{ margin: '0.35rem 0 0', fontSize: '0.8rem', color: 'var(--adm-muted)' }}>
-                Each user gets a unique BNB, ETH, and TRON deposit address derived from this secret.
-              </p>
-            </div>
-            <div className="admin-field" style={{ gridColumn: '1 / -1' }}>
-              <button type="submit" className="admin-btn admin-btn--primary" disabled={settingsBusy}>
-                {settingsBusy ? 'Saving…' : 'Save settings'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {activeTab === 'settings' && <AdminSettingsSection />}
 
       {activeTab === 'treasury' && (
         <>
@@ -2396,6 +2363,8 @@ export default function Admin() {
 
       {activeTab === 'prices' && <AdminPricesSection />}
 
+      {activeTab === 'advanceDashboard' && <AdvanceDashboardSection />}
+
       {activeTab === 'staking' && (
         <StakingAdminSection refreshKey={tableRefreshKey} onMutate={bumpTables} />
       )}
@@ -2432,6 +2401,14 @@ export default function Admin() {
         busy={Boolean(depositActionId)}
         onClose={() => !depositActionId && setDepositApproveRow(null)}
         onConfirm={confirmApproveDeposit}
+      />
+
+      <CashInPersonDetailModal
+        row={cashInPersonDetailRow}
+        busy={cashInPersonActionBusy}
+        onClose={() => setCashInPersonDetailRow(null)}
+        onApprove={handleModalApproveCashInPerson}
+        onReject={handleModalRejectCashInPerson}
       />
     </div>
   );

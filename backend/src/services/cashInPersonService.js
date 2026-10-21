@@ -22,8 +22,13 @@ export function formatCashInPersonRequest(doc, { includeUser = false } = {}) {
     fundsLocked: Boolean(doc.fundsLocked),
     fundsLockedAmount: doc.fundsLockedAmount || 0,
     submittedAt: doc.createdAt,
-    createdAt: doc.createdAt,
     reviewedAt: doc.reviewedAt || null,
+    utrNumber: doc.utrNumber || '',
+    paymentProof: doc.paymentProof || '',
+    bankName: doc.bankName || '',
+    accountNumber: doc.accountNumber || '',
+    ifsc: doc.ifsc || '',
+    accountHolder: doc.accountHolder || '',
   };
 
   if (includeUser && doc.userId && typeof doc.userId === 'object') {

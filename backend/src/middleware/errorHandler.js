@@ -16,6 +16,14 @@ export function errorHandler(err, req, res, next) {
   applyCorsHeaders(req, res);
   console.error(err);
 
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return error(res, 'Invalid request JSON payload', 400);
+  }
+
+  if (err.name === 'CastError') {
+    return error(res, 'Resource not found', 404);
+  }
+
   if (err.code === 11000) {
     return error(res, duplicateKeyMessage(err), 409);
   }

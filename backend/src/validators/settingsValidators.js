@@ -11,6 +11,8 @@ export const platformSettingsValidators = [
   body('bankIfsc').optional({ values: 'falsy' }).trim().isLength({ max: 32 }),
   body('bankBranch').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
   body('bankAccountHolder').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('bankUpiId').optional({ values: 'falsy' }).trim().isLength({ max: 128 }),
+  body('bankQrCode').optional({ values: 'falsy' }).trim().isLength({ max: 512 }),
   body('bnbPrivateKey').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 512 }),
   body('ethPrivateKey').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 512 }),
   body('trcPrivateKey').optional({ values: 'falsy' }).trim().isLength({ min: 1, max: 512 }),

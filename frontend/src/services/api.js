@@ -258,7 +258,14 @@ export const withdrawalAPI = {
 };
 
 export const cashInPersonAPI = {
-  submit: (body) => unwrap(api.post('/cash-in-person/submit', body)),
+  submit: (body) => {
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+    return unwrap(
+      api.post('/cash-in-person/submit', body, {
+        headers: isFormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+      })
+    );
+  },
   getHistory: () => unwrap(api.get('/cash-in-person/history')),
 };
 
@@ -276,6 +283,18 @@ export const depositAPI = {
       })
     ),
   getHistory: () => unwrap(api.get('/deposits/history')),
+};
+
+export const adminSettingsAPI = {
+  get: () => unwrap(api.get('/admin/settings')),
+  update: (body) => unwrap(api.put('/admin/settings', body)),
+  uploadQr: (formData) =>
+    unwrap(
+      api.post('/admin/settings/upload-qr', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ),
+  removeQr: () => unwrap(api.delete('/admin/settings/qr')),
 };
 
 export const marketAPI = {

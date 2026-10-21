@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Building2, Check, Copy, Loader2, QrCode, Smartphone } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { depositAPI } from '../services/api.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { COIN_COLORS, FIAT_DEPOSIT_SYMBOLS } from '../config/depositNetworks.js';
 import { isCryptoDepositSupported } from '../config/cryptoDepositChains.js';
 import { WALLET_ASSETS } from '../theme/assets.js';
+import { resolveAssetUrl } from '../utils/assetUrl.js';
 import CryptoDepositView from '../components/CryptoDepositView.jsx';
 import Input from '../components/ui/Input.jsx';
 import StatusBadge from '../components/ui/StatusBadge.jsx';
@@ -39,6 +41,19 @@ export default function Deposit() {
     utr_number: '',
   });
   const [proof, setProof] = useState(null);
+  const [copiedField, setCopiedField] = useState(null);
+
+  async function copyToClipboard(text, fieldName) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedField(fieldName);
+      toast.success('Copied to clipboard');
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch {
+      toast.error('Failed to copy');
+    }
+  }
 
   const cryptoCoins = useMemo(
     () => WALLET_ASSETS.map((a) => a.symbol).filter((s) => !FIAT_ONLY.has(s) && isCryptoDepositSupported(s)),
@@ -190,25 +205,186 @@ export default function Deposit() {
       )}
 
       {tab === 'fiat' && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="ui-card space-y-4">
-            <h2 className="text-sm font-medium text-text-primary">Bank transfer (INR)</h2>
-            <div className="p-3 bg-bg-tertiary rounded-xl border border-border text-sm space-y-1">
-              <p><span className="text-text-muted">Bank:</span> {bank.name || '—'}</p>
-              <p><span className="text-text-muted">Account:</span> {bank.account || '—'}</p>
-              <p><span className="text-text-muted">IFSC:</span> {bank.ifsc || '—'}</p>
-              <p><span className="text-text-muted">Branch:</span> {bank.branch || '—'}</p>
-              <p><span className="text-text-muted">Account holder:</span> {bank.holder || '—'}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+          {/* Column 1: Platform Bank & Official QR Scanner */}
+          <div className="ui-card space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+                <Building2 size={18} className="text-accent" />
+                Deposit to SafeXchange Account
+              </h2>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                Official Account
+              </span>
             </div>
+
+            {/* Official QR Scan Code */}
+            {(bank.qrCode || bank.upiId) && (
+              <div className="p-4 bg-bg-tertiary rounded-xl border border-border flex flex-col items-center text-center gap-3">
+                <div className="p-3 bg-white rounded-xl shadow-md border border-border inline-flex items-center justify-center max-w-[220px]">
+                  {bank.qrCode ? (
+                    <img
+                      src={resolveAssetUrl(bank.qrCode)}
+                      alt="Official Payment QR"
+                      className="max-h-48 max-w-[190px] object-contain rounded"
+                    />
+                  ) : (
+                    <QRCodeSVG
+                      value={`upi://pay?pa=${encodeURIComponent(bank.upiId)}&pn=${encodeURIComponent(
+                        bank.holder || 'SafeXchange'
+                      )}&cu=INR`}
+                      size={180}
+                      level="M"
+                      includeMargin
+                    />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-text-primary flex items-center justify-center gap-1.5">
+                    <Smartphone size={14} className="text-accent" /> Scan with Any UPI App
+                  </p>
+                  <p className="text-[11px] text-text-muted">
+                    Supports Google Pay, PhonePe, Paytm, BHIM &amp; Banking UPI Apps
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Account Details Box with 1-Click Copy */}
+            <div className="space-y-2.5">
+              <div className="p-3 bg-bg-tertiary rounded-xl border border-border text-xs space-y-2">
+                <div className="flex items-center justify-between py-1 border-b border-border/50">
+                  <span className="text-text-muted">Bank Name:</span>
+                  <span className="font-semibold text-text-primary">{bank.name || '—'}</span>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-border/50">
+                  <span className="text-text-muted">Account Number:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-text-primary">{bank.account || '—'}</span>
+                    {bank.account && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(bank.account, 'acc')}
+                        className="text-accent hover:underline flex items-center gap-0.5 text-[11px]"
+                      >
+                        {copiedField === 'acc' ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-border/50">
+                  <span className="text-text-muted">IFSC Code:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-text-primary">{bank.ifsc || '—'}</span>
+                    {bank.ifsc && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(bank.ifsc, 'ifsc')}
+                        className="text-accent hover:underline flex items-center gap-0.5 text-[11px]"
+                      >
+                        {copiedField === 'ifsc' ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between py-1 border-b border-border/50">
+                  <span className="text-text-muted">Account Holder:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-text-primary">{bank.holder || '—'}</span>
+                    {bank.holder && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(bank.holder, 'holder')}
+                        className="text-accent hover:underline flex items-center gap-0.5 text-[11px]"
+                      >
+                        {copiedField === 'holder' ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {bank.upiId && (
+                  <div className="flex items-center justify-between py-1 border-b border-border/50">
+                    <span className="text-text-muted">UPI ID / VPA:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-accent">{bank.upiId}</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(bank.upiId, 'upi')}
+                        className="text-accent hover:underline flex items-center gap-0.5 text-[11px]"
+                      >
+                        {copiedField === 'upi' ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {bank.branch && (
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-text-muted">Branch:</span>
+                    <span className="text-text-primary">{bank.branch}</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-[11px] text-text-muted leading-relaxed">
+                Important: After completing the transfer, note your transaction UTR / reference number and upload the payment receipt on the right to have your deposit credited.
+              </p>
+            </div>
+          </div>
+
+          {/* Column 2: User Submission Form */}
+          <div className="ui-card space-y-4">
+            <h2 className="text-base font-semibold text-text-primary">Submit Deposit Proof</h2>
             <form onSubmit={submitFiat} className="space-y-4">
-              <Input label="Amount (USDT equivalent)" type="number" step="any" min="0" value={fiatForm.amount} onChange={(e) => setFiatForm((f) => ({ ...f, amount: e.target.value }))} required />
-              <Input label="Your bank name" value={fiatForm.bank_name} onChange={(e) => setFiatForm((f) => ({ ...f, bank_name: e.target.value }))} required />
-              <Input label="Your account number" value={fiatForm.account_number} onChange={(e) => setFiatForm((f) => ({ ...f, account_number: e.target.value }))} required />
-              <Input label="Your branch" value={fiatForm.branch} onChange={(e) => setFiatForm((f) => ({ ...f, branch: e.target.value }))} />
-              <Input label="UTR / reference number" value={fiatForm.utr_number} onChange={(e) => setFiatForm((f) => ({ ...f, utr_number: e.target.value }))} required />
+              <Input
+                label="Amount (USDT equivalent)"
+                type="number"
+                step="any"
+                min="0"
+                value={fiatForm.amount}
+                onChange={(e) => setFiatForm((f) => ({ ...f, amount: e.target.value }))}
+                placeholder="e.g. 100"
+                required
+              />
+              <Input
+                label="Your sender bank name"
+                value={fiatForm.bank_name}
+                onChange={(e) => setFiatForm((f) => ({ ...f, bank_name: e.target.value }))}
+                placeholder="Bank you sent from"
+                required
+              />
+              <Input
+                label="Your sender account number / UPI"
+                value={fiatForm.account_number}
+                onChange={(e) => setFiatForm((f) => ({ ...f, account_number: e.target.value }))}
+                placeholder="Your account number or VPA"
+                required
+              />
+              <Input
+                label="Your branch (optional)"
+                value={fiatForm.branch}
+                onChange={(e) => setFiatForm((f) => ({ ...f, branch: e.target.value }))}
+                placeholder="Branch name"
+              />
+              <Input
+                label="UTR / Reference Number"
+                value={fiatForm.utr_number}
+                onChange={(e) => setFiatForm((f) => ({ ...f, utr_number: e.target.value }))}
+                placeholder="12-digit UTR or transaction ID"
+                required
+              />
               <div>
-                <label className="ui-label">Payment proof</label>
-                <input type="file" accept="image/jpeg,image/png,application/pdf" className="ui-input !py-2" onChange={(e) => setProof(e.target.files?.[0] || null)} required />
+                <label className="ui-label">Payment Proof (Screenshot / PDF)</label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,application/pdf"
+                  className="ui-input !py-2"
+                  onChange={(e) => setProof(e.target.files?.[0] || null)}
+                  required
+                />
               </div>
               <button type="submit" className="btn-primary w-full" disabled={busy}>
                 {busy ? 'Submitting…' : 'Submit for approval'}

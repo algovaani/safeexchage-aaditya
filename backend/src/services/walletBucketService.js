@@ -189,6 +189,21 @@ export function withdrawableGteExpr(amount) {
 }
 
 export function formatWalletBuckets(wallet) {
+  if (!wallet) {
+    return {
+      main_balance: 0,
+      referral_balance: 0,
+      bonus_balance: 0,
+      locked_balance: 0,
+      balance_usdt: 0,
+      balance: 0,
+      available_balance: 0,
+      tradeable_balance: 0,
+      withdrawable_balance: 0,
+      main_available: 0,
+      currency: 'USDT',
+    };
+  }
   ensureWalletBuckets(wallet);
   const main = roundMoney(wallet.mainBalance || 0);
   const referral = roundMoney(wallet.referralBalance || 0);

@@ -21,6 +21,8 @@ export async function getPlatformSettings({ includeSecrets = false } = {}) {
       bankAccountNumber: process.env.PLATFORM_BANK_ACCOUNT || '',
       bankIfsc: process.env.PLATFORM_BANK_IFSC || '',
       bankAccountHolder: process.env.PLATFORM_BANK_HOLDER || '',
+      bankUpiId: '',
+      bankQrCode: '',
       depositMode: 'manual',
     })).toObject();
   }
@@ -39,6 +41,8 @@ export function formatBankSettings(doc) {
     ifsc: doc.bankIfsc || process.env.PLATFORM_BANK_IFSC || '',
     branch: doc.bankBranch || '',
     holder: doc.bankAccountHolder || process.env.PLATFORM_BANK_HOLDER || '',
+    upiId: doc.bankUpiId || '',
+    qrCode: doc.bankQrCode || '',
   };
 }
 
@@ -72,6 +76,8 @@ export function formatAdminSettings(doc) {
     bankIfsc: doc.bankIfsc || '',
     bankBranch: doc.bankBranch || '',
     bankAccountHolder: doc.bankAccountHolder || '',
+    bankUpiId: doc.bankUpiId || '',
+    bankQrCode: doc.bankQrCode || '',
     bnbPrivateKey: doc.bnbPrivateKey || '',
     ethPrivateKey: doc.ethPrivateKey || '',
     trcPrivateKey: doc.trcPrivateKey || '',
@@ -91,6 +97,8 @@ export async function updatePlatformSettings(adminUserId, body) {
     'bankIfsc',
     'bankBranch',
     'bankAccountHolder',
+    'bankUpiId',
+    'bankQrCode',
     'bnbPrivateKey',
     'ethPrivateKey',
     'trcPrivateKey',

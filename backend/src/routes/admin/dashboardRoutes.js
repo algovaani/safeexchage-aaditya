@@ -8,5 +8,6 @@ r.use(adminMiddleware);
 
 r.get('/stats', dashboard.getStats);
 r.get('/recent', dashboard.getRecent);
+r.get('/advance', dashboard.getAdvanceDashboardStats);
 
 export default r;

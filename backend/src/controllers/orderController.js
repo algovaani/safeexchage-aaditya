@@ -1,19 +1,18 @@
+import mongoose from 'mongoose';
 import { Order } from '../models/Order.js';
 import { Trade } from '../models/Trade.js';
 import { Wallet } from '../models/Wallet.js';
 import { AssetBalance } from '../models/AssetBalance.js';
 import { error, success } from '../utils/response.js';
 import { resolveMarketPriceFast } from '../services/marketDataProvider.js';
-import { processSingleOrderForPrice, notifySpotOrderFills } from '../services/orderEngine.js';
+import { fillOrderAtPrice, notifySpotOrderFills } from '../services/orderEngine.js';
 import {
   baseAssetFromSymbol,
-  listUserAssets,
   lockAsset,
   unlockAsset,
-  reconcileSellAssetLocks,
 } from '../services/assetBalanceService.js';
 import { formatWalletSnapshot, tradeableBalance } from '../services/walletAdjustmentService.js';
-import { fetchWalletSnapshotForUser } from '../services/walletSnapshotService.js';
+import { fetchWalletSnapshotForUser, formatWalletSnapshotLight } from '../services/walletSnapshotService.js';
 import { emitWalletPush, emitOrderUpdate } from '../services/socketService.js';
 import { roundMoney, storeMoney } from '../utils/money.js';
 import { unitPriceToUsdt } from '../utils/inrTrading.js';
@@ -27,9 +26,9 @@ import {
 
 const FEE_RATE = SPOT_FEE_RATE;
 
-async function resolveBuyQuantity(userId, { symbol, orderType, quantity, price, marketPrice }) {
-  const wallet = await Wallet.findOne({ userId });
-  const available = storeMoney(tradeableBalance(wallet));
+async function resolveBuyQuantity(userId, { symbol, orderType, quantity, price, marketPrice, wallet }) {
+  const walletDoc = wallet || (await Wallet.findOne({ userId }));
+  const available = storeMoney(tradeableBalance(walletDoc));
 
   let unitPrice = price;
   if (orderType === 'market') {
@@ -53,10 +52,10 @@ async function resolveBuyQuantity(userId, { symbol, orderType, quantity, price, 
   };
 }
 
-async function resolveSellQuantity(userId, { symbol, quantity }) {
+async function resolveSellQuantity(userId, { symbol, quantity, assetRow }) {
   const baseAsset = baseAssetFromSymbol(symbol);
-  void reconcileSellAssetLocks(userId, baseAsset).catch(() => {});
-  const row = await AssetBalance.findOne({ userId, asset: baseAsset }).lean();
+  const row =
+    assetRow || (await AssetBalance.findOne({ userId, asset: baseAsset }).lean());
   const available = storeMoney((row?.balance || 0) - (row?.lockedBalance || 0));
   const requested = storeMoney(quantity);
   const clipped = storeMoney(Math.min(requested, available));
@@ -188,17 +187,25 @@ export async function createOrder(req, res, next) {
     const { symbol, side, orderType, quantity, price, stopLoss, takeProfit } = req.body;
     const sym = symbol.toUpperCase();
     const io = req.app.get('io');
+    const userId = req.userId;
 
     if (orderType === 'limit' && (price == null || price <= 0)) {
       return error(res, 'Limit orders require price', 400);
     }
 
-    let marketPrice = null;
-    if (orderType === 'market') {
-      marketPrice = await resolveMarketPriceFast(sym, { skipPulse: true });
-      if (!Number.isFinite(marketPrice) || marketPrice <= 0) {
-        return error(res, 'Market price unavailable', 503);
-      }
+    const baseAsset = side === 'sell' ? baseAssetFromSymbol(sym) : null;
+    const [marketPrice, walletDoc, assetRow] = await Promise.all([
+      orderType === 'market'
+        ? resolveMarketPriceFast(sym, { skipPulse: true })
+        : Promise.resolve(null),
+      Wallet.findOne({ userId }),
+      side === 'sell'
+        ? AssetBalance.findOne({ userId, asset: baseAsset }).lean()
+        : Promise.resolve(null),
+    ]);
+
+    if (orderType === 'market' && (!Number.isFinite(marketPrice) || marketPrice <= 0)) {
+      return error(res, 'Market price unavailable', 503);
     }
 
     const requestedQty = storeMoney(quantity);
@@ -206,12 +213,13 @@ export async function createOrder(req, res, next) {
     let quantityAdjusted = false;
 
     if (side === 'buy') {
-      const buy = await resolveBuyQuantity(req.userId, {
+      const buy = await resolveBuyQuantity(userId, {
         symbol: sym,
         orderType,
         quantity: requestedQty,
         price,
         marketPrice,
+        wallet: walletDoc,
       });
       if (!(buy.quantity > 0)) {
         return error(
@@ -223,17 +231,21 @@ export async function createOrder(req, res, next) {
       orderQty = buy.quantity;
       quantityAdjusted = buy.adjusted;
     } else {
-      const sell = await resolveSellQuantity(req.userId, { symbol: sym, quantity: requestedQty });
+      const sell = await resolveSellQuantity(userId, {
+        symbol: sym,
+        quantity: requestedQty,
+        assetRow,
+      });
       if (!(sell.quantity > 0)) {
-        return error(res, `Insufficient ${baseAssetFromSymbol(sym)} balance`, 400);
+        return error(res, `Insufficient ${baseAsset} balance`, 400);
       }
       orderQty = sell.quantity;
       quantityAdjusted = sell.adjusted;
-      await lockAsset(req.userId, baseAssetFromSymbol(sym), orderQty);
+      await lockAsset(userId, baseAsset, orderQty);
     }
 
     const order = await Order.create({
-      userId: req.userId,
+      userId,
       symbol: sym,
       side,
       orderType,
@@ -244,65 +256,69 @@ export async function createOrder(req, res, next) {
     });
 
     const created = order.toObject();
-    emitOrderUpdate(io, req.userId, formatOrder(created));
+    emitOrderUpdate(io, userId, formatOrder(created));
 
     let trades = [];
     try {
-      const fillPrice = orderType === 'market' ? marketPrice : await resolveMarketPriceFast(sym, { skipPulse: true });
+      const fillPrice =
+        orderType === 'market'
+          ? marketPrice
+          : await resolveMarketPriceFast(sym, { skipPulse: true });
       if (fillPrice > 0) {
-        trades = await processSingleOrderForPrice(order._id, sym, fillPrice);
+        trades = await fillOrderAtPrice(created, sym, fillPrice);
       }
     } catch (fillErr) {
       console.warn('order fill on create:', fillErr.message);
     }
 
-    const [updated, walletSnapshot] = await Promise.all([
+    const [finalOrder, walletAfter] = await Promise.all([
       Order.findById(order._id).lean(),
-      fetchWalletSnapshotForUser(req.userId),
+      Wallet.findOne({ userId }).lean(),
     ]);
-    const finalOrder = updated || created;
+    const resolved = finalOrder || created;
+    const walletSnapshot = formatWalletSnapshotLight(walletAfter);
 
-    if (finalOrder.status !== 'filled' && orderType === 'limit') {
-      const est =
-        orderType === 'limit' && price != null
-          ? Number(price)
-          : await resolveMarketPriceFast(sym, { skipPulse: true }).catch(() => 0);
-      void logPendingSpotTransaction(req.userId, finalOrder, est).catch(() => {});
+    if (resolved.status !== 'filled' && orderType === 'limit') {
+      const est = orderType === 'limit' && price != null ? Number(price) : marketPrice || 0;
+      void logPendingSpotTransaction(userId, resolved, est).catch(() => {});
     }
 
     if (trades.length) {
       void notifySpotOrderFills(io, sym, trades);
     }
 
-    emitOrderUpdate(io, req.userId, formatOrder(finalOrder));
+    emitOrderUpdate(io, userId, formatOrder(resolved));
     emitWalletPush(
       io,
-      req.userId,
+      userId,
       walletSnapshot,
-      finalOrder.status === 'filled' ? 'spot_order_filled' : 'spot_order_placed'
+      resolved.status === 'filled' ? 'spot_order_filled' : 'spot_order_placed'
     );
+    void fetchWalletSnapshotForUser(userId)
+      .then((full) => emitWalletPush(io, userId, full, 'spot_wallet_sync'))
+      .catch(() => {});
 
     const message =
       quantityAdjusted
         ? `Quantity adjusted from ${requestedQty} to ${orderQty} at current price. ${
-            finalOrder.status === 'filled'
-              ? `Filled at ${roundMoney(finalOrder.avgFillPrice ?? 0)}`
-              : finalOrder.status === 'rejected'
+            resolved.status === 'filled'
+              ? `Filled at ${roundMoney(resolved.avgFillPrice ?? 0)}`
+              : resolved.status === 'rejected'
                 ? 'Order rejected (insufficient balance)'
                 : 'Order placed'
           }`
-        : finalOrder.status === 'filled'
-          ? finalOrder.orderType === 'limit' && finalOrder.price != null
-            ? `Limit order filled at ${roundMoney(finalOrder.avgFillPrice ?? 0)} (limit ${roundMoney(finalOrder.price)})`
-            : `Order filled at market price (${roundMoney(finalOrder.avgFillPrice ?? 0)})`
-          : finalOrder.status === 'rejected'
+        : resolved.status === 'filled'
+          ? resolved.orderType === 'limit' && resolved.price != null
+            ? `Limit order filled at ${roundMoney(resolved.avgFillPrice ?? 0)} (limit ${roundMoney(resolved.price)})`
+            : `Order filled at market price (${roundMoney(resolved.avgFillPrice ?? 0)})`
+          : resolved.status === 'rejected'
             ? 'Order rejected (insufficient balance)'
             : 'Order created';
 
     return success(
       res,
       {
-        ...formatOrder(finalOrder),
+        ...formatOrder(resolved),
         wallet: walletSnapshot,
         quantity_adjusted: quantityAdjusted,
         requested_quantity: requestedQty,
@@ -375,8 +391,26 @@ export async function cancelOrder(req, res, next) {
     const orderId = req.params.id;
     const io = req.app.get('io');
 
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return error(res, 'Order not found', 404);
+    }
+
     const existing = await Order.findOne({ _id: orderId, userId: req.userId }).lean();
     if (!existing) return error(res, 'Order not found', 404);
+
+    if (existing.status === 'cancelled') {
+      const walletSnapshot = await fetchWalletSnapshotForUser(req.userId);
+      return success(res, { ...formatOrder(existing), wallet: walletSnapshot }, 'Order is already cancelled');
+    }
+
+    if (existing.status === 'filled') {
+      return error(res, 'Order has already been filled', 400);
+    }
+
+    if (existing.status === 'rejected') {
+      return error(res, 'Order was rejected and cannot be cancelled', 400);
+    }
+
     if (!['open', 'partially_filled'].includes(existing.status)) {
       return error(res, 'Only open orders can be cancelled', 400);
     }
@@ -393,7 +427,14 @@ export async function cancelOrder(req, res, next) {
       { new: true }
     ).lean();
 
-    if (!updated) return error(res, 'Order cannot be cancelled', 400);
+    if (!updated) {
+      const current = await Order.findById(orderId).lean();
+      if (current?.status === 'cancelled') {
+        const walletSnapshot = await fetchWalletSnapshotForUser(req.userId);
+        return success(res, { ...formatOrder(current), wallet: walletSnapshot }, 'Order is already cancelled');
+      }
+      return error(res, 'Order cannot be cancelled', 400);
+    }
 
     if (updated.side === 'sell' && remaining > 0) {
       await unlockAsset(req.userId, baseAssetFromSymbol(updated.symbol), remaining);

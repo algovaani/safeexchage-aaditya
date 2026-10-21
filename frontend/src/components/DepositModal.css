@@ -508,7 +508,11 @@
 }
 
 .cash-in-person-modal {
-  max-width: 480px;
+  max-width: 520px;
+}
+
+.cash-in-person-modal--enhanced {
+  max-width: 560px;
 }
 
 .cash-in-person-modal__icon {

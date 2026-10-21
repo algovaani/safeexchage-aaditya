@@ -14,6 +14,7 @@ import '../pages/Admin.css';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview', icon: '◉' },
+  { id: 'advanceDashboard', label: 'Advance Dashboard', icon: '🚀' },
   { id: 'users', label: 'Users', icon: '👤' },
   { id: 'kyc', label: 'KYC', icon: '✓' },
   { id: 'wallets', label: 'Wallets', icon: '💼' },
@@ -29,6 +30,7 @@ const SECTIONS = [
   { id: 'banners', label: 'Banners', icon: '🖼️' },
   { id: 'notices', label: 'Notices', icon: '🔔' },
   { id: 'support', label: 'Support', icon: '💬' },
+  { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
 const SECTION_LABELS = Object.fromEntries(SECTIONS.map((s) => [s.id, s.label]));
@@ -147,6 +149,14 @@ function AdminShell() {
           </div>
 
           <div className="admin-topbar__right">
+            <Link
+              to="/admin/panel?section=advanceDashboard"
+              className="admin-btn admin-btn--ghost admin-btn--sm flex items-center gap-1 mr-2"
+              title="Open Advance Dashboard"
+            >
+              🚀 <span>Advance Dashboard</span>
+            </Link>
+
             {totalPending > 0 && (
               <div className="admin-alert-strip" role="status">
                 <span className="admin-alert-strip__pulse" aria-hidden />

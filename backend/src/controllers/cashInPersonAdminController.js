@@ -31,6 +31,11 @@ const EXPORT_COLUMNS = [
     label: 'Settled (USDT)',
     export: (r) => (r.creditedAmount != null ? r.creditedAmount : ''),
   },
+  { key: 'utrNumber', label: 'UTR Number' },
+  { key: 'bankName', label: 'Bank Name' },
+  { key: 'accountNumber', label: 'Account Number' },
+  { key: 'ifsc', label: 'IFSC' },
+  { key: 'accountHolder', label: 'Account Holder' },
   { key: 'status', label: 'Status' },
   { key: 'createdAt', label: 'Created', export: (r) => (r.createdAt ? new Date(r.createdAt).toISOString() : '') },
 ];

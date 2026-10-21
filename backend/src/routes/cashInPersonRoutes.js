@@ -5,12 +5,15 @@ import { validateRequest } from '../middleware/validateRequest.js';
 import { withdrawSubmitRateLimit } from '../middleware/apiRateLimit.js';
 import { submitCashInPersonValidators } from '../validators/cashInPersonValidators.js';
 
+import { cashInPersonProofUpload } from '../middleware/cashInPersonUpload.js';
+
 const r = Router();
 
 r.post(
   '/submit',
   authMiddleware,
   withdrawSubmitRateLimit,
+  cashInPersonProofUpload,
   submitCashInPersonValidators,
   validateRequest,
   cashInPerson.submitRequest

@@ -231,6 +231,16 @@ export default function Trading() {
 
   const [orderBusySide, setOrderBusySide] = useState(null);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
+  const removedOrderIdsRef = useRef(new Set());
+
+  const getOrderId = useCallback((o) => {
+    if (!o) return '';
+    const val = o.id || o._id || o._tempId || o;
+    if (typeof val === 'object' && val !== null) {
+      return String(val.id || val._id || val.toString?.() || '').toLowerCase().trim();
+    }
+    return String(val).toLowerCase().trim();
+  }, []);
   const [mobileView, setMobileView] = useState('chart');
   const [mobileOrderSide, setMobileOrderSide] = useState('buy');
 
@@ -925,15 +935,24 @@ export default function Trading() {
         params: { ...params, status: orderStatusTab },
       });
       const payload = parseApiResponse(data);
+      const rawRows = payload?.rows || [];
+      const filteredRows =
+        orderStatusTab === 'pending'
+          ? rawRows.filter((r) => {
+              const id = getOrderId(r);
+              return id && !removedOrderIdsRef.current.has(id);
+            })
+          : rawRows;
+
       return {
-        rows: payload?.rows || [],
-        total: payload?.total || 0,
+        rows: filteredRows,
+        total: Math.max(0, (payload?.total || 0) - (rawRows.length - filteredRows.length)),
         totalPages: payload?.totalPages || 1,
         page,
         loading: false,
       };
     },
-    [tablePageSize, debouncedTableSearch, orderStatusTab]
+    [tablePageSize, debouncedTableSearch, orderStatusTab, getOrderId]
   );
 
   const fetchTableData = useCallback(async () => {
@@ -969,15 +988,21 @@ export default function Trading() {
       }
       const side = order.side;
       const setter = side === 'buy' ? setBuyTable : setSellTable;
+      const targetId = getOrderId(order);
       const terminal = ['filled', 'cancelled', 'rejected'].includes(order.status);
       const isPendingView = orderStatusTab === 'pending';
+
+      if (terminal && targetId) {
+        removedOrderIdsRef.current.add(targetId);
+      }
 
       if (terminal && isPendingView) {
         setter((t) => ({
           ...t,
-          rows: t.rows.filter(
-            (r) => String(r.id) !== String(order.id) && r._tempId !== order.id
-          ),
+          rows: t.rows.filter((r) => {
+            const rId = getOrderId(r);
+            return rId !== targetId && r._tempId !== targetId;
+          }),
           loading: false,
         }));
         if (order.status === 'filled') {
@@ -991,9 +1016,10 @@ export default function Trading() {
           ...t,
           rows: [
             { ...order, _optimistic: false },
-            ...t.rows.filter(
-              (r) => String(r.id) !== String(order.id) && r._tempId !== order.id
-            ),
+            ...t.rows.filter((r) => {
+              const rId = getOrderId(r);
+              return rId !== targetId && r._tempId !== targetId;
+            }),
           ],
           loading: false,
         }));
@@ -1005,7 +1031,7 @@ export default function Trading() {
           ...t,
           rows: [
             { ...order, _optimistic: false },
-            ...t.rows.filter((r) => String(r.id) !== String(order.id)),
+            ...t.rows.filter((r) => getOrderId(r) !== targetId),
           ],
           loading: false,
         }));
@@ -1019,7 +1045,7 @@ export default function Trading() {
       socket.off('orders:update', applyOrderUpdate);
       window.removeEventListener('orders:updated', onLocal);
     };
-  }, [user, token, orderStatusTab]);
+  }, [user, token, orderStatusTab, getOrderId]);
 
   useEffect(() => {
     setBuyTable((t) => (t.page === 1 ? t : { ...t, page: 1 }));
@@ -1044,7 +1070,7 @@ export default function Trading() {
       ...t,
       rows: [
         row,
-        ...t.rows.filter((r) => r.id !== row.id && r._tempId !== row._tempId),
+        ...t.rows.filter((r) => getOrderId(r) !== getOrderId(row)),
       ],
       total: orderStatusTab === 'pending' ? Math.max(t.total, t.rows.length) + 1 : t.total,
       loading: false,
@@ -1053,11 +1079,12 @@ export default function Trading() {
 
   function mergeOrderResult(side, tempId, result) {
     const setter = side === 'buy' ? setBuyTable : setSellTable;
+    const resId = getOrderId(result);
     setter((t) => {
       const rows = t.rows.map((r) =>
-        r._tempId === tempId || r.id === tempId ? { ...result, _optimistic: false } : r
+        r._tempId === tempId || getOrderId(r) === tempId ? { ...result, _optimistic: false } : r
       );
-      const has = rows.some((r) => String(r.id) === String(result.id));
+      const has = rows.some((r) => getOrderId(r) === resId);
       return {
         ...t,
         rows: has ? rows : [result, ...rows.filter((r) => r._tempId !== tempId)],
@@ -1068,8 +1095,8 @@ export default function Trading() {
 
   function canCancelOrder(order) {
     if (!order || order._optimistic) return false;
-    const id = order.id || order._id;
-    if (!id || String(id).startsWith('opt-')) return false;
+    const id = getOrderId(order);
+    if (!id || id.startsWith('opt-')) return false;
     return ['open', 'partially_filled'].includes(String(order.status || '').toLowerCase());
   }
 
@@ -1078,52 +1105,63 @@ export default function Trading() {
   }
 
   async function cancelOpenOrder(order, side) {
-    const orderId = order.id || order._id;
+    const orderId = getOrderId(order);
     if (!orderId || cancellingOrderId) return;
-    setCancellingOrderId(String(orderId));
-    const setter = side === 'buy' ? setBuyTable : setSellTable;
-    setter((t) => ({
-      ...t,
-      rows: t.rows.filter((r) => String(r.id || r._id) !== String(orderId)),
-      total: Math.max(0, t.total - 1),
-    }));
+    setCancellingOrderId(orderId);
+
+    // Track both id & _id in removed set
+    if (orderId) removedOrderIdsRef.current.add(orderId);
+    if (order?.id) removedOrderIdsRef.current.add(String(order.id).toLowerCase().trim());
+    if (order?._id) removedOrderIdsRef.current.add(String(order._id).toLowerCase().trim());
+
+    const purgeOrderFromState = (setter) =>
+      setter((t) => ({
+        ...t,
+        rows: t.rows.filter((r) => {
+          const rId = getOrderId(r);
+          return rId !== orderId && !removedOrderIdsRef.current.has(rId);
+        }),
+        total: Math.max(0, t.total - 1),
+      }));
+
+    purgeOrderFromState(setBuyTable);
+    purgeOrderFromState(setSellTable);
+
     try {
-      const { data } = await api.post(`/orders/${orderId}/cancel`, null, { silentToast: true });
+      // Pass {} payload instead of null to prevent Express express.json SyntaxError (Unexpected token n)
+      const { data } = await api.post(`/orders/${orderId}/cancel`, {}, { silentToast: true });
       const result = parseApiResponse(data);
       emitTradeToast('success', data?.message || 'Order cancelled');
       if (result?.wallet) notifyWalletUpdated(result.wallet);
       else void refreshWallet();
       window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch (err) {
-      emitTradeToast('error', getApiErrorMessage(err));
+      const status = err?.response?.status;
+      const errMsg = getApiErrorMessage(err);
+
+      // Force purge from state tables regardless of server response
+      purgeOrderFromState(setBuyTable);
+      purgeOrderFromState(setSellTable);
+
+      if (status === 404 || status === 400) {
+        emitTradeToast('warning', errMsg || 'Order is no longer active and was removed from the list');
+      } else {
+        emitTradeToast('error', errMsg);
+      }
       setOrdersRefreshTick((n) => n + 1);
     } finally {
       setCancellingOrderId(null);
     }
   }
 
-  async function resolveSubmitQuantity(side, orderType, requestedQty, priceRaw) {
+  function clipSubmitQuantityLocal(side, orderType, requestedQty, priceRaw) {
     if (!(requestedQty > 0)) return 0;
     if (side === 'buy') {
-      try {
-        const { data } = await api.get('/orders/max-buy', {
-          params: {
-            symbol,
-            orderType,
-            ...(orderType === 'limit' ? { price: parseFloat(priceRaw) } : {}),
-          },
-        });
-        const payload = parseApiResponse(data);
-        const maxQty = Number(payload?.quantity);
-        if (!(maxQty > 0)) return 0;
-        return Math.min(requestedQty, maxQty);
-      } catch {
-        const price =
-          orderType === 'market' ? Number(ticker?.lastPrice) : parseFloat(priceRaw);
-        const maxLocal = maxBuyQuantity(usdtBalance, price, { isInrPair, usdtInrRate, marketBuffer: 1 });
-        if (!(maxLocal > 0)) return 0;
-        return Math.min(requestedQty, maxLocal);
-      }
+      const price =
+        orderType === 'market' ? Number(ticker?.lastPrice) : parseFloat(priceRaw);
+      const maxLocal = maxBuyQuantity(usdtBalance, price, { isInrPair, usdtInrRate, marketBuffer: 1 });
+      if (!(maxLocal > 0)) return 0;
+      return Math.min(requestedQty, maxLocal);
     }
     if (side === 'sell') {
       const maxSell = Math.floor(baseBalance * 1e8) / 1e8;
@@ -1139,15 +1177,21 @@ export default function Trading() {
       return;
     }
     if (orderBusySide === side) return;
+
+    setOrderBusySide(side);
+
     const priceRaw = side === 'buy' ? buyPrice : sellPrice;
     let qty = parseFloat(side === 'buy' ? buyQty : sellQty);
     if (!(qty > 0)) {
+      setOrderBusySide(null);
       toast.warning('Enter a valid quantity greater than zero.');
       return;
     }
+
     const originalQty = qty;
-    qty = await resolveSubmitQuantity(side, orderType, qty, priceRaw);
+    qty = clipSubmitQuantityLocal(side, orderType, qty, priceRaw);
     if (!(qty > 0)) {
+      setOrderBusySide(null);
       toast.warning(
         side === 'buy'
           ? 'Not enough USDT balance at the current price.'
@@ -1161,9 +1205,11 @@ export default function Trading() {
       else setSellQty(qtyStr);
     }
     if (side === 'sell' && qty > baseBalance + 1e-12) {
+      setOrderBusySide(null);
       toast.warning(`Insufficient ${base} balance. You have ${baseBalance.toFixed(8)} ${base}.`);
       return;
     }
+
     const payload = {
       symbol,
       side,
@@ -1188,7 +1234,6 @@ export default function Trading() {
         _optimistic: true,
       });
     }
-    setOrderBusySide(side);
     try {
       const { data } = await api.post('/orders', payload, { silentToast: true });
       const result = parseApiResponse(data);
@@ -1212,9 +1257,8 @@ export default function Trading() {
       }
       if (result?.wallet) {
         notifyWalletUpdated(result.wallet);
-      } else {
-        void refreshWallet();
       }
+      void refreshWallet();
       window.dispatchEvent(new CustomEvent('orders:updated'));
     } catch (err) {
       emitTradeToast('error', getApiErrorMessage(err));

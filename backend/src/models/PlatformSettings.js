@@ -14,6 +14,8 @@ const platformSettingsSchema = new mongoose.Schema(
     bankIfsc: { type: String, default: '' },
     bankBranch: { type: String, default: '' },
     bankAccountHolder: { type: String, default: '' },
+    bankUpiId: { type: String, default: '' },
+    bankQrCode: { type: String, default: '' },
     bnbPrivateKey: { type: String, default: '', select: false },
     ethPrivateKey: { type: String, default: '', select: false },
     trcPrivateKey: { type: String, default: '', select: false },

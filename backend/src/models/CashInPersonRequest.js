@@ -19,6 +19,14 @@ const cashInPersonRequestSchema = new mongoose.Schema(
     /** Amount settled on wallet when admin approves. */
     creditedAmount: { type: Number, default: null, min: 0 },
     currency: { type: String, default: 'USDT' },
+    /** Deposit proof & reference */
+    utrNumber: { type: String, default: '', trim: true },
+    paymentProof: { type: String, default: '', trim: true },
+    /** User bank details for withdraw */
+    bankName: { type: String, default: '', trim: true },
+    accountNumber: { type: String, default: '', trim: true },
+    ifsc: { type: String, default: '', trim: true },
+    accountHolder: { type: String, default: '', trim: true },
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],

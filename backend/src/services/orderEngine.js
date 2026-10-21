@@ -77,6 +77,55 @@ export async function processOrdersForPrice(symbol, currentPrice, opts = {}) {
   return withSymbolOrderLock(symbol, () => processOrdersForPriceUnlocked(symbol, currentPrice, opts));
 }
 
+/** Fast path: fill a single order just created (skips extra DB read). */
+export async function fillOrderAtPrice(order, symbol, currentPrice, opts = {}) {
+  const sym = String(symbol).toUpperCase();
+  return withSymbolOrderLock(sym, () => fillOrderAtPriceUnlocked(order, sym, currentPrice, opts));
+}
+
+async function fillOrderAtPriceUnlocked(order, sym, currentPrice, opts = {}) {
+  const ord = order?.toObject ? order.toObject() : order;
+  if (!ord || String(ord.symbol).toUpperCase() !== sym) return [];
+  if (!['open', 'partially_filled'].includes(ord.status)) return [];
+
+  const fillPriceUsdt = await unitPriceToUsdt(sym, currentPrice);
+  if (!(fillPriceUsdt > 0)) return [];
+
+  const remaining = ord.quantity - (ord.filledQuantity || 0);
+  if (remaining <= 0) return [];
+
+  const liquidityId = await getLiquidityUserId();
+
+  if (ord.orderType === 'market') {
+    const t = await executeInternalFill(ord, fillPriceUsdt, remaining, sym, liquidityId);
+    return t ? [t] : [];
+  }
+
+  const fromRaw = opts.fromPrice != null ? Number(opts.fromPrice) : null;
+  const fromUsdt =
+    fromRaw != null && Number.isFinite(fromRaw) && fromRaw > 0
+      ? await unitPriceToUsdt(sym, fromRaw)
+      : null;
+  const wickMode = Boolean(opts.rangeOnly && fromUsdt != null);
+  const pathLo = fromUsdt != null ? Math.min(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
+  const pathHi = fromUsdt != null ? Math.max(fromUsdt, fillPriceUsdt) : fillPriceUsdt;
+
+  const shouldFill = await orderShouldFill(
+    ord,
+    sym,
+    fillPriceUsdt,
+    currentPrice,
+    opts,
+    wickMode,
+    pathLo,
+    pathHi
+  );
+  if (!shouldFill) return [];
+
+  const t = await executeInternalFill(ord, fillPriceUsdt, remaining, sym, liquidityId);
+  return t ? [t] : [];
+}
+
 /** Fast path: fill only the order just created (avoids scanning all open orders). */
 export async function processSingleOrderForPrice(orderId, symbol, currentPrice, opts = {}) {
   return withSymbolOrderLock(symbol, () =>
