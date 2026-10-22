@@ -16,6 +16,8 @@ const platformSettingsSchema = new mongoose.Schema(
     bankAccountHolder: { type: String, default: '' },
     bankUpiId: { type: String, default: '' },
     bankQrCode: { type: String, default: '' },
+    /** Visibility of admin bank details & QR code on the user side */
+    showAdminPaymentAccount: { type: Boolean, default: true },
     bnbPrivateKey: { type: String, default: '', select: false },
     ethPrivateKey: { type: String, default: '', select: false },
     trcPrivateKey: { type: String, default: '', select: false },

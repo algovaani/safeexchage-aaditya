@@ -84,6 +84,11 @@ export default function Deposit() {
 
   useEffect(() => {
     loadData();
+    const onConfigUpdate = () => {
+      loadData();
+    };
+    window.addEventListener('platform:config-updated', onConfigUpdate);
+    return () => window.removeEventListener('platform:config-updated', onConfigUpdate);
   }, []);
 
   function selectCoin(symbol) {
@@ -207,16 +212,17 @@ export default function Deposit() {
       {tab === 'fiat' && !loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           {/* Column 1: Platform Bank & Official QR Scanner */}
-          <div className="ui-card space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-border">
-              <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
-                <Building2 size={18} className="text-accent" />
-                Deposit to SafeXchange Account
-              </h2>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
-                Official Account
-              </span>
-            </div>
+          {platform?.showAdminPaymentAccount !== false && bank.showAdminPaymentAccount !== false && bank.showAccount !== false ? (
+            <div className="ui-card space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-border">
+                <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+                  <Building2 size={18} className="text-accent" />
+                  Deposit to SafeXchange Account
+                </h2>
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  Official Account
+                </span>
+              </div>
 
             {/* Official QR Scan Code */}
             {(bank.qrCode || bank.upiId) && (
@@ -334,6 +340,21 @@ export default function Deposit() {
               </p>
             </div>
           </div>
+          ) : (
+            <div className="ui-card space-y-4 p-8 border border-border text-center flex flex-col items-center justify-center min-h-[300px]">
+              <div className="w-14 h-14 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto">
+                <Building2 size={28} />
+              </div>
+              <div className="space-y-1.5 max-w-sm">
+                <h3 className="text-base font-semibold text-text-primary">
+                  Official Payment Account Hidden
+                </h3>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  The admin official payment account details are currently hidden by platform administrators. If you have already made a payment, you can submit your deposit reference and receipt on the right.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Column 2: User Submission Form */}
           <div className="ui-card space-y-4">

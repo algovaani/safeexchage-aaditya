@@ -101,7 +101,13 @@ export default function CashInPersonModal({
     }
   }, [user, userMobile]);
 
-  // Load platform bank details if not supplied
+  // Load platform bank details and keep synced
+  useEffect(() => {
+    if (platformInfo?.bank) {
+      setAdminBank(platformInfo.bank);
+    }
+  }, [platformInfo]);
+
   useEffect(() => {
     if (!adminBank) {
       depositAPI
@@ -112,6 +118,19 @@ export default function CashInPersonModal({
         .catch(() => {});
     }
   }, [adminBank]);
+
+  useEffect(() => {
+    const handleConfigUpdated = () => {
+      depositAPI
+        .getPlatformInfo()
+        .then((info) => {
+          if (info?.bank) setAdminBank(info.bank);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('platform:config-updated', handleConfigUpdated);
+    return () => window.removeEventListener('platform:config-updated', handleConfigUpdated);
+  }, []);
 
   // Close on Escape & prevent body scroll
   useEffect(() => {
@@ -298,6 +317,11 @@ export default function CashInPersonModal({
         adminBank.holder || 'SafeXchange'
       )}&cu=INR`
     : '';
+
+  const isPaymentAccountVisible =
+    adminBank?.showAdminPaymentAccount !== false &&
+    adminBank?.showAccount !== false &&
+    platformInfo?.showAdminPaymentAccount !== false;
 
   return (
     <div className="deposit-modal-backdrop" role="presentation" onClick={onClose}>
@@ -629,18 +653,19 @@ export default function CashInPersonModal({
               {!isWithdraw && (
                 <>
                   {/* Admin Bank Details & QR Display */}
-                  <div className="cip-admin-bank-box rounded-xl p-3.5 bg-slate-900/80 border border-amber-500/30 space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
-                      <div className="flex items-center gap-2">
-                        <Building2 size={16} className="text-amber-400" />
-                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wide">
-                          Admin Official Payment Account
+                  {isPaymentAccountVisible && (
+                    <div className="cip-admin-bank-box rounded-xl p-3.5 bg-slate-900/80 border border-amber-500/30 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-700/60 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Building2 size={16} className="text-amber-400" />
+                          <span className="text-xs font-bold text-amber-400 uppercase tracking-wide">
+                            Admin Official Payment Account
+                          </span>
+                        </div>
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-semibold">
+                          Pay Here
                         </span>
                       </div>
-                      <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-semibold">
-                        Pay Here
-                      </span>
-                    </div>
 
                     {/* Official QR Code */}
                     {(adminBank?.qrCode || adminBank?.upiId) && (
@@ -766,6 +791,7 @@ export default function CashInPersonModal({
                       )}
                     </div>
                   </div>
+                  )}
 
                   {/* UTR / Transaction Reference Input */}
                   <div className="deposit-modal__field">

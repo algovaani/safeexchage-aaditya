@@ -23,6 +23,7 @@ export async function getPlatformSettings({ includeSecrets = false } = {}) {
       bankAccountHolder: process.env.PLATFORM_BANK_HOLDER || '',
       bankUpiId: '',
       bankQrCode: '',
+      showAdminPaymentAccount: true,
       depositMode: 'manual',
     })).toObject();
   }
@@ -35,6 +36,7 @@ export function isManualDepositMode() {
 }
 
 export function formatBankSettings(doc) {
+  const isVisible = doc.showAdminPaymentAccount !== false;
   return {
     name: doc.bankName || process.env.PLATFORM_BANK_NAME || '',
     account: doc.bankAccountNumber || process.env.PLATFORM_BANK_ACCOUNT || '',
@@ -43,10 +45,13 @@ export function formatBankSettings(doc) {
     holder: doc.bankAccountHolder || process.env.PLATFORM_BANK_HOLDER || '',
     upiId: doc.bankUpiId || '',
     qrCode: doc.bankQrCode || '',
+    showAccount: isVisible,
+    showAdminPaymentAccount: isVisible,
   };
 }
 
 export function formatPublicSettings(doc) {
+  const isVisible = doc.showAdminPaymentAccount !== false;
   return {
     bnbWalletAddress: doc.bnbWalletAddress || '',
     ethWalletAddress: doc.ethWalletAddress || '',
@@ -55,6 +60,7 @@ export function formatPublicSettings(doc) {
     depositMode: 'manual',
     manualDeposits: true,
     bank: formatBankSettings(doc),
+    showAdminPaymentAccount: isVisible,
     hasBnbPrivateKey: Boolean(doc.bnbPrivateKey),
     hasEthPrivateKey: Boolean(doc.ethPrivateKey),
     hasTrcPrivateKey: Boolean(doc.trcPrivateKey),
@@ -69,8 +75,10 @@ export function formatPublicSettings(doc) {
 
 /** Full settings for admin UI — includes secret values (never expose on public routes). */
 export function formatAdminSettings(doc) {
+  const isVisible = doc.showAdminPaymentAccount !== false;
   return {
     ...formatPublicSettings(doc),
+    showAdminPaymentAccount: isVisible,
     bankName: doc.bankName || '',
     bankAccountNumber: doc.bankAccountNumber || '',
     bankIfsc: doc.bankIfsc || '',
@@ -99,6 +107,7 @@ export async function updatePlatformSettings(adminUserId, body) {
     'bankAccountHolder',
     'bankUpiId',
     'bankQrCode',
+    'showAdminPaymentAccount',
     'bnbPrivateKey',
     'ethPrivateKey',
     'trcPrivateKey',
@@ -126,6 +135,10 @@ export async function updatePlatformSettings(adminUserId, body) {
     if (key === 'cashInPersonDepositRate' || key === 'cashInPersonWithdrawRate') {
       const num = Number(body[key]);
       update[key] = roundMoney(Number.isFinite(num) && num >= 0 ? num : 0);
+      continue;
+    }
+    if (key === 'showAdminPaymentAccount') {
+      update[key] = Boolean(body[key]);
       continue;
     }
     if (key === 'depositMode') {

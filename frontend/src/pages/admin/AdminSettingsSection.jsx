@@ -68,6 +68,7 @@ export default function AdminSettingsSection() {
     bankAccountHolder: '',
     bankUpiId: '',
     bankQrCode: '',
+    showAdminPaymentAccount: true,
 
     // Rates & Economics
     usdtInrRate: '83.5',
@@ -109,6 +110,14 @@ export default function AdminSettingsSection() {
         bankAccountHolder: s.bankAccountHolder || bank.holder || '',
         bankUpiId: s.bankUpiId || bank.upiId || '',
         bankQrCode: s.bankQrCode || bank.qrCode || '',
+        showAdminPaymentAccount:
+          s.showAdminPaymentAccount !== undefined
+            ? Boolean(s.showAdminPaymentAccount)
+            : bank.showAdminPaymentAccount !== undefined
+            ? Boolean(bank.showAdminPaymentAccount)
+            : bank.showAccount !== undefined
+            ? Boolean(bank.showAccount)
+            : true,
 
         usdtInrRate: s.usdtInrRate != null ? String(s.usdtInrRate) : '83.5',
         referralRewardUsdt: s.referralRewardUsdt != null ? String(s.referralRewardUsdt) : '0',
@@ -204,6 +213,28 @@ export default function AdminSettingsSection() {
     }
   }
 
+  const [toggleBusy, setToggleBusy] = useState(false);
+
+  async function handleToggleVisibility(nextVal) {
+    if (toggleBusy) return;
+    setToggleBusy(true);
+    setForm((prev) => ({ ...prev, showAdminPaymentAccount: nextVal }));
+    try {
+      await adminSettingsAPI.update({ showAdminPaymentAccount: nextVal });
+      toast.success(
+        nextVal
+          ? 'Admin Official Payment Account is now VISIBLE to users'
+          : 'Admin Official Payment Account is now HIDDEN from users'
+      );
+      window.dispatchEvent(new CustomEvent('platform:config-updated'));
+    } catch (err) {
+      setForm((prev) => ({ ...prev, showAdminPaymentAccount: !nextVal }));
+      toast.error(err.message || 'Failed to update visibility setting');
+    } finally {
+      setToggleBusy(false);
+    }
+  }
+
   async function handleSave(e) {
     if (e) e.preventDefault();
     setSaving(true);
@@ -216,6 +247,7 @@ export default function AdminSettingsSection() {
         bankAccountHolder: form.bankAccountHolder.trim(),
         bankUpiId: form.bankUpiId.trim(),
         bankQrCode: form.bankQrCode.trim(),
+        showAdminPaymentAccount: Boolean(form.showAdminPaymentAccount),
 
         usdtInrRate: Number(form.usdtInrRate || 83.5),
         referralRewardUsdt: Number(form.referralRewardUsdt || 0),
@@ -322,8 +354,19 @@ export default function AdminSettingsSection() {
         >
           <CreditCard size={16} />
           Bank Details &amp; QR Scan Code
-          {form.bankAccountNumber && (
+          {form.showAdminPaymentAccount ? (
             <span className="admin-settings-card__badge admin-settings-card__badge--ok">Active</span>
+          ) : (
+            <span
+              className="admin-settings-card__badge"
+              style={{
+                borderColor: 'rgba(239, 68, 68, 0.4)',
+                color: '#f87171',
+                background: 'rgba(239, 68, 68, 0.1)',
+              }}
+            >
+              Hidden
+            </span>
           )}
         </button>
 
@@ -353,6 +396,52 @@ export default function AdminSettingsSection() {
       {/* Tab 1: Bank Details & QR Scan Code */}
       {activeTab === 'bank' && (
         <div className="admin-settings-grid">
+          {/* Top Span: Visibility Switch Banner Card */}
+          <div
+            className={`admin-visibility-card ${
+              form.showAdminPaymentAccount ? 'is-active' : 'is-hidden'
+            }`}
+          >
+            <div className="admin-visibility-card__info">
+              <div className="admin-visibility-card__title-row">
+                <h3 className="admin-visibility-card__title">
+                  {form.showAdminPaymentAccount ? (
+                    <Eye size={20} className="text-emerald-400" />
+                  ) : (
+                    <EyeOff size={20} className="text-rose-400" />
+                  )}
+                  Admin Official Payment Account Visibility
+                </h3>
+                {form.showAdminPaymentAccount ? (
+                  <span className="admin-visibility-badge admin-visibility-badge--on">
+                    <Check size={12} /> Visible on User Side
+                  </span>
+                ) : (
+                  <span className="admin-visibility-badge admin-visibility-badge--off">
+                    <EyeOff size={12} /> Hidden from User Side
+                  </span>
+                )}
+              </div>
+              <p className="admin-settings-field-hint">
+                When turned <strong>ON</strong>, users see the &quot;Admin Official Payment Account&quot; (Bank details, UPI ID, and QR code) on their deposit screens. When turned <strong>OFF</strong>, this entire payment account block is hidden from users.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-text-muted hidden sm:inline">
+                {form.showAdminPaymentAccount ? 'Status: Active (Showing)' : 'Status: Inactive (Hidden)'}
+              </span>
+              <label className="admin-switch" title="Toggle visibility of Admin Official Payment Account">
+                <input
+                  type="checkbox"
+                  checked={form.showAdminPaymentAccount}
+                  onChange={(e) => handleToggleVisibility(e.target.checked)}
+                  disabled={toggleBusy || saving}
+                />
+                <span className="admin-switch-slider"></span>
+              </label>
+            </div>
+          </div>
           {/* Left: Bank Information Form */}
           <div className="admin-settings-card">
             <div className="admin-settings-card__header">
@@ -624,17 +713,32 @@ export default function AdminSettingsSection() {
             </div>
 
             {/* Live User Screen Mockup */}
-            <div className="admin-user-preview-mockup">
+            <div className={`admin-user-preview-mockup ${!form.showAdminPaymentAccount ? 'is-hidden-preview' : ''}`}>
               <div className="admin-user-preview-mockup__head">
                 <span className="flex items-center gap-1.5">
                   <Smartphone size={14} /> Live User Deposit Preview
                 </span>
-                <span className="admin-user-preview-pill">
-                  <FileCheck size={12} /> Verified UI
-                </span>
+                {form.showAdminPaymentAccount ? (
+                  <span className="admin-user-preview-pill">
+                    <FileCheck size={12} /> Visible to Users
+                  </span>
+                ) : (
+                  <span className="admin-user-preview-pill admin-user-preview-pill--hidden">
+                    <EyeOff size={12} /> Hidden from Users
+                  </span>
+                )}
               </div>
 
-              <div className="admin-user-preview-card">
+              {!form.showAdminPaymentAccount && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg text-xs text-rose-300 flex items-center gap-2">
+                  <EyeOff size={16} className="shrink-0" />
+                  <span>
+                    <strong>Admin Official Payment Account</strong> is currently hidden on the user side. Users will not see this bank and QR payment box.
+                  </span>
+                </div>
+              )}
+
+              <div className={`admin-user-preview-card ${!form.showAdminPaymentAccount ? 'opacity-50' : ''}`}>
                 <div className="flex items-center justify-between pb-2 border-b border-border">
                   <div className="flex items-center gap-2">
                     <Building2 size={18} className="text-accent" />

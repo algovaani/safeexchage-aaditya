@@ -42,6 +42,7 @@ export async function platformInfo(_req, res, next) {
         usdt: wallets.usdt,
       },
       bank: publicSettings.bank,
+      showAdminPaymentAccount: publicSettings.showAdminPaymentAccount,
       cashInPerson: {
         depositRate: publicSettings.cashInPersonDepositRate || 0,
         withdrawRate: publicSettings.cashInPersonWithdrawRate || 0,
