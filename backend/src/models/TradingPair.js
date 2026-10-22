@@ -46,6 +46,10 @@ const tradingPairSchema = new mongoose.Schema(
     manualHigh24h: { type: Number, default: null },
     manualLow24h: { type: Number, default: null },
     manualVolume: { type: Number, default: null },
+    /** Admin candle fix: when true, chart candle and price freeze at candleFixPrice */
+    candleFix: { type: Boolean, default: false },
+    candleFixPrice: { type: Number, default: null },
+    candleFixFromPrice: { type: Number, default: null },
   },
   { timestamps: true, collection: 'trading_pairs' }
 );

@@ -3243,4 +3243,411 @@ html.dark .admin-badge--cancelled {
   color: var(--adm-muted);
 }
 
+/* Price Pulse & Candle Fix Modal */
+.admin-pulse-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483645;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px) saturate(130%);
+  -webkit-backdrop-filter: blur(8px) saturate(130%);
+}
+
+.admin-pulse-modal {
+  width: min(100%, 540px);
+  max-height: min(92dvh, 760px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  border: 1px solid rgba(240, 185, 11, 0.28);
+  background: #0f1319;
+  color: var(--adm-text, #eaecef);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.65), 0 0 24px rgba(240, 185, 11, 0.08);
+  animation: admin-coins-modal-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+
+.admin-shell--light .admin-pulse-modal {
+  background: #ffffff;
+  border-color: var(--adm-border);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.18);
+}
+
+.admin-pulse-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-pulse-modal__title-box {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.admin-pulse-modal__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(240, 185, 11, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f59e0b;
+}
+
+.admin-pulse-modal__title {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.admin-pulse-modal__subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: var(--adm-muted, #94a3b8);
+}
+
+.admin-pulse-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--adm-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-pulse-modal__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.admin-pulse-modal__body {
+  padding: 1.25rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  overflow-y: auto;
+}
+
+.admin-pulse-modal__status-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.85rem 1.1rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.admin-pulse-modal__status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-pulse-modal__status-item .label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--adm-muted, #94a3b8);
+}
+
+.admin-pulse-modal__status-item .value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.admin-pulse-modal__status-item .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+
+.admin-pulse-modal__status-item .badge--locked {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.admin-pulse-modal__status-item .badge--live {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.admin-pulse-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-pulse-modal__field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.admin-pulse-modal__field label .req {
+  color: #ef4444;
+}
+
+.admin-pulse-modal__input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.admin-pulse-modal__input-wrapper input {
+  width: 100%;
+  padding-right: 5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.admin-pulse-modal__fill-btn {
+  position: absolute;
+  right: 6px;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.admin-pulse-modal__fill-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.admin-pulse-modal__hint {
+  font-size: 0.74rem;
+  color: var(--adm-muted, #94a3b8);
+  line-height: 1.35;
+}
+
+/* Switch Option Card */
+.admin-pulse-modal__switch-box {
+  padding: 1rem 1.15rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.admin-pulse-modal__switch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-pulse-modal__switch-label-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-pulse-modal__switch-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.admin-pulse-modal__switch-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.admin-pulse-modal__switch-tag.on {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.admin-pulse-modal__switch-tag.off {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+/* Futuristic Switch Toggle Button */
+.admin-pulse-switch {
+  position: relative;
+  width: 52px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #1e293b;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 2px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.admin-pulse-switch--on {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.45);
+}
+
+.admin-pulse-switch__thumb {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.admin-pulse-switch--on .admin-pulse-switch__thumb {
+  transform: translateX(24px);
+}
+
+.admin-pulse-modal__switch-desc .desc-box {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.admin-pulse-modal__switch-desc .desc-box--on {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #fde68a;
+}
+
+.admin-pulse-modal__switch-desc .desc-box--on svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #f59e0b;
+}
+
+.admin-pulse-modal__switch-desc .desc-box--off {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #bfdbfe;
+}
+
+.admin-pulse-modal__switch-desc .desc-box--off svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #60a5fa;
+}
+
+.admin-pulse-modal__switch-desc p {
+  margin: 0;
+}
+
+/* Active Alert Card */
+.admin-pulse-modal__active-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.admin-pulse-modal__active-alert .alert-content {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.78rem;
+  color: #fca5a5;
+  line-height: 1.4;
+}
+
+.admin-pulse-modal__active-alert .alert-content svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #ef4444;
+}
+
+.admin-pulse-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-btn--warning {
+  background: #f59e0b;
+  color: #000;
+  font-weight: 700;
+  border: none;
+}
+
+.admin-btn--warning:hover {
+  background: #d97706;
+  color: #000;
+}
+
+.admin-prices__fixed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  margin-left: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  vertical-align: middle;
+  animation: pulseFixedGlow 2s infinite ease-in-out;
+}
+
+@keyframes pulseFixedGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(245, 158, 11, 0);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+  }
+}
+
+
 

@@ -45,6 +45,7 @@ import { migrateAllWalletBuckets } from './services/walletBucketService.js';
 import { reconcileAllSellAssetLocks } from './services/sellLockRepairService.js';
 import { preloadLiquidityUser } from './services/orderEngine.js';
 import { getPlatformSettings } from './services/platformSettingsService.js';
+import { restoreCandleFixes } from './services/pricePulseService.js';
 import {
   attachSpotOrderMonitorIo,
   startSpotOrderMonitor,
@@ -207,7 +208,8 @@ async function warmApiCaches() {
     try {
       await preloadLiquidityUser();
       await getPlatformSettings();
-      console.info('[orders] Liquidity user + platform settings warmed (api)');
+      await restoreCandleFixes();
+      console.info('[orders] Liquidity user + platform settings + candle fixes warmed (api)');
     } catch (err) {
       console.warn('[orders] Trade warm-up skipped:', err.message);
     }

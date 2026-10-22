@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
-import { Loader2, Pencil, Trash2, Zap } from 'lucide-react';
+import { AlertCircle, Loader2, Lock, Pencil, RefreshCw, Trash2, Unlock, X, Zap } from 'lucide-react';
 import { api, parseApiResponse } from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import { useTradingPairs } from '../../context/TradingPairsContext.jsx';
@@ -65,6 +65,13 @@ export default function AdminPricesSection() {
   const [statsForm, setStatsForm] = useState(emptyStatsForm());
   const [statsBusy, setStatsBusy] = useState(false);
 
+  // Candle Fix & Pulse Dialog Modal State
+  const [activePulses, setActivePulses] = useState({});
+  const [pulseModalRow, setPulseModalRow] = useState(null);
+  const [pulseTargetPrice, setPulseTargetPrice] = useState('');
+  const [candleFixEnabled, setCandleFixEnabled] = useState(false);
+  const [pulseSubmitting, setPulseSubmitting] = useState(false);
+
   const pairBySymbol = useMemo(() => {
     const map = new Map();
     for (const p of pairs || []) map.set(String(p.symbol).toUpperCase(), p);
@@ -113,13 +120,31 @@ export default function AdminPricesSection() {
     }
   }, []);
 
+  const loadPulses = useCallback(async () => {
+    try {
+      const { data } = await api.get('/admin/prices/pulses');
+      const list = asArray(parseApiResponse(data));
+      const map = {};
+      for (const p of list) {
+        if (p?.symbol) map[String(p.symbol).toUpperCase()] = p;
+      }
+      setActivePulses(map);
+    } catch {
+      setActivePulses({});
+    }
+  }, []);
+
   useEffect(() => {
     loadPrices();
     loadManual();
     loadOverrides();
-    const id = setInterval(loadPrices, LIST_MARKET_POLL_MS);
+    loadPulses();
+    const id = setInterval(() => {
+      loadPrices();
+      loadPulses();
+    }, LIST_MARKET_POLL_MS);
     return () => clearInterval(id);
-  }, [loadPrices, loadManual, loadOverrides]);
+  }, [loadPrices, loadManual, loadOverrides, loadPulses]);
 
   const rows = useMemo(() => {
     const bySym = new Map();
@@ -141,30 +166,39 @@ export default function AdminPricesSection() {
         );
       })
       .map((pair) => {
-      const sym = String(pair.symbol).toUpperCase();
-      const live = bySym.get(sym) || {};
-      const price = Number(live.price ?? live.lastPrice ?? live.price_inr ?? 0);
-      return {
-        symbol: sym,
-        displayPair: pair.displayPair || sym,
-        name: pair.name || pair.baseAsset || sym,
-        imageUrl: pair.imageUrl,
-        coingeckoId: pair.coingeckoId,
-        type: pair.category === 'commodity' || sym.endsWith('INR') ? 'commodity' : 'crypto',
-        price,
-        change: Number(live.change_24h ?? live.priceChangePercent ?? 0),
-        high: Number(live.high_24h ?? live.highPrice ?? 0) || null,
-        low: Number(live.low_24h ?? live.lowPrice ?? 0) || null,
-        volume: Number(live.volume ?? 0) || null,
-        quoteVolume: Number(live.quoteVolume ?? 0) || null,
-        statsOverride: Boolean(live.stats_override) || Boolean(overrides[sym]),
-        override: overrides[sym] || null,
-      };
-    });
+        const sym = String(pair.symbol).toUpperCase();
+        const live = bySym.get(sym) || {};
+        const price = Number(live.price ?? live.lastPrice ?? live.price_inr ?? 0);
+        const pulseDoc = activePulses[sym];
+        const isCandleFixed = Boolean(pair.candleFix || pulseDoc?.candleFix);
+        const fixedPrice = pair.candleFixPrice ?? pulseDoc?.price ?? null;
+        return {
+          symbol: sym,
+          displayPair: pair.displayPair || sym,
+          name: pair.name || pair.baseAsset || sym,
+          imageUrl: pair.imageUrl,
+          coingeckoId: pair.coingeckoId,
+          type: pair.category === 'commodity' || sym.endsWith('INR') ? 'commodity' : 'crypto',
+          price,
+          change: Number(live.change_24h ?? live.priceChangePercent ?? 0),
+          high: Number(live.high_24h ?? live.highPrice ?? 0) || null,
+          low: Number(live.low_24h ?? live.lowPrice ?? 0) || null,
+          volume: Number(live.volume ?? 0) || null,
+          quoteVolume: Number(live.quoteVolume ?? 0) || null,
+          statsOverride: Boolean(live.stats_override) || Boolean(overrides[sym]),
+          override: overrides[sym] || null,
+          candleFix: isCandleFixed,
+          candleFixPrice: fixedPrice,
+        };
+      });
 
     for (const [sym, live] of bySym) {
       if (sym.endsWith('INR') || sym === 'GOLDINR' || sym === 'SILVERINR') continue;
       if (list.some((r) => r.symbol === sym)) continue;
+      const pair = pairBySymbol.get(sym);
+      const pulseDoc = activePulses[sym];
+      const isCandleFixed = Boolean(pair?.candleFix || pulseDoc?.candleFix);
+      const fixedPrice = pair?.candleFixPrice ?? pulseDoc?.price ?? null;
       list.push({
         symbol: sym,
         displayPair: sym,
@@ -180,6 +214,8 @@ export default function AdminPricesSection() {
         quoteVolume: Number(live.quoteVolume ?? 0) || null,
         statsOverride: Boolean(live.stats_override) || Boolean(overrides[sym]),
         override: overrides[sym] || null,
+        candleFix: isCandleFixed,
+        candleFixPrice: fixedPrice,
       });
     }
 
@@ -193,34 +229,75 @@ export default function AdminPricesSection() {
           .toLowerCase()
           .includes(q)
     );
-  }, [pairs, prices, search, overrides]);
+  }, [pairs, prices, search, overrides, activePulses]);
 
-  async function runPulse(row) {
-    const raw = pulseInputs[row.symbol];
-    const price = Number(raw);
+  function openPulseModal(row) {
+    const sym = String(row.symbol).toUpperCase();
+    const isFixed = Boolean(row.candleFix);
+    const existingFixedPrice = row.candleFixPrice;
+    const initialPrice =
+      pulseInputs[sym] ||
+      (isFixed && existingFixedPrice
+        ? String(existingFixedPrice)
+        : row.price
+        ? String(row.price)
+        : '');
+    setPulseModalRow(row);
+    setPulseTargetPrice(initialPrice);
+    setCandleFixEnabled(isFixed);
+  }
+
+  async function submitPulseModal() {
+    if (!pulseModalRow) return;
+    const price = Number(pulseTargetPrice);
     if (!Number.isFinite(price) || price <= 0) {
-      toast.error('Enter a valid pulse price');
+      toast.error('Enter a valid target pulse price');
       return;
     }
-    setBusySymbol(row.symbol);
+    setPulseSubmitting(true);
     try {
       const { data } = await api.post('/admin/prices/pulse', {
-        symbol: row.symbol,
+        symbol: pulseModalRow.symbol,
         price,
+        candleFix: candleFixEnabled,
         holdMs: 4500,
       });
       const payload = parseApiResponse(data);
-      const filled = payload?.filledOrders ?? 0;
-      toast.success(
-        filled
-          ? `${row.displayPair} → ${fmtPrice(price)} · ${filled} order(s) filled · returns to Binance`
-          : `${row.displayPair} pulsed at ${fmtPrice(price)} · live spike · returns to Binance`
-      );
-      await Promise.all([loadPrices(), loadManual()]);
+      if (candleFixEnabled) {
+        toast.success(
+          `${pulseModalRow.displayPair} candle fixed at ${fmtPrice(price)} (frozen on user chart)`
+        );
+      } else {
+        const filled = payload?.filledOrders ?? 0;
+        toast.success(
+          filled
+            ? `${pulseModalRow.displayPair} → ${fmtPrice(price)} · ${filled} order(s) filled · returns to Binance`
+            : `${pulseModalRow.displayPair} pulsed at ${fmtPrice(price)} · live spike · returns to Binance`
+        );
+      }
+      setPulseModalRow(null);
+      await Promise.all([loadPrices(), loadPulses(), loadManual()]);
     } catch (ex) {
       toast.error(ex?.response?.data?.message || ex.message || 'Pulse failed');
     } finally {
-      setBusySymbol('');
+      setPulseSubmitting(false);
+    }
+  }
+
+  async function handleStopCandleFix(row) {
+    if (!row) return;
+    setPulseSubmitting(true);
+    try {
+      await api.post('/admin/prices/pulse/stop', {
+        symbol: row.symbol,
+      });
+      toast.success(`${row.displayPair} Candle Fix turned OFF · Resumed live market`);
+      setPulseModalRow(null);
+      await Promise.all([loadPrices(), loadPulses(), loadManual()]);
+    } catch (ex) {
+      toast.error(ex?.response?.data?.message || ex.message || 'Failed to stop Candle Fix');
+    } finally {
+      setPulseSubmitting(false);
     }
   }
 
@@ -334,6 +411,14 @@ export default function AdminPricesSection() {
                         {row.statsOverride ? (
                           <span className="admin-prices__override-badge">Override</span>
                         ) : null}
+                        {row.candleFix ? (
+                          <span
+                            className="admin-prices__fixed-badge"
+                            title={`Candle frozen at $${fmtPrice(row.candleFixPrice)}`}
+                          >
+                            <Lock size={11} /> Fixed: ${fmtPrice(row.candleFixPrice)}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="tabular-nums">{fmtPrice(row.price)}</td>
                       <td
@@ -358,13 +443,19 @@ export default function AdminPricesSection() {
                           type="number"
                           step="any"
                           min="0"
-                          placeholder={row.price ? String(row.price) : 'Target price'}
+                          placeholder={
+                            row.candleFix
+                              ? `Fixed: ${fmtPrice(row.candleFixPrice)}`
+                              : row.price
+                              ? String(row.price)
+                              : 'Target price'
+                          }
                           value={pulseInputs[row.symbol] ?? ''}
                           onChange={(e) =>
                             setPulseInputs((prev) => ({ ...prev, [row.symbol]: e.target.value }))
                           }
                           onKeyDown={(e) => {
-                            if (e.key === 'Enter') runPulse(row);
+                            if (e.key === 'Enter') openPulseModal(row);
                           }}
                         />
                       </td>
@@ -372,12 +463,23 @@ export default function AdminPricesSection() {
                         <div className="admin-actions">
                           <button
                             type="button"
-                            className="admin-btn admin-btn--primary admin-btn--sm"
+                            className={`admin-btn ${
+                              row.candleFix ? 'admin-btn--warning' : 'admin-btn--primary'
+                            } admin-btn--sm`}
                             disabled={busy}
-                            onClick={() => runPulse(row)}
+                            onClick={() => openPulseModal(row)}
+                            title={
+                              row.candleFix
+                                ? 'Candle Fix is active. Click to manage or turn off.'
+                                : 'Pulse price or fix candle'
+                            }
                           >
                             {busy ? (
                               <Loader2 size={14} className="spin" />
+                            ) : row.candleFix ? (
+                              <>
+                                <Lock size={14} /> Fixed
+                              </>
                             ) : (
                               <>
                                 <Zap size={14} /> Pulse
@@ -552,6 +654,191 @@ export default function AdminPricesSection() {
           </table>
         </div>
       </div>
+
+      {/* Price Pulse & Candle Fix Dialog Modal */}
+      {pulseModalRow && (
+        <div
+          className="admin-pulse-modal-backdrop"
+          onClick={() => !pulseSubmitting && setPulseModalRow(null)}
+        >
+          <div className="admin-pulse-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-pulse-modal__header">
+              <div className="admin-pulse-modal__title-box">
+                <div className="admin-pulse-modal__icon">
+                  <Zap size={20} />
+                </div>
+                <div>
+                  <h3 className="admin-pulse-modal__title">Price Pulse &amp; Setup</h3>
+                  <p className="admin-pulse-modal__subtitle">
+                    {pulseModalRow.displayPair} · {pulseModalRow.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="admin-pulse-modal__close"
+                disabled={pulseSubmitting}
+                onClick={() => setPulseModalRow(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="admin-pulse-modal__body">
+              {/* Current Status Card */}
+              <div className="admin-pulse-modal__status-card">
+                <div className="admin-pulse-modal__status-item">
+                  <span className="label">Live Market Price</span>
+                  <span className="value tabular-nums">${fmtPrice(pulseModalRow.price)}</span>
+                </div>
+                <div className="admin-pulse-modal__status-item">
+                  <span className="label">Candle Status</span>
+                  {pulseModalRow.candleFix ? (
+                    <span className="badge badge--locked">
+                      <Lock size={12} /> Frozen @ ${fmtPrice(pulseModalRow.candleFixPrice)}
+                    </span>
+                  ) : (
+                    <span className="badge badge--live">
+                      <RefreshCw size={12} /> Live Binance Feed
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Target Price Input */}
+              <div className="admin-pulse-modal__field">
+                <label htmlFor="pulse-target-price">
+                  Target Price (USDT) <span className="req">*</span>
+                </label>
+                <div className="admin-pulse-modal__input-wrapper">
+                  <input
+                    id="pulse-target-price"
+                    type="number"
+                    step="any"
+                    min="0"
+                    className="admin-input"
+                    placeholder="Enter target pulse price"
+                    value={pulseTargetPrice}
+                    onChange={(e) => setPulseTargetPrice(e.target.value)}
+                    autoFocus
+                  />
+                  {pulseModalRow.price ? (
+                    <button
+                      type="button"
+                      className="admin-pulse-modal__fill-btn"
+                      onClick={() => setPulseTargetPrice(String(pulseModalRow.price))}
+                    >
+                      Use Live
+                    </button>
+                  ) : null}
+                </div>
+                <span className="admin-pulse-modal__hint">
+                  The chart candle will form at this price and wick from ${fmtPrice(pulseModalRow.price)}.
+                </span>
+              </div>
+
+              {/* Candle Fix Switch Option */}
+              <div className="admin-pulse-modal__switch-box">
+                <div className="admin-pulse-modal__switch-header">
+                  <div className="admin-pulse-modal__switch-label-group">
+                    <span className="admin-pulse-modal__switch-title">Candle Fix</span>
+                    <span className={`admin-pulse-modal__switch-tag ${candleFixEnabled ? 'on' : 'off'}`}>
+                      {candleFixEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={candleFixEnabled}
+                    className={`admin-pulse-switch ${candleFixEnabled ? 'admin-pulse-switch--on' : ''}`}
+                    onClick={() => setCandleFixEnabled(!candleFixEnabled)}
+                    disabled={pulseSubmitting}
+                  >
+                    <span className="admin-pulse-switch__thumb" />
+                  </button>
+                </div>
+
+                <div className="admin-pulse-modal__switch-desc">
+                  {candleFixEnabled ? (
+                    <div className="desc-box desc-box--on">
+                      <Lock size={15} />
+                      <p>
+                        <strong>Candle Fix is ON:</strong> Candle will stop and freeze at this fixed price on the
+                        user trade page. It will <strong>NOT move with the live market</strong> until you turn Candle
+                        Fix OFF.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="desc-box desc-box--off">
+                      <Zap size={15} />
+                      <p>
+                        <strong>Candle Fix is OFF:</strong> One-time momentary spike on the chart (4.5s) to trigger
+                        limit orders, then automatically returns to live market price.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* If Candle Fix is currently ACTIVE on this coin, show Turn OFF button */}
+              {pulseModalRow.candleFix ? (
+                <div className="admin-pulse-modal__active-alert">
+                  <div className="alert-content">
+                    <AlertCircle size={16} />
+                    <span>
+                      Candle Fix is currently <strong>ACTIVE</strong> on {pulseModalRow.displayPair}. User charts are
+                      frozen at <strong>${fmtPrice(pulseModalRow.candleFixPrice)}</strong>.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn--danger admin-btn--sm"
+                    disabled={pulseSubmitting}
+                    onClick={() => handleStopCandleFix(pulseModalRow)}
+                  >
+                    {pulseSubmitting ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <>
+                        <Unlock size={14} /> Turn OFF Candle Fix &amp; Resume Live Market
+                      </>
+                    )}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="admin-pulse-modal__footer">
+              <button
+                type="button"
+                className="admin-btn admin-btn--ghost"
+                disabled={pulseSubmitting}
+                onClick={() => setPulseModalRow(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`admin-btn ${candleFixEnabled ? 'admin-btn--warning' : 'admin-btn--primary'}`}
+                disabled={pulseSubmitting}
+                onClick={submitPulseModal}
+              >
+                {pulseSubmitting ? (
+                  <Loader2 size={15} className="spin" />
+                ) : candleFixEnabled ? (
+                  <>
+                    <Lock size={15} /> {pulseModalRow.candleFix ? 'Update Fixed Price' : 'Apply & Freeze Candle (ON)'}
+                  </>
+                ) : (
+                  <>
+                    <Zap size={15} /> Execute Pulse (Spike &amp; Revert)
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,12 +5,14 @@ const pulses = new Map();
 const depthOverlays = new Map();
 const revertTimers = new Map();
 
-/** @returns {{ price: number, until: number, fromPrice: number } | null} */
+import { TradingPair } from '../models/TradingPair.js';
+
+/** @returns {{ price: number, until: number, fromPrice: number, candleFix?: boolean } | null} */
 export function getActivePulse(symbol) {
   const sym = String(symbol || '').toUpperCase();
   const p = pulses.get(sym);
   if (!p) return null;
-  if (Date.now() > p.until) {
+  if (!p.candleFix && Date.now() > p.until) {
     pulses.delete(sym);
     return null;
   }
@@ -22,22 +24,23 @@ export function getActivePulsePrice(symbol) {
 }
 
 /**
- * Hold pulsed price briefly so UI shows one spike, then auto-clear.
+ * Hold pulsed price briefly so UI shows one spike, or freeze candle indefinitely if candleFix is true.
  */
-export function setPricePulse(symbol, price, { fromPrice = null, holdMs = 1500 } = {}) {
+export function setPricePulse(symbol, price, { fromPrice = null, holdMs = 1500, candleFix = false } = {}) {
   const sym = String(symbol || '').toUpperCase();
   const value = Number(price);
   if (!Number.isFinite(value) || value <= 0) {
     throw Object.assign(new Error('Invalid pulse price'), { status: 400 });
   }
   const hold = Math.max(600, Math.min(Number(holdMs) || 1500, 5000));
-  const until = Date.now() + hold;
+  const until = candleFix ? Infinity : Date.now() + hold;
   const entry = {
     price: value,
     fromPrice: Number.isFinite(Number(fromPrice)) ? Number(fromPrice) : value,
     until,
     startedAt: Date.now(),
-    holdMs: hold,
+    holdMs: candleFix ? null : hold,
+    candleFix: Boolean(candleFix),
   };
   pulses.set(sym, entry);
   return entry;
@@ -106,11 +109,35 @@ export function listActivePulses() {
   const now = Date.now();
   const rows = [];
   for (const [symbol, p] of pulses) {
-    if (now > p.until) {
+    if (!p.candleFix && now > p.until) {
       pulses.delete(symbol);
       continue;
     }
-    rows.push({ symbol, ...p, remainingMs: p.until - now });
+    rows.push({
+      symbol,
+      ...p,
+      candleFix: Boolean(p.candleFix),
+      remainingMs: p.candleFix ? null : Math.max(0, p.until - now),
+    });
   }
   return rows;
 }
+
+/**
+ * On server boot: restore pairs with candleFix: true from Mongo into in-memory pulses
+ */
+export async function restoreCandleFixes() {
+  try {
+    const fixedPairs = await TradingPair.find({ candleFix: true, candleFixPrice: { $gt: 0 } }).lean();
+    for (const pair of fixedPairs) {
+      setPricePulse(pair.symbol, pair.candleFixPrice, {
+        fromPrice: pair.candleFixFromPrice || pair.candleFixPrice,
+        candleFix: true,
+      });
+      console.info(`[pulse] Restored candleFix for ${pair.symbol} at ${pair.candleFixPrice}`);
+    }
+  } catch (err) {
+    console.warn('[pulse] restoreCandleFixes error:', err.message);
+  }
+}
+

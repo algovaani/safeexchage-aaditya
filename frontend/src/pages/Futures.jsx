@@ -186,6 +186,7 @@ export default function Futures() {
   const configInitRef = useRef(false);
   const tapeSeqRef = useRef(0);
   const submitLockRef = useRef(false);
+  const pulseLockRef = useRef(null);
 
   const wallet = rtWallet || walletLocal;
   const rawMarkPrice = Number(ticker?.lastPrice ?? depth.mid ?? 0);
@@ -434,8 +435,40 @@ export default function Futures() {
       socket.emit('market:subscribe', { symbol: sym, interval: '1s' });
     }
 
+    const isPulseLocked = (lock) => {
+      if (!lock?.active) return false;
+      if (lock.candleFix) return true;
+      return Date.now() <= lock.until;
+    };
+
+    const onPulse = (payload) => {
+      if (!payload || payload.symbol !== sym) return;
+      const price = Number(payload.effectivePrice ?? payload.price);
+      if (!(price > 0)) return;
+      const isCandleFix = Boolean(payload.candleFix);
+      pulseLockRef.current = {
+        price,
+        active: true,
+        candleFix: isCandleFix,
+        until: isCandleFix ? Infinity : (Number(payload.until) || Date.now() + 4500),
+      };
+      setTicker((prev) => ({ ...(prev || {}), lastPrice: price }));
+      setCandles((prev) => patchLastCandle(prev, price));
+    };
+
+    const onPulseEnd = (payload) => {
+      if (!payload || payload.symbol !== sym) return;
+      pulseLockRef.current = null;
+      const price = Number(payload.price);
+      if (price > 0) {
+        setTicker((prev) => ({ ...(prev || {}), lastPrice: price }));
+        setCandles((prev) => patchLastCandle(prev, price));
+      }
+    };
+
     const onMerged = (payload) => {
       if (!payload?.candle || payload.symbol !== sym) return;
+      if (isPulseLocked(pulseLockRef.current)) return;
       if (payload.interval === chartInterval) {
         const c = payload.candle;
         setCandles((prev) => {
@@ -474,7 +507,9 @@ export default function Futures() {
 
     const onTrade = (payload) => {
       if (!payload || payload.symbol !== sym) return;
-      const price = Number(payload.effectivePrice ?? payload.price);
+      const lock = pulseLockRef.current;
+      const isLocked = isPulseLocked(lock);
+      const price = isLocked ? lock.price : Number(payload.effectivePrice ?? payload.price);
       if (Number.isFinite(price)) {
         setTicker((prev) => {
           if (prev?.lastPrice === price) return prev;
@@ -484,7 +519,9 @@ export default function Futures() {
           setPriceUp(price >= prevPriceRef.current);
         }
         prevPriceRef.current = price;
-        setCandles((prev) => patchLastCandle(prev, price));
+        if (!isLocked) {
+          setCandles((prev) => patchLastCandle(prev, price));
+        }
       }
 
       // Heartbeat ticks (qty 0) are for last-price only — never show as tape fills
@@ -508,6 +545,8 @@ export default function Futures() {
     socket.on('market:klines:merged', onMerged);
     socket.on('market:depth', onDepth);
     socket.on('market:trade', onTrade);
+    socket.on('market:price:pulse', onPulse);
+    socket.on('market:price:pulse:end', onPulseEnd);
 
     return () => {
       socket.emit('market:unsubscribe', { symbol: sym, interval: chartInterval });
@@ -517,6 +556,8 @@ export default function Futures() {
       socket.off('market:klines:merged', onMerged);
       socket.off('market:depth', onDepth);
       socket.off('market:trade', onTrade);
+      socket.off('market:price:pulse', onPulse);
+      socket.off('market:price:pulse:end', onPulseEnd);
       releaseMarketSocket();
     };
   }, [symbol, chartInterval]);

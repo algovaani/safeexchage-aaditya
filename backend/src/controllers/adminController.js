@@ -11,7 +11,13 @@ import { CashInPersonRequest } from '../models/CashInPersonRequest.js';
 import { mergeCandles } from '../services/mergeService.js';
 import { fetchKlines, fetchTicker, fetchDepth } from '../services/marketDataProvider.js';
 import { processOrdersForPrice } from '../services/orderEngine.js';
-import { listActivePulses, schedulePulseRevert, setPricePulse } from '../services/pricePulseService.js';
+import {
+  clearPricePulse,
+  getActivePulse,
+  listActivePulses,
+  schedulePulseRevert,
+  setPricePulse,
+} from '../services/pricePulseService.js';
 import {
   alignOpenTime,
   buildMemoryPulseFlash,
@@ -373,17 +379,19 @@ export const pricePulseSchema = z.object({
   symbol: z.string().min(3),
   price: z.number().positive(),
   holdMs: z.number().int().min(600).max(5_000).optional(),
+  candleFix: z.boolean().optional(),
 });
 
 /**
- * One-shot pulse: memory spike → sockets everywhere → fill orders → revert to Binance.
- * No Mongo wait on the hot path (smooth UX, no server stack).
+ * One-shot pulse or persistent candle fix:
+ * When candleFix is true, chart freezes at fixed price until admin turns it OFF.
  */
 export async function pulsePrice(req, res, next) {
   try {
     const symbol = String(req.body.symbol || '').toUpperCase();
     const pulsePriceValue = Number(req.body.price);
     const holdMs = Number(req.body.holdMs) || 4500;
+    const candleFix = Boolean(req.body.candleFix);
 
     if (!symbol || !Number.isFinite(pulsePriceValue) || pulsePriceValue <= 0) {
       return error(res, 'symbol and positive price are required', 400);
@@ -439,12 +447,43 @@ export async function pulsePrice(req, res, next) {
       console.warn(`[pulse] expand 24h stats ${symbol}:`, err.message);
     }
 
-    const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs });
+    // Update TradingPair model with candleFix status
+    try {
+      if (candleFix) {
+        await TradingPair.findOneAndUpdate(
+          { symbol },
+          {
+            $set: {
+              candleFix: true,
+              candleFixPrice: pulsePriceValue,
+              candleFixFromPrice: fromPrice,
+            },
+          }
+        );
+      } else {
+        await TradingPair.findOneAndUpdate(
+          { symbol },
+          {
+            $set: {
+              candleFix: false,
+              candleFixPrice: null,
+              candleFixFromPrice: null,
+            },
+          }
+        );
+      }
+      invalidateTradingPairCache();
+      await refreshTradingPairCache();
+    } catch (err) {
+      console.warn(`[pulse] save candleFix to DB ${symbol}:`, err.message);
+    }
+
+    const pulse = setPricePulse(symbol, pulsePriceValue, { fromPrice, holdMs, candleFix });
     const flash = buildMemoryPulseFlash({
       symbol,
       fromPrice,
       pulsePrice: pulsePriceValue,
-      holdMs: pulse.holdMs,
+      holdMs: candleFix ? 60000 : pulse.holdMs,
     });
 
     const io = req.app.get('io');
@@ -458,7 +497,8 @@ export async function pulsePrice(req, res, next) {
       trade: {
         price: pulsePriceValue,
         fromPrice,
-        until: pulse.until,
+        until: candleFix ? null : pulse.until,
+        candleFix,
         qty: Math.max(0.01, Math.abs(pulsePriceValue - fromPrice) * 0.001),
         quantity: Math.max(0.01, Math.abs(pulsePriceValue - fromPrice) * 0.001),
         time: Date.now(),
@@ -491,12 +531,13 @@ export async function pulsePrice(req, res, next) {
       symbol,
       fromPrice,
       price: pulsePriceValue,
-      until: pulse.until,
+      until: candleFix ? null : pulse.until,
       holdMs: pulse.holdMs,
+      candleFix,
       historySaved,
       manualsSaved,
       filledOrders: 0,
-      mode: 'persisted-wick',
+      mode: candleFix ? 'candle-fix-frozen' : 'persisted-wick',
       high_24h: statsHigh,
       low_24h: statsLow,
     };
@@ -510,8 +551,6 @@ export async function pulsePrice(req, res, next) {
         responsePayload.filledOrders = trades.length;
 
         if (io) {
-          // Only ensure the live 1s stream for order/depth continuity — do NOT
-          // spin up every chart interval (that leaked idle REST pollers).
           try {
             ensureMarketStream(io, symbol, '1s');
           } catch {
@@ -539,41 +578,188 @@ export async function pulsePrice(req, res, next) {
       }
     });
 
-    // 4) After hold → market close + KEEP pulse wick (persisted)
-    schedulePulseRevert(symbol, pulse.holdMs, async () => {
-      if (!io) return;
-      let marketPrice = fromPrice;
-      try {
-        const ticker = await fetchTicker(symbol, { force: true });
-        marketPrice = Number(ticker?.price ?? ticker?.lastPrice) || fromPrice;
-      } catch {
-        /* keep fromPrice */
-      }
+    // 4) If NOT candleFix → after hold → revert to market close + KEEP pulse wick
+    if (!candleFix) {
+      schedulePulseRevert(symbol, pulse.holdMs, async () => {
+        if (!io) return;
+        let marketPrice = fromPrice;
+        try {
+          const ticker = await fetchTicker(symbol, { force: true });
+          marketPrice = Number(ticker?.price ?? ticker?.lastPrice) || fromPrice;
+        } catch {
+          /* keep fromPrice */
+        }
 
-      const wickHi = Math.max(marketPrice, pulsePriceValue, fromPrice);
-      const wickLo = Math.min(marketPrice, pulsePriceValue, fromPrice);
+        const wickHi = Math.max(marketPrice, pulsePriceValue, fromPrice);
+        const wickLo = Math.min(marketPrice, pulsePriceValue, fromPrice);
 
-      resetPulseStreamState(symbol);
-      try {
-        await finalizePulseAfterRevert(symbol, marketPrice, {
-          openTimes: flash.openTimes,
-          pulsedPrice: pulsePriceValue,
+        resetPulseStreamState(symbol);
+        try {
+          await finalizePulseAfterRevert(symbol, marketPrice, {
+            openTimes: flash.openTimes,
+            pulsedPrice: pulsePriceValue,
+            fromPrice,
+            adminId: req.userId,
+          });
+        } catch (err) {
+          console.warn(`[pulse] finalize ${symbol}:`, err.message);
+        }
+
+        io.emit('market:price:pulse:end', {
+          symbol,
+          price: marketPrice,
           fromPrice,
-          adminId: req.userId,
+          pulsedPrice: pulsePriceValue,
+          high: wickHi,
+          low: wickLo,
+          high_24h: statsHigh,
+          low_24h: statsLow,
+          candleFix: false,
+          reloadChart: false,
         });
-      } catch (err) {
-        console.warn(`[pulse] finalize ${symbol}:`, err.message);
-      }
 
+        io.to(depthRoom(symbol)).emit('market:trade', {
+          symbol,
+          price: marketPrice,
+          qty: 0,
+          time: Date.now(),
+          tickerOnly: true,
+          pulse: false,
+        });
+
+        // Emit restored candle WITH pulse wick so chart keeps the spike
+        for (const interval of intervals) {
+          const aligned =
+            flash.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+          const candle = {
+            openTime: aligned,
+            open: fromPrice,
+            high: wickHi,
+            low: wickLo,
+            close: marketPrice,
+            volume: 1,
+            isFinal: false,
+            pulse: false,
+            _forceChart: true,
+          };
+          emitCandle(io, symbol, interval, candle);
+          io.to(depthRoom(symbol)).emit('market:klines:merged', {
+            symbol,
+            interval,
+            candle,
+          });
+        }
+
+        fetchDepth(symbol, { limit: 20 })
+          .then((marketDepth) => {
+            if (!marketDepth?.bids?.length && !marketDepth?.asks?.length) return;
+            io.to(depthRoom(symbol)).emit('market:depth', {
+              symbol,
+              ...marketDepth,
+              pulse: false,
+            });
+            io.to(`m:${symbol}:1s`).emit('market:depth', {
+              symbol,
+              ...marketDepth,
+              pulse: false,
+            });
+          })
+          .catch(() => {});
+      });
+    }
+
+    return success(
+      res,
+      responsePayload,
+      candleFix ? 'Candle fixed and frozen at pulse price' : 'Price pulsed'
+    );
+  } catch (e) {
+    return next(e);
+  }
+}
+
+/**
+ * Turn OFF candle fix:
+ * Unfreezes the candle, changes price one-time according to live market price (keeping the wick),
+ * and resumes normal live market streaming.
+ */
+export async function stopPulsePrice(req, res, next) {
+  try {
+    const symbol = String(req.body.symbol || '').toUpperCase();
+    if (!symbol) {
+      return error(res, 'symbol is required', 400);
+    }
+
+    const pair = getPairSync(symbol);
+    const existingPulse = getActivePulse(symbol);
+    const pulsedPrice = existingPulse?.price ?? pair?.candleFixPrice ?? null;
+    const fromPrice = existingPulse?.fromPrice ?? pair?.candleFixFromPrice ?? pulsedPrice;
+
+    // 1) Clear pulse from in-memory pricePulseService
+    clearPricePulse(symbol);
+
+    // 2) Update Mongo TradingPair
+    await TradingPair.findOneAndUpdate(
+      { symbol },
+      { $set: { candleFix: false, candleFixPrice: null, candleFixFromPrice: null } }
+    );
+    invalidateTradingPairCache();
+    await refreshTradingPairCache();
+    invalidatePriceCache();
+
+    // 3) Fetch current market price
+    let marketPrice = fromPrice;
+    let liveHigh = null;
+    let liveLow = null;
+    try {
+      const ticker = await fetchTicker(symbol, { force: true });
+      marketPrice = Number(ticker?.price ?? ticker?.lastPrice) || fromPrice;
+      liveHigh = Number(ticker?.high_24h ?? ticker?.highPrice);
+      liveLow = Number(ticker?.low_24h ?? ticker?.lowPrice);
+    } catch {
+      /* keep fromPrice */
+    }
+
+    const wickHi = Math.max(
+      Number(marketPrice) || 0,
+      Number(pulsedPrice) || 0,
+      Number(fromPrice) || 0
+    );
+    const wickLo = Math.min(
+      Number(marketPrice) || Infinity,
+      Number(pulsedPrice) || Infinity,
+      Number(fromPrice) || Infinity
+    );
+
+    let statsHigh = liveHigh != null ? Math.max(liveHigh, wickHi) : wickHi;
+    let statsLow = liveLow != null ? Math.min(liveLow, wickLo) : wickLo;
+
+    resetPulseStreamState(symbol);
+
+    // 4) Finalize pulse after revert in DB history
+    try {
+      await finalizePulseAfterRevert(symbol, marketPrice, {
+        pulsedPrice: Number(pulsedPrice) || marketPrice,
+        fromPrice: Number(fromPrice) || marketPrice,
+        adminId: req.userId,
+      });
+    } catch (err) {
+      console.warn(`[pulse:stop] finalize ${symbol}:`, err.message);
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      // 5) Emit market:price:pulse:end to all clients
       io.emit('market:price:pulse:end', {
         symbol,
         price: marketPrice,
         fromPrice,
-        pulsedPrice: pulsePriceValue,
+        pulsedPrice,
         high: wickHi,
         low: wickLo,
         high_24h: statsHigh,
         low_24h: statsLow,
+        candleFix: false,
         reloadChart: false,
       });
 
@@ -586,13 +772,13 @@ export async function pulsePrice(req, res, next) {
         pulse: false,
       });
 
-      // Emit restored candle WITH pulse wick so chart keeps the spike
+      // 6) Emit one-time updated candle for all intervals with wick preserved
+      const intervals = ['1s', '1m', '5m', '15m', '1h', '4h', '1d'];
       for (const interval of intervals) {
-        const aligned =
-          flash.openTimes?.[interval] ?? alignOpenTime(Date.now(), interval);
+        const aligned = alignOpenTime(Date.now(), interval);
         const candle = {
           openTime: aligned,
-          open: fromPrice,
+          open: fromPrice || marketPrice,
           high: wickHi,
           low: wickLo,
           close: marketPrice,
@@ -603,6 +789,11 @@ export async function pulsePrice(req, res, next) {
         };
         emitCandle(io, symbol, interval, candle);
         io.to(depthRoom(symbol)).emit('market:klines:merged', {
+          symbol,
+          interval,
+          candle,
+        });
+        io.emit('market:klines:merged', {
           symbol,
           interval,
           candle,
@@ -624,9 +815,13 @@ export async function pulsePrice(req, res, next) {
           });
         })
         .catch(() => {});
-    });
+    }
 
-    return success(res, responsePayload, 'Price pulsed');
+    return success(
+      res,
+      { symbol, marketPrice, pulsedPrice, candleFix: false },
+      'Candle fix turned OFF and returned to live market'
+    );
   } catch (e) {
     return next(e);
   }

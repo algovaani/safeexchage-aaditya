@@ -273,6 +273,7 @@ r.patch(
   marketingAdmin.updateSupportContact
 );
 r.post('/prices/pulse', a.pulsePrice);
+r.post('/prices/pulse/stop', a.stopPulsePrice);
 r.get('/prices/pulses', a.listPricePulses);
 r.get('/ticker-stats', a.listTickerStats);
 r.put('/ticker-stats/:symbol', a.upsertTickerStats);

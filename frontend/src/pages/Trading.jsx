@@ -549,9 +549,14 @@ export default function Trading() {
 
     const sym = symbol.toUpperCase();
 
+    const isPulseLocked = (lock) => {
+      if (!lock?.active) return false;
+      if (lock.candleFix) return true;
+      return Date.now() <= lock.until;
+    };
+
     const pulseActive = () => {
-      const lock = pulseLockRef.current;
-      return Boolean(lock?.active && Date.now() <= lock.until);
+      return isPulseLocked(pulseLockRef.current);
     };
 
     const canApplyLiveTick = () => !priceManualRef.current || pulseActive();
@@ -565,7 +570,7 @@ export default function Trading() {
 
     /** Merge pulse wick into a candle without forcing full chart redraw */
     const withPulseWick = (candle, lock, { zoomOnce = false } = {}) => {
-      if (!lock?.active || Date.now() > lock.until) return candle;
+      if (!isPulseLocked(lock)) return candle;
       const open = Number(candle.open) || lock.from;
       const close = lock.price;
       return {
@@ -585,22 +590,24 @@ export default function Trading() {
       let c = { ...payload.candle, pulse: Boolean(payload.candle.pulse) };
 
       // Pulse candle may arrive before market:price:pulse — arm lock from candle itself
-      if (c.pulse && Number(c.close) > 0 && !(lock?.active && Date.now() <= lock.until)) {
+      if (c.pulse && Number(c.close) > 0 && !isPulseLocked(lock)) {
         const from = Number(c.open) > 0 ? Number(c.open) : Number(c.close);
         const price = Number(c.close);
+        const isFix = Boolean(c.candleFix || payload.candleFix);
         lock = {
           price,
           from,
           high: Math.max(from, price, Number(c.high) || price),
           low: Math.min(from, price, Number(c.low) > 0 ? Number(c.low) : price),
-          until: Date.now() + 4500,
+          until: isFix ? Infinity : Date.now() + 4500,
           active: true,
+          candleFix: isFix,
         };
         pulseLockRef.current = lock;
         pulseWickRef.current = { high: lock.high, low: lock.low };
       }
 
-      if (lock?.active && Date.now() <= lock.until) {
+      if (isPulseLocked(lock)) {
         c = withPulseWick(c, lock, { zoomOnce: true });
       } else if (lock) {
         pulseLockRef.current = null;
@@ -612,7 +619,7 @@ export default function Trading() {
         }
 
         // 1) Active pulse → instant spike on last candle
-        if (lock?.active && Date.now() <= lock.until) {
+        if (isPulseLocked(lock)) {
           return applyPulseToLastCandle(prev, { price: lock.price, from: lock.from });
         }
 
@@ -642,7 +649,7 @@ export default function Trading() {
         return prev;
       });
 
-      const displayPrice = lock?.active && Date.now() <= lock.until ? lock.price : Number(c.close);
+      const displayPrice = isPulseLocked(lock) ? lock.price : Number(c.close);
       if (displayPrice > 0 && canApplyLiveTick()) {
         setTicker((prev) => ({ ...prev, lastPrice: displayPrice, symbol: sym }));
         setWatchPrices((prev) => ({
@@ -674,7 +681,8 @@ export default function Trading() {
       const from = Number(payload.fromPrice) || price;
       const hi = Math.max(from, price);
       const lo = Math.min(from, price);
-      const until = Number(payload.until) || Date.now() + 4500;
+      const isCandleFix = Boolean(payload.candleFix);
+      const until = isCandleFix ? Infinity : (Number(payload.until) || Date.now() + 4500);
 
       pulseLockRef.current = {
         price,
@@ -683,6 +691,7 @@ export default function Trading() {
         low: lo,
         until,
         active: true,
+        candleFix: isCandleFix,
       };
       // Keep wick forever on this candle after pulse ends
       pulseWickRef.current = {
@@ -795,8 +804,8 @@ export default function Trading() {
     const onTrade = (payload) => {
       if (!payload || payload.symbol !== sym) return;
       const lock = pulseLockRef.current;
-      const price =
-        lock?.active && Date.now() < lock.until ? lock.price : Number(payload.price);
+      const isLocked = isPulseLocked(lock);
+      const price = isLocked ? lock.price : Number(payload.price);
       if (!canApplyLiveTick()) return;
       setTicker((prev) => ({ ...prev, lastPrice: price, symbol: sym }));
       setWatchPrices((prev) => ({
@@ -808,7 +817,7 @@ export default function Trading() {
       }));
 
       // After pulse: live market continues designing the graph; wick stays
-      if (!(lock?.active && Date.now() <= lock.until) && Number(price) > 0 && !payload.pulse) {
+      if (!isLocked && Number(price) > 0 && !payload.pulse) {
         setCandles((prev) => {
           if (!prev.length) return prev;
           const last = prev[prev.length - 1];

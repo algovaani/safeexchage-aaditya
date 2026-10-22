@@ -1,6 +1,7 @@
 import { MarketData } from '../models/MarketData.js';
 import { fetchKlines, fetchAggTrades, bucketTradesToSecondCandles } from './marketDataProvider.js';
 import { loadManualForRange, mergeCandles } from './mergeService.js';
+import { getActivePulse } from './pricePulseService.js';
 
 function toCandleDoc(c) {
   return {
@@ -262,7 +263,8 @@ export async function getMergedKlines(symbol, interval, { startTime, endTime, li
     const start = candles[0].openTime;
     const end = candles[candles.length - 1].openTime;
     const manual = await loadManualForRange(sym, interval, start, end);
-    return mergeCandles(candles, manual);
+    const res = mergeCandles(candles, manual);
+    return applyActiveCandleFix(sym, res);
   }
 
   // Cold start — must ingest once
@@ -297,7 +299,24 @@ export async function getMergedKlines(symbol, interval, { startTime, endTime, li
   const start = candles[0].openTime;
   const end = candles[candles.length - 1].openTime;
   const manual = await loadManualForRange(sym, interval, start, end);
-  return mergeCandles(candles, manual);
+  const res = mergeCandles(candles, manual);
+  return applyActiveCandleFix(sym, res);
+}
+
+function applyActiveCandleFix(sym, candles) {
+  if (!Array.isArray(candles) || !candles.length) return candles;
+  const activePulse = getActivePulse(sym);
+  if (activePulse?.candleFix && activePulse.price > 0) {
+    const last = { ...candles[candles.length - 1] };
+    const px = activePulse.price;
+    last.close = px;
+    last.high = Math.max(Number(last.high) || px, px);
+    last.low = Math.min(Number(last.low) > 0 ? Number(last.low) : px, px);
+    last.pulse = true;
+    last.candleFix = true;
+    candles[candles.length - 1] = last;
+  }
+  return candles;
 }
 
 /**

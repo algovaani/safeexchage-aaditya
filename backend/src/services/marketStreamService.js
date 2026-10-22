@@ -21,7 +21,7 @@ import {
   clearRecentTicks,
   syntheticOrderBook,
 } from './marketDataProvider.js';
-import { getPulseDepthOverlay } from './pricePulseService.js';
+import { getActivePulse, getPulseDepthOverlay } from './pricePulseService.js';
 import { getPairSync } from './tradingPairService.js';
 import { getCachedDexPrice } from './dexscreenerService.js';
 import { getWsLivePrice, onBinanceWsTrade } from './binanceWsService.js';
@@ -624,6 +624,18 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
   }
 
   try {
+    const activePulse = getActivePulse(sym);
+    if (activePulse?.candleFix) {
+      socket.emit('market:price:pulse', {
+        symbol: sym,
+        price: activePulse.price,
+        fromPrice: activePulse.fromPrice,
+        until: null,
+        candleFix: true,
+        pulse: true,
+      });
+    }
+
     const ticker = await safeFetchTicker(sym);
     const state =
       (isRedisReady() ? await getLivePrice(sym) : null) ||
@@ -638,6 +650,7 @@ export async function handleMarketSubscribe(io, socket, { symbol, interval }) {
         time: Date.now(),
         tickerOnly: true,
         pulse: state.source === 'pulse',
+        candleFix: Boolean(activePulse?.candleFix),
       });
     }
   } catch {
@@ -682,6 +695,7 @@ export function broadcastPulseToSockets(io, { symbol, intervalCandles, depth, tr
       price: trade.price,
       fromPrice: trade.fromPrice,
       until: trade.until,
+      candleFix: Boolean(trade.candleFix),
       high_24h: trade.high_24h,
       low_24h: trade.low_24h,
     });
