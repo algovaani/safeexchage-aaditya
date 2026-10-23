@@ -115,7 +115,7 @@ export default function CashInPersonModal({
         .then((info) => {
           if (info?.bank) setAdminBank(info.bank);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [adminBank]);
 
@@ -126,7 +126,7 @@ export default function CashInPersonModal({
         .then((info) => {
           if (info?.bank) setAdminBank(info.bank);
         })
-        .catch(() => {});
+        .catch(() => { });
     };
     window.addEventListener('platform:config-updated', handleConfigUpdated);
     return () => window.removeEventListener('platform:config-updated', handleConfigUpdated);
@@ -314,8 +314,8 @@ export default function CashInPersonModal({
   const resolvedAdminQr = adminBank?.qrCode ? resolveAssetUrl(adminBank.qrCode) : '';
   const upiIntentUri = adminBank?.upiId
     ? `upi://pay?pa=${encodeURIComponent(adminBank.upiId)}&pn=${encodeURIComponent(
-        adminBank.holder || 'SafeXchange'
-      )}&cu=INR`
+      adminBank.holder || 'SafeXchange'
+    )}&cu=INR`
     : '';
 
   const isPaymentAccountVisible =
@@ -473,9 +473,8 @@ export default function CashInPersonModal({
                       <div key={item.id} className="cip-history-card">
                         <div className="cip-history-header">
                           <span
-                            className={`cip-history-type ${
-                              isW ? 'cip-history-type--withdraw' : 'cip-history-type--deposit'
-                            }`}
+                            className={`cip-history-type ${isW ? 'cip-history-type--withdraw' : 'cip-history-type--deposit'
+                              }`}
                           >
                             {isW ? (
                               <>
@@ -506,12 +505,12 @@ export default function CashInPersonModal({
                           <span className="text-[11px] text-slate-400">
                             {item.submittedAt || item.createdAt
                               ? new Date(item.submittedAt || item.createdAt).toLocaleDateString(undefined, {
-                                  day: 'numeric',
-                                  month: 'short',
-                                  year: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
                               : '—'}
                           </span>
                         </div>
@@ -667,201 +666,205 @@ export default function CashInPersonModal({
                         </span>
                       </div>
 
-                    {/* Official QR Code */}
-                    {(adminBank?.qrCode || adminBank?.upiId) && (
-                      <div className="flex flex-col sm:flex-row items-center gap-3 p-2.5 bg-slate-950 rounded-lg border border-slate-800">
-                        <div className="p-2 bg-white rounded-lg shadow-sm shrink-0 flex items-center justify-center">
-                          {resolvedAdminQr ? (
-                            <img
-                              src={resolvedAdminQr}
-                              alt="Official QR Code"
-                              className="w-28 h-28 object-contain"
-                              onError={(e) => {
-                                e.currentTarget.style.display = 'none';
-                              }}
-                            />
-                          ) : (
-                            <QRCodeSVG
-                              value={upiIntentUri || adminBank?.upiId || ''}
-                              size={112}
-                              level="M"
-                              includeMargin
-                            />
-                          )}
-                        </div>
-                        <div className="text-left space-y-1">
-                          <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                            <Smartphone size={14} className="text-amber-400" />
-                            Scan with Any UPI App
-                          </p>
-                          <p className="text-[11px] text-slate-400 leading-tight">
-                            Google Pay, PhonePe, Paytm, BHIM &amp; UPI
-                          </p>
-                          {adminBank?.upiId && (
-                            <div className="flex items-center gap-1.5 pt-1">
-                              <span className="text-[11px] text-slate-400">UPI ID:</span>
-                              <code className="text-xs text-amber-400 font-mono font-bold">
-                                {adminBank.upiId}
-                              </code>
-                              <button
-                                type="button"
-                                className="text-amber-400 hover:text-amber-300 ml-1"
-                                onClick={() => copyToClipboard(adminBank.upiId, 'admin_upi')}
-                                title="Copy UPI ID"
-                              >
-                                {copiedField === 'admin_upi' ? <Check size={12} /> : <Copy size={12} />}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Admin Bank Fields */}
-                    <div className="text-xs space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between py-0.5">
-                        <span className="text-slate-400">Bank Name:</span>
-                        <span className="font-semibold text-white">
-                          {adminBank?.name || 'SafeXchange Bank'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
-                        <span className="text-slate-400">Account Number:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-white">
-                            {adminBank?.account || '—'}
-                          </span>
-                          {adminBank?.account && (
-                            <button
-                              type="button"
-                              className="text-amber-400 hover:text-amber-300 p-0.5"
-                              onClick={() => copyToClipboard(adminBank.account, 'admin_acc')}
-                              title="Copy Account Number"
-                            >
-                              {copiedField === 'admin_acc' ? <Check size={12} /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
-                        <span className="text-slate-400">IFSC Code:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-white">
-                            {adminBank?.ifsc || '—'}
-                          </span>
-                          {adminBank?.ifsc && (
-                            <button
-                              type="button"
-                              className="text-amber-400 hover:text-amber-300 p-0.5"
-                              onClick={() => copyToClipboard(adminBank.ifsc, 'admin_ifsc')}
-                              title="Copy IFSC Code"
-                            >
-                              {copiedField === 'admin_ifsc' ? <Check size={12} /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
-                        <span className="text-slate-400">Account Holder:</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-white">
-                            {adminBank?.holder || 'SafeXchange'}
-                          </span>
-                          {adminBank?.holder && (
-                            <button
-                              type="button"
-                              className="text-amber-400 hover:text-amber-300 p-0.5"
-                              onClick={() => copyToClipboard(adminBank.holder, 'admin_holder')}
-                              title="Copy Holder Name"
-                            >
-                              {copiedField === 'admin_holder' ? <Check size={12} /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {adminBank?.branch && (
-                        <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
-                          <span className="text-slate-400">Branch:</span>
-                          <span className="text-slate-200">{adminBank.branch}</span>
+                      {/* Official QR Code */}
+                      {(adminBank?.qrCode || adminBank?.upiId) && (
+                        <div className="flex flex-col sm:flex-row items-center gap-3 p-2.5 bg-slate-950 rounded-lg border border-slate-800">
+                          <div className="p-2 bg-white rounded-lg shadow-sm shrink-0 flex items-center justify-center">
+                            {resolvedAdminQr ? (
+                              <img
+                                src={resolvedAdminQr}
+                                alt="Official QR Code"
+                                className="w-28 h-28 object-contain"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <QRCodeSVG
+                                value={upiIntentUri || adminBank?.upiId || ''}
+                                size={112}
+                                level="M"
+                                includeMargin
+                              />
+                            )}
+                          </div>
+                          <div className="text-left space-y-1">
+                            <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <Smartphone size={14} className="text-amber-400" />
+                              Scan with Any UPI App
+                            </p>
+                            <p className="text-[11px] text-slate-400 leading-tight">
+                              Google Pay, PhonePe, Paytm, BHIM &amp; UPI
+                            </p>
+                            {adminBank?.upiId && (
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <span className="text-[11px] text-slate-400">UPI ID:</span>
+                                <code className="text-xs text-amber-400 font-mono font-bold">
+                                  {adminBank.upiId}
+                                </code>
+                                <button
+                                  type="button"
+                                  className="text-amber-400 hover:text-amber-300 ml-1"
+                                  onClick={() => copyToClipboard(adminBank.upiId, 'admin_upi')}
+                                  title="Copy UPI ID"
+                                >
+                                  {copiedField === 'admin_upi' ? <Check size={12} /> : <Copy size={12} />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
+
+                      {/* Admin Bank Fields */}
+                      <div className="text-xs space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between py-0.5">
+                          <span className="text-slate-400">Bank Name:</span>
+                          <span className="font-semibold text-white">
+                            {adminBank?.name || 'SafeXchange Bank'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
+                          <span className="text-slate-400">Account Number:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-white">
+                              {adminBank?.account || '—'}
+                            </span>
+                            {adminBank?.account && (
+                              <button
+                                type="button"
+                                className="text-amber-400 hover:text-amber-300 p-0.5"
+                                onClick={() => copyToClipboard(adminBank.account, 'admin_acc')}
+                                title="Copy Account Number"
+                              >
+                                {copiedField === 'admin_acc' ? <Check size={12} /> : <Copy size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
+                          <span className="text-slate-400">IFSC Code:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-white">
+                              {adminBank?.ifsc || '—'}
+                            </span>
+                            {adminBank?.ifsc && (
+                              <button
+                                type="button"
+                                className="text-amber-400 hover:text-amber-300 p-0.5"
+                                onClick={() => copyToClipboard(adminBank.ifsc, 'admin_ifsc')}
+                                title="Copy IFSC Code"
+                              >
+                                {copiedField === 'admin_ifsc' ? <Check size={12} /> : <Copy size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
+                          <span className="text-slate-400">Account Holder:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-white">
+                              {adminBank?.holder || 'SafeXchange'}
+                            </span>
+                            {adminBank?.holder && (
+                              <button
+                                type="button"
+                                className="text-amber-400 hover:text-amber-300 p-0.5"
+                                onClick={() => copyToClipboard(adminBank.holder, 'admin_holder')}
+                                title="Copy Holder Name"
+                              >
+                                {copiedField === 'admin_holder' ? <Check size={12} /> : <Copy size={12} />}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {adminBank?.branch && (
+                          <div className="flex items-center justify-between py-0.5 border-t border-slate-800/80 pt-1">
+                            <span className="text-slate-400">Branch:</span>
+                            <span className="text-slate-200">{adminBank.branch}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
                   )}
 
                   {/* UTR / Transaction Reference Input */}
-                  <div className="deposit-modal__field">
-                    <label htmlFor="cip-utr" className="flex items-center justify-between">
-                      <span>UTR / Reference Number *</span>
-                      <span className="text-[11px] text-amber-400">Required</span>
-                    </label>
-                    <input
-                      id="cip-utr"
-                      className="deposit-modal__input"
-                      type="text"
-                      value={form.utrNumber}
-                      onChange={(e) => setForm((f) => ({ ...f, utrNumber: e.target.value }))}
-                      placeholder="e.g. 12-digit UTR from GPay / PhonePe / Bank receipt"
-                      required
-                    />
-                  </div>
+                  {isPaymentAccountVisible && (
+                    <div className="deposit-modal__field">
+                      <label htmlFor="cip-utr" className="flex items-center justify-between">
+                        <span>UTR / Reference Number *</span>
+                        <span className="text-[11px] text-amber-400">Required</span>
+                      </label>
+                      <input
+                        id="cip-utr"
+                        className="deposit-modal__input"
+                        type="text"
+                        value={form.utrNumber}
+                        onChange={(e) => setForm((f) => ({ ...f, utrNumber: e.target.value }))}
+                        placeholder="e.g. 12-digit UTR from GPay / PhonePe / Bank receipt"
+                        required
+                      />
+                    </div>
+                  )}
 
                   {/* Screenshot / Payment Proof Upload */}
-                  <div className="deposit-modal__field">
-                    <label className="flex items-center justify-between">
-                      <span>Upload Payment Screenshot *</span>
-                      <span className="text-[11px] text-amber-400">Receipt / Proof</span>
-                    </label>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,application/pdf"
-                      className="hidden"
-                      id="cip-proof-input"
-                      onChange={handleFileChange}
-                    />
+                  {isPaymentAccountVisible && (
+                    <div className="deposit-modal__field">
+                      <label className="flex items-center justify-between">
+                        <span>Upload Payment Screenshot *</span>
+                        <span className="text-[11px] text-amber-400">Receipt / Proof</span>
+                      </label>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
+                        className="hidden"
+                        id="cip-proof-input"
+                        onChange={handleFileChange}
+                      />
 
-                    <div
-                      className="p-3 border-2 border-dashed border-slate-700 hover:border-amber-400 rounded-xl bg-slate-900/60 cursor-pointer text-center transition flex flex-col items-center justify-center gap-2"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      {proofPreview ? (
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={proofPreview}
-                            alt="Proof Preview"
-                            className="w-16 h-16 object-cover rounded-lg border border-amber-400/40"
-                          />
-                          <div className="text-left text-xs">
-                            <p className="font-semibold text-white truncate max-w-[200px]">
-                              {proof?.name}
-                            </p>
-                            <p className="text-slate-400 text-[11px]">
-                              {(proof.size / 1024).toFixed(1)} KB — Click to change
-                            </p>
+                      <div
+                        className="p-3 border-2 border-dashed border-slate-700 hover:border-amber-400 rounded-xl bg-slate-900/60 cursor-pointer text-center transition flex flex-col items-center justify-center gap-2"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {proofPreview ? (
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={proofPreview}
+                              alt="Proof Preview"
+                              className="w-16 h-16 object-cover rounded-lg border border-amber-400/40"
+                            />
+                            <div className="text-left text-xs">
+                              <p className="font-semibold text-white truncate max-w-[200px]">
+                                {proof?.name}
+                              </p>
+                              <p className="text-slate-400 text-[11px]">
+                                {(proof.size / 1024).toFixed(1)} KB — Click to change
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="w-9 h-9 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                            <UploadCloud size={20} />
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold text-white">
-                              {proof ? proof.name : 'Click to upload payment screenshot'}
-                            </p>
-                            <span className="text-[11px] text-slate-400">
-                              JPG, PNG, WebP or PDF (Max 10MB)
-                            </span>
-                          </div>
-                        </>
-                      )}
+                        ) : (
+                          <>
+                            <div className="w-9 h-9 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                              <UploadCloud size={20} />
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-white">
+                                {proof ? proof.name : 'Click to upload payment screenshot'}
+                              </p>
+                              <span className="text-[11px] text-slate-400">
+                                JPG, PNG, WebP or PDF (Max 10MB)
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
