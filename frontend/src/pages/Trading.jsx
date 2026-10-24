@@ -275,9 +275,9 @@ export default function Trading() {
 
   const usdtBalance = Number(
     balances?.tradeable_balance ??
-      balances?.available_balance ??
-      balances?.main_available ??
-      Math.max(0, Number(balances?.main_balance ?? 0))
+    balances?.available_balance ??
+    balances?.main_available ??
+    Math.max(0, Number(balances?.main_balance ?? 0))
   );
 
   const walletMain = Number(balances?.main_balance ?? 0);
@@ -831,14 +831,14 @@ export default function Trading() {
           const next = [{ ...payload, symbol: sym, _id: `${payload.time}-${Math.random()}` }, ...prev];
           return next.slice(0, 50);
         });
-        if (user && payload.pulse) refreshBalance().catch(() => {});
+        if (user && payload.pulse) refreshBalance().catch(() => { });
       }
     };
 
     const onOrdersFilled = (payload) => {
       if (!payload || payload.symbol !== sym) return;
       if (!user) return;
-      refreshBalance().catch(() => {});
+      refreshBalance().catch(() => { });
       setOrdersRefreshTick((n) => n + 1);
     };
 
@@ -948,9 +948,9 @@ export default function Trading() {
       const filteredRows =
         orderStatusTab === 'pending'
           ? rawRows.filter((r) => {
-              const id = getOrderId(r);
-              return id && !removedOrderIdsRef.current.has(id);
-            })
+            const id = getOrderId(r);
+            return id && !removedOrderIdsRef.current.has(id);
+          })
           : rawRows;
 
       return {
@@ -1066,7 +1066,7 @@ export default function Trading() {
       setInvestedBalance(0);
       return undefined;
     }
-    refreshInvestedBalance().catch(() => {});
+    refreshInvestedBalance().catch(() => { });
   }, [refreshInvestedBalance, user, walletVersion]);
 
   function requireLogin() {
@@ -1610,44 +1610,43 @@ export default function Trading() {
 
         <div className="ex-ticker__stats">
           <div className="ex-ticker__stat-block ex-ticker__stat-block--price">
-          <span className="ex-ticker__stat-label">Last Price</span>
-          <span className={`ex-ticker__price ${priceUp ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
-            {ticker ? formatTradePrice(ticker.lastPrice, quoteAsset) : '—'}
-          </span>
+            <span className="ex-ticker__stat-label">Last Price</span>
+            <span className={`ex-ticker__price ${priceUp ? 'ex-ticker__price--up' : 'ex-ticker__price--down'}`}>
+              {ticker ? formatTradePrice(ticker.lastPrice, quoteAsset) : '—'}
+            </span>
           </div>
 
           <div className={`ex-ticker__stat-block ${changeUp ? 'ex-ticker__stat--up' : 'ex-ticker__stat--down'}`}>
-          <span className="ex-ticker__stat-label">24h Change</span>
-          <span>
-            {ticker
-              ? `${
-                  Number.isFinite(changeAbs)
-                    ? `${changeAbs >= 0 ? '+' : ''}${fmtNum(changeAbs, 2)} `
-                    : ''
+            <span className="ex-ticker__stat-label">24h Change</span>
+            <span>
+              {ticker
+                ? `${Number.isFinite(changeAbs)
+                  ? `${changeAbs >= 0 ? '+' : ''}${fmtNum(changeAbs, 2)} `
+                  : ''
                 }(${changePct >= 0 ? '+' : ''}${fmtNum(changePct, 2)}%)`
-              : '—'}
-          </span>
-        </div>
+                : '—'}
+            </span>
+          </div>
 
-        <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h High</span>
-          <span>{ticker ? fmtNum(high24h, 2) : '—'}</span>
-        </div>
+          <div className="ex-ticker__stat-block">
+            <span className="ex-ticker__stat-label">24h High</span>
+            <span>{ticker ? fmtNum(high24h, 2) : '—'}</span>
+          </div>
 
-        <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h Low</span>
-          <span>{ticker ? fmtNum(low24h, 2) : '—'}</span>
-        </div>
+          <div className="ex-ticker__stat-block">
+            <span className="ex-ticker__stat-label">24h Low</span>
+            <span>{ticker ? fmtNum(low24h, 2) : '—'}</span>
+          </div>
 
-        <div className="ex-ticker__stat-block">
-          <span className="ex-ticker__stat-label">24h Volume({quoteAsset})</span>
-          <span>{ticker ? fmtLocale(quoteVol, { maximumFractionDigits: 2 }) : '—'}</span>
-        </div>
+          <div className="ex-ticker__stat-block">
+            <span className="ex-ticker__stat-label">24h Volume({quoteAsset})</span>
+            <span>{ticker ? fmtLocale(quoteVol, { maximumFractionDigits: 2 }) : '—'}</span>
+          </div>
 
-        <div className="ex-ticker__stat-block ex-ticker__stat-block--clock">
-          <span className="ex-ticker__stat-label">Time</span>
-          <span className="ex-ticker__clock">{liveClock}</span>
-        </div>
+          <div className="ex-ticker__stat-block ex-ticker__stat-block--clock">
+            <span className="ex-ticker__stat-label">Time</span>
+            <span className="ex-ticker__clock">{liveClock}</span>
+          </div>
         </div>
       </div>
 
@@ -1993,10 +1992,13 @@ export default function Trading() {
                   </button>
                 ))}
               </div>
+
               <div className={`ex-book__mid ${priceUp ? 'ex-book__mid--up' : 'ex-book__mid--down'}`}>
-                {depth.mid != null
-                  ? depth.mid.toLocaleString(undefined, { maximumFractionDigits: 4 })
-                  : ticker?.lastPrice?.toLocaleString() ?? '—'}
+
+                {ticker ? formatTradePrice(ticker.lastPrice, quoteAsset)
+                  : depth.mid != null
+                    ? depth.mid.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                    : ticker?.lastPrice?.toLocaleString() ?? '—'}
               </div>
               <div className="ex-book__side ex-book__side--bids">
                 {(depth.bids || []).slice(0, 12).map((r, i) => (
@@ -2016,7 +2018,7 @@ export default function Trading() {
             </div>
           </div>
 
-         
+
         </aside>
       </div>
 
